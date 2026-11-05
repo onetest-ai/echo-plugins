@@ -9,7 +9,7 @@
 //   profile:                   # an AI profile id (empty: the default)
 //   model:                     # empty: the profile's minutes model
 //   tools: read                # read · folder · skip — the user's pick, the prompt being theirs
-//   deliver: telegram, mail    # teams · mail · telegram (the ways its manifest asks for)
+//   deliver: telegram, mail    # teams · mail · telegram · today (the ways its manifest asks for)
 //   mail_to:                   # mail only: other addresses (empty: the user)
 //   skip_empty: true           # nothing worth sending → nothing sent
 //   enabled: true
@@ -23,7 +23,7 @@
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 // The ways it may send: those its manifest asks for (\`uses.deliver.to\`) — Echo refuses any other.
-const DELIVER_TO = ['teams', 'mail', 'telegram']
+const DELIVER_TO = ['teams', 'mail', 'telegram', 'today']
 const validKind = (k) => DELIVER_TO.includes(k)
 const NOTHING = 'NOTHING'
 const KEEP_RUNS = 20
@@ -242,7 +242,8 @@ export function apply(ctx) {
         const sent = [], failed = []
         for (const k of r.deliver) {
           try {
-            await ctx.deliver.send(k, { title: r.name, markdown: answer, about: `Routine · ${sch}`, ai: out.model, mail_to: k === 'mail' ? r.mail_to : [] })
+            // Today keeps one card per `about`: the routine's own name, so two routines at the same hour don't replace each other.
+            await ctx.deliver.send(k, { title: r.name, markdown: answer, about: k === 'today' ? `Routine · ${r.name}` : `Routine · ${sch}`, ai: out.model, mail_to: k === 'mail' ? r.mail_to : [] })
             sent.push(k)
           } catch (e) { failed.push(`${k}: ${e.message || e}`) }
         }

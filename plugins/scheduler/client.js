@@ -4,7 +4,7 @@
 // editor (schedule by days, where to send, what Claude may do, Try it), started blank or from a template.
 // Everything goes through the host half (`ctx.call`); the look is Echo's own tokens.
 
-const LABEL = { telegram: 'Telegram', teams: 'Teams', mail: 'Mail' }
+const LABEL = { telegram: 'Telegram', teams: 'Teams', mail: 'Mail', today: 'Today' }
 const label = (k) => LABEL[k] || k.charAt(0).toUpperCase() + k.slice(1)
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_SHORT = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
@@ -298,7 +298,7 @@ export function apply(ctx) {
 
   const editPage = () => {
     const e = edit, d = (data && data.deliver) || {}
-    const ready = { teams: !!d.teams, mail: !!d.mail }
+    const ready = { teams: !!d.teams, mail: !!d.mail, today: d.today === true }
     const provided = d.provided || []
     for (const p of provided) ready[p.kind] = !!p.ready
     const P = data.profiles || { profiles: [] }
@@ -332,6 +332,7 @@ export function apply(ctx) {
           <div class="sch-f"><span class="sch-lbl">Send the answer to</span>
             ${dest('mail', e.mailOthers ? 'To the addresses below' : 'To you — or <u data-sch-others>other addresses</u>', ready.mail ? esc(d.account || '') : 'Sign in to Microsoft 365')}
             ${e.mailOthers ? `<div style="display:flex;gap:8px;align-items:center"><input class="sch-in" id="sch-mailto" style="flex:1" value="${esc(e.mail_to.join(', '))}" placeholder="name@company.example, …"><button class="btn ghost" data-sch-others>To me</button></div><span class="sch-sub">Mail to others goes from your account, as written — nobody reviews it first.</span>` : ''}
+            ${ready.today ? dest('today', 'A card on Echo’s Today page', 'Ready') : ''}
             ${dest('teams', 'Your chat with yourself', ready.teams ? 'Ready' : 'Sign in to Microsoft 365')}
             ${provided.map((p) => dest(p.kind, p.ready ? `From the ${esc(p.plugin)} plugin` : `<span class="sch-warn">${esc(p.why || 'Not set up yet')}</span>`, p.ready ? 'Ready' : `<u data-sch-connect="${esc(p.plugin)}">Set up…</u>`)).join('')}
             <button class="sch-dest" data-sch-skip style="grid-template-columns:auto minmax(0,1fr);border:0;padding:4px 0"><span class="sch-cb${e.skip_empty !== false ? ' on' : ''}" aria-hidden="true">${e.skip_empty !== false ? '✓' : ''}</span><span class="sch-sub">Send nothing when there’s nothing worth sending</span></button></div>

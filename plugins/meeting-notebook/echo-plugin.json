@@ -1,0 +1,34 @@
+{
+  "id": "meeting-notebook",
+  "name": "Meeting Notebook",
+  "version": "0.3.3",
+  "echo": ">=0.8.0",
+  "summary": "Your calls as a notebook: filed by type, then client or person, then date, with editable minutes, decisions, your notes and action items Claude can do or you do by hand",
+  "uses": {
+    "claude": {},
+    "echo": {
+      "read": ["sources"]
+    },
+    "deliver": {
+      "to": ["teams", "mail"]
+    }
+  },
+  "main": "main.js",
+  "client": "client.js",
+  "settings": [
+    {
+      "key": "auto",
+      "label": "File calls automatically",
+      "type": "bool",
+      "default": true,
+      "help": "When Echo has written a call's minutes, Claude files it as a notebook page (type, client or person, summary, decisions, action items)."
+    },
+    {
+      "key": "me",
+      "label": "Your name",
+      "type": "string",
+      "default": "",
+      "help": "How you appear as an action owner, for example Alex. Empty: Claude uses the name from the transcript."
+    }
+  ]
+}

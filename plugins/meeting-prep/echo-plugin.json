@@ -1,0 +1,59 @@
+{
+  "id": "meeting-prep",
+  "name": "Meeting Prep",
+  "version": "0.1.3",
+  "echo": ">=0.8.0",
+  "summary": "Each weekday morning, a briefing for every meeting: its purpose, what's happened, who's in it, what's owed, what to watch for and the deal in CRM, from your calendar, notes, Echo calls, Teams, mail and CRM",
+  "uses": {
+    "claude": {},
+    "deliver": {
+      "to": ["teams"]
+    }
+  },
+  "main": "main.js",
+  "client": "client.js",
+  "settings": [
+    {
+      "key": "auto",
+      "label": "Prepare my day each weekday",
+      "type": "bool",
+      "default": true,
+      "help": "Monday to Friday, at the time below, Claude prepares every meeting of the day (read-only)."
+    },
+    {
+      "key": "time",
+      "label": "Prep time",
+      "type": "string",
+      "default": "07:30",
+      "help": "When the morning prep is made, as HH:MM in your local time."
+    },
+    {
+      "key": "send",
+      "label": "Send the brief to me in Teams",
+      "type": "bool",
+      "default": true,
+      "help": "The morning brief also arrives in your Teams chat with yourself."
+    },
+    {
+      "key": "connectors",
+      "label": "Use Teams, mail and CRM",
+      "type": "bool",
+      "default": true,
+      "help": "Runs as Claude Code in your Echo folder, so it can use its Microsoft 365 and EPAM CRM connectors (read-only), when Claude Code's settings there allow them. Off: Echo's own data only."
+    },
+    {
+      "key": "skip_internal",
+      "label": "Skip internal meetings with nothing on file",
+      "type": "bool",
+      "default": false,
+      "help": "Leave out internal meetings with no notes, chats or mail about them."
+    },
+    {
+      "key": "me",
+      "label": "Your name",
+      "type": "string",
+      "default": "",
+      "help": "How you appear in meetings, for example Alex. Empty: Claude uses the name from your calendar."
+    }
+  ]
+}

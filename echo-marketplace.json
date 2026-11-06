@@ -5,6 +5,8 @@
   "plugins": [
     { "id": "scheduler", "source": "./plugins/scheduler", "categories": ["automation"] },
     { "id": "telegram", "source": "./plugins/telegram", "categories": ["chat"] },
-    { "id": "obsidian", "source": "./plugins/obsidian", "categories": ["knowledge"] }
+    { "id": "obsidian", "source": "./plugins/obsidian", "categories": ["knowledge"] },
+    { "id": "meeting-notebook", "source": "./plugins/meeting-notebook", "categories": ["knowledge"] },
+    { "id": "meeting-prep", "source": "./plugins/meeting-prep", "categories": ["productivity"] }
   ]
 }

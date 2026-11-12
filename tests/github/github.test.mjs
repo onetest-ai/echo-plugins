@@ -363,6 +363,25 @@ test('picks changed by another process (a terminal’s or Claude’s plugin call
   assert.deepEqual(await ctx.run('pick', { entry: 'ada-acme/notes', on: true }), ['acme-test', 'acme-labs/site', 'ada-acme/notes'])
 })
 
+test('picks changed while a read is on its way: read once more after it, with the new picks', async () => {
+  let release
+  const gate = new Promise((r) => { release = r })
+  let first = true
+  const ctx = fakeCtx({ signin: GH, work: true, threads: {}, store: { 'picks.json': JSON.stringify(['acme-labs/site']) }, fetch: async (url, opts) => {
+    if (first) { first = false; await gate }
+    return github(opts)
+  } })
+  apply(ctx)
+  const p = ctx.run('refresh')
+  await new Promise((r) => setTimeout(r, 5))
+  ctx.files['picks.json'] = JSON.stringify(['acme-labs/site', 'acme-test'])
+  await ctx.run('status')            // notices the change while the first read waits
+  release(); await p
+  await new Promise((r) => setTimeout(r, 30))
+  const lastWork = ctx.requests.map((r) => JSON.parse(r.opts.body)).filter((b) => b.query.startsWith('query Work')).at(-1)
+  assert.match(lastWork.variables.qa0, /user:acme-test/, 'the last work read has the pick made meanwhile')
+})
+
 test('a failed read keeps the last answer and says why', async () => {
   let status = 200
   const ctx = fakeCtx({ signin: GH, store: PICKED, fetch: (url, opts) => (status === 200 ? github(opts) : { status, body: '' }) })
@@ -455,7 +474,8 @@ test('the work query: three searches scoped to the picks, each thread repo, name
   assert.ok(groups.length >= 2 && groups.length <= 4)
   assert.ok(groups.every((g) => `is:open is:pr review-requested:@me archived:false ${g}`.length <= 256))
   assert.notEqual(groups.at(-1), '', '12 picks fit in 4 groups: none searched without qualifiers')
-  assert.equal(groups.join(' ').split(' ').filter(Boolean).length, 12, 'every pick in a group, once')
+  const quals = groups.join(' ').split(' ').filter(Boolean)
+  assert.deepEqual([...quals].sort(), many.map((e) => `repo:${e.owner}/${e.name}`).sort(), 'every pick in a group, once')
   const huge = parseEntries(Array.from({ length: 40 }, (_, i) => `some-organisation-${i}/some-repository-${i}`).join('\n')).entries
   const hg = pickScopes(huge)
   assert.equal(hg.length, 4)

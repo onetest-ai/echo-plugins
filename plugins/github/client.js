@@ -167,16 +167,17 @@ export function apply(ctx) {
   // ── A thread's repos: a row of its Profile (`thread.profile`), chips as its sources are, + for the repos you worked
   // on lately and any other. Kept by Echo per thread (`ctx.threads`, through the host half).
   const repos = {}          // thread id → its repos (undefined: not read yet)
-  let tAdding = '', tError = {}, discovering = false
+  // A failed pick's error stays until the next pick; a failed read's until a good read.
+  let tAdding = '', tError = {}, tReadError = {}, discovering = false
   // A thread's repos as Echo keeps them — set here, in another window, by Claude or from a terminal: drawn again only
   // when they changed.
   const readThread = (id) => ctx.call('threadRepos', { thread: id }).then((v) => {
     const next = v || []
     // A good read clears an error an earlier one left (the host half reloading during an update, say).
-    const hadError = !!tError[id]
-    delete tError[id]
+    const hadError = !!tReadError[id]
+    delete tReadError[id]
     if (hadError || JSON.stringify(next) !== JSON.stringify(repos[id])) { repos[id] = next; ctx.render() }
-  }, (e) => { tError[id] = e.message; ctx.render() })
+  }, (e) => { tReadError[id] = e.message; ctx.render() })
   // While a thread's GitHub row is on screen, look again every 5 s (Echo's own store, not GitHub); stops when none is.
   // One check at a time for the window, whatever version set it (Echo can't stop an unloaded plugin's timers: an
   // update's new half takes the old one's place).
@@ -190,6 +191,8 @@ export function apply(ctx) {
       for (const b of boxes) readThread(b._afterFor)
     }, 5000)
   }
+  // After an update the Profile may still be on screen with its rows kept (no `after` again): watch them now.
+  if (typeof document !== 'undefined' && document.querySelector('[data-thread-slot="github:repos"]')) watchRows()
   const tPick = async (id, entry, on) => {
     tError[id] = ''
     try { repos[id] = await ctx.call('threadPick', { thread: id, entry, on }) } catch (e) { tError[id] = e.message }
@@ -209,7 +212,8 @@ export function apply(ctx) {
       const add = tAdding === t.id
         ? `<span class="tok-in"><input id="gh-tadd" data-thread="${esc(t.id)}" placeholder="owner/repo" aria-label="A repo for this thread" spellcheck="false" autofocus><button class="btn" data-gh-tadd data-thread="${esc(t.id)}">Add</button></span>`
         : `<button class="tok add" data-gh-tadding data-thread="${esc(t.id)}">+ Another repo</button>`
-      const why = tError[t.id] ? `<div class="set-sub error">${esc(tError[t.id])}</div>` : ''
+      const said = tError[t.id] || tReadError[t.id]
+      const why = said ? `<div class="set-sub error">${esc(said)}</div>` : ''
       const lead = mine.length ? '' : '<span class="set-sub">No repos yet: their pull requests and issues show in this thread’s Work, and Claude knows them here.</span> '
       return `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${lead}${chips} ${offers} ${add}</div>${why}`
     },

@@ -471,11 +471,12 @@ export function workRows(answer, threads = [], entries = null) {
   const push = (_, r) => {
     if (ids.has(r.id)) return
     ids.add(r.id)
-    const inPick = picked(r.where)
-    if (inPick && me.length < MAX_ROWS) me.push(r)
-    // Every thread with this repo gets it in its Work (a picked one already shows in its first thread, `r.thread`).
+    // On My work if it is picked (and My work isn't full); every thread with this repo gets it in its Work — a row on
+    // My work already shows in its first thread (`r.thread`).
+    const onMe = picked(r.where) && me.length < MAX_ROWS
+    if (onMe) me.push(r)
     for (const t of threadsOf(r.where)) {
-      if (inPick && t === r.thread) continue
+      if (onMe && t === r.thread) continue
       const list = (onlyThread[t] = onlyThread[t] || [])
       if (list.length < MAX_ROWS) list.push({ ...r, thread: t })
     }
@@ -603,8 +604,10 @@ export function apply(ctx) {
   }
 
   /** Read GitHub once (one at a time); keeps the last good answer and says what went wrong beside it. */
+  let again = false
   const refresh = (why) => {
-    if (running) return running
+    // Asked while a read is on its way (the picks changed meanwhile, say): read once more after it.
+    if (running) { again = true; return running }
     running = (async () => {
       const rate = state && state.rate
       if (why !== 'user' && rate && rate.remaining < RESERVE && Date.now() < new Date(rate.resetAt).getTime()) return state
@@ -637,7 +640,10 @@ export function apply(ctx) {
       save(digest(answer, entries, now, extra))
       await readWork(ts)
       return state
-    })().finally(() => { running = null })
+    })().finally(() => {
+      running = null
+      if (again) { again = false; refresh('user') }
+    })
     return running
   }
 

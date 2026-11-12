@@ -20,6 +20,7 @@ An Echo plugin is a package that brings **its own code** — the way dsh-desktop
 | [Scheduler](plugins/scheduler) | Your own Claude prompts on a schedule, answers delivered to you in Telegram, Teams or mail |
 | [Telegram](plugins/telegram) | Your Claude · Echo folder session from your phone, through your own bot |
 | [Obsidian vault](plugins/obsidian) | Your vault as Echo's second brain; minutes and people written into it |
+| [GitHub](plugins/github) | CI, open pull requests and reviews waiting on you, as widgets on Today |
 
 Scheduler needs an Echo with plugins (0.7 or later); Telegram and Obsidian vault need capabilities that arrive after it — until then Echo lists them as "Needs a newer Echo". Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
 

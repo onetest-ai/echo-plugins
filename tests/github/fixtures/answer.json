@@ -1,0 +1,71 @@
+{
+  "data": {
+    "viewer": { "login": "ada-acme" },
+    "rateLimit": { "remaining": 4812, "limit": 5000, "resetAt": "2026-11-12T10:00:00Z" },
+    "reviews": {
+      "issueCount": 3,
+      "nodes": [
+        { "repository": { "nameWithOwner": "acme-test/api" } },
+        { "repository": { "nameWithOwner": "acme-test/web" } },
+        { "repository": { "nameWithOwner": "elsewhere-co/tool" } }
+      ]
+    },
+    "w0": {
+      "login": "acme-test",
+      "repositories": {
+        "totalCount": 14,
+        "nodes": [
+          {
+            "nameWithOwner": "acme-test/api",
+            "url": "https://github.com/acme-test/api",
+            "defaultBranchRef": { "name": "main", "target": { "statusCheckRollup": { "state": "FAILURE", "contexts": { "nodes": [
+              { "__typename": "CheckRun", "name": "build", "conclusion": "SUCCESS", "status": "COMPLETED", "checkSuite": { "workflowRun": { "workflow": { "name": "ci" } } } },
+              { "__typename": "CheckRun", "name": "deploy-prod", "conclusion": "FAILURE", "status": "COMPLETED", "checkSuite": { "workflowRun": { "workflow": { "name": "deploy" } } } },
+              { "__typename": "CheckRun", "name": "deploy-stage", "conclusion": "FAILURE", "status": "COMPLETED", "checkSuite": { "workflowRun": { "workflow": { "name": "deploy" } } } }
+            ] } } } },
+            "pullRequests": { "totalCount": 4 },
+            "issues": { "totalCount": 9 }
+          },
+          {
+            "nameWithOwner": "acme-test/web",
+            "url": "https://github.com/acme-test/web",
+            "defaultBranchRef": { "name": "main", "target": { "statusCheckRollup": { "state": "PENDING", "contexts": { "nodes": [
+              { "__typename": "CheckRun", "name": "test", "conclusion": null, "status": "IN_PROGRESS", "checkSuite": { "workflowRun": { "workflow": { "name": "ci" } } } }
+            ] } } } },
+            "pullRequests": { "totalCount": 2 },
+            "issues": { "totalCount": 1 }
+          },
+          {
+            "nameWithOwner": "acme-test/docs",
+            "url": "https://github.com/acme-test/docs",
+            "defaultBranchRef": { "name": "main", "target": { "statusCheckRollup": null } },
+            "pullRequests": { "totalCount": 0 },
+            "issues": { "totalCount": 0 }
+          }
+        ]
+      }
+    },
+    "p0": { "issueCount": 11 },
+    "i0": { "issueCount": 30 },
+    "r1": {
+      "nameWithOwner": "acme-test/api",
+      "url": "https://github.com/acme-test/api",
+      "defaultBranchRef": { "name": "main", "target": { "statusCheckRollup": { "state": "FAILURE", "contexts": { "nodes": [] } } } },
+      "pullRequests": { "totalCount": 4 },
+      "issues": { "totalCount": 9 }
+    },
+    "r2": {
+      "nameWithOwner": "acme-labs/site",
+      "url": "https://github.com/acme-labs/site",
+      "defaultBranchRef": { "name": "main", "target": { "statusCheckRollup": { "state": "SUCCESS", "contexts": { "nodes": [
+        { "__typename": "StatusContext", "context": "netlify", "state": "SUCCESS" }
+      ] } } } },
+      "pullRequests": { "totalCount": 1 },
+      "issues": { "totalCount": 5 }
+    },
+    "r3": null
+  },
+  "errors": [
+    { "type": "NOT_FOUND", "path": ["r3"], "message": "Could not resolve to a Repository with the name 'acme-test/gone'." }
+  ]
+}

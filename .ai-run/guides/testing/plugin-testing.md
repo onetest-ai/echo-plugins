@@ -9,7 +9,7 @@ Run from the repository root, fastest first.
 | Gate | Run | Pass |
 |---|---|---|
 | syntax | `for f in plugins/*/*.js; do node --check "$f" || exit 1; done` | exit 0 |
-| unit | `node --test tests/` (once a plugin has tests) | exit 0 |
+| unit | `node --test 'tests/**/*.test.mjs'` | exit 0 |
 | manifest | `echoctl plugin marketplace update local` then `echoctl plugin list` (see *In Echo*) | the changed plugin is listed with its new version, no error for it |
 | in Echo | the changed plugin's commands and widgets, as in *In Echo* | each answers as the change intends |
 | acceptance | the plugin issue's **Acceptance** lines, in the Echo window | each line holds, the failure lines too |

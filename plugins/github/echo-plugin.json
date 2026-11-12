@@ -1,0 +1,67 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "version": "0.1.0",
+  "echo": ">=0.9.0",
+  "summary": "Your GitHub on Today: CI, open pull requests and the reviews waiting on you, for the repos and organisations you pick",
+  "uses": {
+    "network": {
+      "hosts": ["api.github.com"]
+    }
+  },
+  "main": "main.js",
+  "client": "client.js",
+  "settings": [
+    {
+      "key": "token",
+      "label": "GitHub token",
+      "type": "secret",
+      "help": "A personal access token with read access to your repositories (contents, pull requests, issues, actions). Kept on this computer only."
+    },
+    {
+      "key": "repos",
+      "label": "Repos and organisations",
+      "type": "string",
+      "help": "owner/repo, or an organisation's name for its repos — one per line. Empty: the repos you pushed to last."
+    }
+  ],
+  "widgets": [
+    {
+      "id": "repos",
+      "label": "GitHub repos",
+      "about": "each repo's CI, open pull requests and reviews for you",
+      "kind": "list",
+      "sizes": ["M", "L"],
+      "heights": [1, 2],
+      "refresh": 60,
+      "params": [
+        { "key": "ci", "label": "CI", "type": "bool", "default": true },
+        { "key": "prs", "label": "Open pull requests", "type": "bool", "default": true },
+        { "key": "reviews", "label": "Reviews for you", "type": "bool", "default": true },
+        { "key": "issues", "label": "Open issues", "type": "bool", "default": false }
+      ]
+    },
+    {
+      "id": "ci",
+      "label": "GitHub CI",
+      "about": "passing or failing, across your repos",
+      "kind": "status",
+      "sizes": ["S", "M"],
+      "refresh": 60
+    },
+    {
+      "id": "glance",
+      "label": "GitHub at a glance",
+      "about": "failing CI, open pull requests, reviews for you",
+      "kind": "stats",
+      "sizes": ["M", "L"],
+      "refresh": 60,
+      "params": [
+        { "key": "ci", "label": "CI failing", "type": "bool", "default": true },
+        { "key": "prs", "label": "Open pull requests", "type": "bool", "default": true },
+        { "key": "reviews", "label": "Reviews for you", "type": "bool", "default": true },
+        { "key": "issues", "label": "Open issues", "type": "bool", "default": false }
+      ]
+    }
+  ]
+}

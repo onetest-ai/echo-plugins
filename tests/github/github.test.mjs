@@ -200,6 +200,9 @@ test('device sign-in answers: only a code and device code of plain characters; t
   assert.deepEqual(deviceStepOf({ error: 'authorization_pending' }, 5), { state: 'waiting' })
   assert.deepEqual(deviceStepOf({ error: 'slow_down', interval: 10 }, 5), { state: 'waiting', interval: 10 })
   assert.deepEqual(deviceStepOf({ error: 'slow_down' }, 5), { state: 'waiting', interval: 10 })
+  // At GitHub's 60 s already, slow_down stays at 60 (never more, never a failure).
+  assert.deepEqual(deviceStepOf({ error: 'slow_down' }, 60), { state: 'waiting', interval: 60 })
+  assert.deepEqual(deviceStepOf({ error: 'slow_down', interval: 600 }, 60), { state: 'waiting', interval: 60 })
   assert.deepEqual(deviceStepOf({ error: 'expired_token' }, 5), { state: 'expired' })
   assert.deepEqual(deviceStepOf({ error: 'access_denied' }, 5), { state: 'denied' })
   assert.deepEqual(deviceStepOf({ error: 'incorrect_client_credentials', error_description: 'The client_id\nis wrong' }, 5), { state: 'failed', error: 'The client_idis wrong' })

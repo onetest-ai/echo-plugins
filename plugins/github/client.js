@@ -18,7 +18,7 @@ export function apply(ctx) {
   const { esc, setCard, setRow } = ctx.ui
   let st = null, found = null, error = '', busy = '', polls = 0, more = false, adding = false
   // Signing in here: the code shown while it waits ({code, url}), and how the last one ended.
-  let code = null, codeTimer = null, codeSaid = ''
+  let code = null, codeTimer = null, codeSaid = '', copied = false
 
   // Reading the status never clears an action's error: it stays until the next action.
   const load = async () => {
@@ -41,9 +41,14 @@ export function apply(ctx) {
         `${refused ? '<button class="btn" data-gh-check>Check again</button>' : ok} ${out}`)
     }
     if (code) {
-      const link = DEVICE_URL.test(code.url) ? `<a class="wp-link" data-ext href="${esc(code.url)}" title="Open GitHub to enter the code">github.com/login/device ↗</a>` : 'github.com/login/device'
-      return setRow('Enter this code on GitHub', `<b class="gh-code" style="font-size:16px;letter-spacing:1px;user-select:all">${esc(code.code)}</b> at ${link} — waiting for you to confirm it there (15 minutes at most).`,
-        '<button class="btn" data-gh-signin-cancel>Cancel</button>')
+      // One click copies the code (an Echo with ctx.ui.copy) and opens GitHub's page, as `gh auth login` does; the code
+      // stays on screen. The address is the host half's own, checked again here — never one from GitHub's answer.
+      const canCopy = !!(ctx.ui && ctx.ui.copy)
+      const open = DEVICE_URL.test(code.url)
+        ? `<a class="btn primary" style="text-decoration:none" data-ext data-gh-copy href="${esc(code.url)}" title="${canCopy ? 'Copies the code and opens github.com/login/device' : 'Opens github.com/login/device'}">${canCopy ? 'Copy code &amp; open GitHub' : 'Open GitHub'}</a>`
+        : ''
+      return setRow('Enter this code on GitHub', `<b class="gh-code" style="font-size:16px;letter-spacing:1px;user-select:all">${esc(code.code)}</b> at github.com/login/device — waiting for you to confirm it there (15 minutes at most).${copied ? ' <span class="set-ok">Copied</span>' : ''}`,
+        `${open} <button class="btn" data-gh-signin-cancel>Cancel</button>`)
     }
     const noGh = st.sources && st.sources.gh === false
     const said = codeSaid ? `<div class="set-sub error">${esc(codeSaid)}</div>` : ''
@@ -75,7 +80,7 @@ export function apply(ctx) {
   }
   const startSignIn = async () => {
     busy = 'signin'; error = ''; codeSaid = ''; ctx.render()
-    try { code = await ctx.call('signinStart'); watchCode() } catch (e) { codeSaid = e.message }
+    try { code = await ctx.call('signinStart'); copied = false; watchCode() } catch (e) { codeSaid = e.message }
     busy = ''; ctx.render()
   }
 
@@ -205,6 +210,9 @@ export function apply(ctx) {
       if ('ghTadding' in d) { tAdding = d.thread; return ctx.render() }
       if ('ghTadd' in d) return tAddTyped(d.thread)
     }
+    // The code copied on the click itself (Echo opens the link: it is an `a[data-ext]`).
+    const c = ev.target.closest && ev.target.closest('[data-gh-copy]')
+    if (c && code && ctx.ui && ctx.ui.copy) { try { ctx.ui.copy(code.code); copied = true } catch (e) { codeSaid = e.message } ctx.render(); return }
     const t = ev.target.closest && ev.target.closest('[data-gh-check],[data-gh-pick],[data-gh-more],[data-gh-adding],[data-gh-add],[data-gh-refresh],[data-gh-signin],[data-gh-signin-cancel],[data-gh-signout]')
     if (!t || t.disabled) return
     const d = t.dataset

@@ -14,7 +14,7 @@ tags: [github, signin, device]
 # TC-018: Signed in here, kept by Echo
 
 ## Preconditions
-- The environment from `up.sh` on an Echo that keeps a sign-in a plugin made (onetest-ai/echo#488); TC-001 passed (the plugin installed and picks made in TC-005 are fine either way)
+- The environment from `up.sh` on an Echo that keeps a sign-in a plugin made and has `ctx.ui.copy` (onetest-ai/echo#488); TC-001 passed (the plugin installed and picks made in TC-005 are fine either way)
 - No sign-in on the computer: `mv "$FAKE_GH_TOKEN_FILE" "$FAKE_GH_TOKEN_FILE.off"; : > "$FAKE_GIT_TOKEN_FILE"`; the fake GitHub's `device` is "pending" (`curl -s -X POST $FAKE_GITHUB/_state -d '{"device": "pending"}'`)
 - Open `{{base_url}}/#settings/github:main` and press "Check again": the row "Sign in to GitHub" with "Sign in with GitHub"
 
@@ -32,8 +32,8 @@ tags: [github, signin, device]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | Note the count of `curl -s $FAKE_GITHUB/_log` entries; click "Sign in with GitHub" | The row becomes "Enter this code on GitHub" — "**WDJB-MJHT** at github.com/login/device ↗ — waiting for you to confirm it there (15 minutes at most)." — with "Cancel"; `_log` has a `/login/device/code` entry with `client_id` `Ov23liJp2izMv6RZZS23` and fields `client_id`, `scope`, then `/login/oauth/access_token` entries (`client_id`, `device_code`, `grant_type`) about one every 2 seconds; no `/graphql` entry since the click |
-| 2 | Click "github.com/login/device ↗" | `$ECHOCTL_TEST_OPEN_LOG` has `https://github.com/login/device` (nothing else opened) |
+| 1 | Note the count of `curl -s $FAKE_GITHUB/_log` entries; click "Sign in with GitHub" | The row becomes "Enter this code on GitHub" — "**WDJB-MJHT** at github.com/login/device — waiting for you to confirm it there (15 minutes at most)." — with "Copy code & open GitHub" and "Cancel"; nothing opened or copied yet (`$ECHOCTL_TEST_OPEN_LOG` empty); `_log` has a `/login/device/code` entry with `client_id` `Ov23liJp2izMv6RZZS23` and fields `client_id`, `scope`, then `/login/oauth/access_token` entries (`client_id`, `device_code`, `grant_type`) about one every 2 seconds; no `/graphql` entry since the click |
+| 2 | Click "Copy code & open GitHub" | `$ECHOCTL_TEST_OPEN_LOG` has `copied: WDJB-MJHT` and `https://github.com/login/device` (nothing else; test data never touches the clipboard or the browser); the row adds "Copied"; the code is still shown |
 | 3 | `curl -s -X POST $FAKE_GITHUB/_state -d '{"device": "approved"}'` (the user confirms on GitHub); wait up to 10 s | The row reads "@ada-acme" — "With the sign-in you made in Echo. Echo only reads GitHub; it never changes anything there." — "Ready ✓" and "Sign out"; the repos and "Last read" show again; `_log` has `/graphql` entries after it; the access-token entries stop |
 | 4 | `ls -l "$ECHOCTL_CONFIG_DIR/signin/"`; `grep -rl "$(curl -s $FAKE_GITHUB/_state \| python3 -c 'import json,sys;print(json.load(sys.stdin)["device_token"])')" "$ECHOCTL_HOME" "$ECHOCTL_CONFIG_DIR/plugins" <dir>/*.log` | `github.com.json`, `-rw-------`; nothing found (the token is in Echo's file only: not the plugin's store, not a log) |
 | 5 | `echoctl widget show plugin:github:ci` | The CI status as in TC-006 (read with Echo's sign-in), not "sign in" |

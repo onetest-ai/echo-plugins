@@ -1,0 +1,21 @@
+{
+  "plugin": "github",
+  "prefix": "F-GH",
+  "features": [
+    { "id": "F-GH-01", "title": "Installs from a marketplace; the install sheet says it uses the computer's GitHub sign-in, talks to api.github.com and adds 3 widgets", "priority": "high", "check": "agent" },
+    { "id": "F-GH-02", "title": "Reads GitHub with the computer's own sign-in (GitHub CLI, else git) — no token asked, no raw settings card", "priority": "critical", "check": "agent" },
+    { "id": "F-GH-03", "title": "With no sign-in on the computer: the section says how to sign in (gh auth login), Check again, a ! badge; widgets ask to sign in; GitHub is not asked", "priority": "high", "check": "agent" },
+    { "id": "F-GH-04", "title": "The sign-in is never shown, kept or logged by the plugin", "priority": "critical", "check": "agent" },
+    { "id": "F-GH-05", "title": "What to show: organisations and recent repos found and offered (+), picked as chips (×), any repo or organisation added by name, one that isn't found says why", "priority": "high", "check": "agent" },
+    { "id": "F-GH-06", "title": "Nothing picked: the 10 repos pushed to last", "priority": "medium", "check": "agent" },
+    { "id": "F-GH-07", "title": "GitHub repos widget: a row per repo, failing first — CI (naming failing workflows), open PRs, reviews for you", "priority": "high", "check": "agent" },
+    { "id": "F-GH-08", "title": "GitHub CI widget: the worst state across the repos; one failing repo opens its Actions page", "priority": "high", "check": "agent" },
+    { "id": "F-GH-09", "title": "GitHub at a glance widget: CI failing, open PRs, reviews for you (open issues on choice)", "priority": "medium", "check": "agent" },
+    { "id": "F-GH-10", "title": "Each widget's settings pick what it shows", "priority": "medium", "check": "agent" },
+    { "id": "F-GH-11", "title": "Reads every 5 minutes and on Refresh; a change on GitHub shows after it", "priority": "high", "check": "agent" },
+    { "id": "F-GH-12", "title": "GitHub down or refusing: the last answer stays, dated; the section says why; a renewed sign-in is picked up by itself", "priority": "high", "check": "agent" },
+    { "id": "F-GH-13", "title": "GitHub's text (repo, workflow names) is shown as text, never run as HTML", "priority": "critical", "check": "agent" },
+    { "id": "F-GH-14", "title": "Removed: its section and widgets leave Echo", "priority": "medium", "check": "agent" },
+    { "id": "F-GH-15", "title": "On real GitHub with a person's own gh sign-in: their organisations found, CI and counts match github.com", "priority": "high", "check": "person" }
+  ]
+}

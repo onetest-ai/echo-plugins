@@ -51,7 +51,7 @@ test('digest: repos once, counts not doubled, reviews in scope, missing entries 
     { entry: 'acme-test', ok: true, repos: 14 },
     { entry: 'acme-test/api', ok: true, repos: 1 },
     { entry: 'acme-labs/site', ok: true, repos: 1 },
-    { entry: 'acme-test/gone', ok: false, why: 'not found, or your token can’t see it' },
+    { entry: 'acme-test/gone', ok: false, why: 'not found, or your sign-in can’t see it' },
   ])
   assert.deepEqual(st.rate, { remaining: 4812, limit: 5000, resetAt: '2026-11-12T10:00:00Z' })
 })

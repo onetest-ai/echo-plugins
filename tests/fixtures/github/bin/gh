@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# A fake GitHub CLI for the GitHub plugin's functional cases. Signed in while $FAKE_GH_TOKEN_FILE exists (its text is
+# the token, made up); `rm` it to sign out, write it again to sign in. Only what Echo asks: `gh auth token`, `gh auth status`.
+set -u
+file="${FAKE_GH_TOKEN_FILE:-}"
+case "${1:-} ${2:-}" in
+  "auth token")
+    if [ -n "$file" ] && [ -s "$file" ]; then cat "$file"; exit 0; fi
+    echo "no oauth token found for github.com" >&2; exit 1 ;;
+  "auth status")
+    if [ -n "$file" ] && [ -s "$file" ]; then echo "github.com"; echo "  ✓ Logged in to github.com account ada-acme (fake)"; exit 0; fi
+    echo "You are not logged into any GitHub hosts. To log in, run: gh auth login" >&2; exit 1 ;;
+  "--version ")
+    echo "gh version 0.0.0 (fake)"; exit 0 ;;
+  *)
+    echo "fake gh: not faked: $*" >&2; exit 1 ;;
+esac

@@ -119,7 +119,7 @@ export function digest(answer, entries, now) {
   entries.forEach((e, i) => {
     if (e.kind === 'repo') {
       const r = data[`r${i}`]
-      if (!r) { checks.push({ entry: entryName(e), ok: false, why: missing.has(`r${i}`) ? 'not found, or your token can’t see it' : 'not read' }); return }
+      if (!r) { checks.push({ entry: entryName(e), ok: false, why: missing.has(`r${i}`) ? 'not found, or your sign-in can’t see it' : 'not read' }); return }
       add(r)
       checks.push({ entry: entryName(e), ok: true, repos: 1 })
       // An organisation listed too counts this repo in its own totals.
@@ -171,9 +171,9 @@ export function digest(answer, entries, now) {
 export function problemOf(status, body) {
   let msg = ''
   try { msg = (JSON.parse(body || '{}').message || '') } catch { msg = '' }
-  if (status === 401) return { code: 'auth', text: 'GitHub refused the token — it may have expired or been revoked. Sign in again.' }
+  if (status === 401) return { code: 'auth', text: 'GitHub refused this computer’s sign-in — it may have expired. Run gh auth login again, then Check again.' }
   if (status === 403 && /rate limit/i.test(msg)) return { code: 'rate', text: 'GitHub’s limit for this hour is used up; Echo tries again after it resets.' }
-  if (status === 403) return { code: 'auth', text: 'GitHub refused: the token can’t read this. Give it read access to repositories, pull requests, issues and actions.' }
+  if (status === 403) return { code: 'auth', text: 'GitHub refused: this computer’s sign-in can’t read this (it needs repo access; gh auth login gives it).' }
   if (status >= 500 || status === 0) return { code: 'down', text: 'GitHub didn’t answer; Echo tries again in 5 minutes.' }
   return { code: 'error', text: `GitHub answered ${status}${msg ? `: ${msg}` : ''}.` }
 }

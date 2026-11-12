@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { parseEntries, buildQuery, ciOf, digest, problemOf, reposWidget, ciWidget, glanceWidget, discovered, toggled, actionsUrl, forThread, noThreadRepos, buildWorkQuery, workRows, threadRepoNames, apply } from '../../plugins/github/main.js'
+import { parseEntries, buildQuery, ciOf, digest, problemOf, deviceCodeOf, deviceStepOf, DEVICE_URL, reposWidget, ciWidget, glanceWidget, discovered, toggled, actionsUrl, forThread, noThreadRepos, buildWorkQuery, workRows, threadRepoNames, apply } from '../../plugins/github/main.js'
 import { fakeCtx } from '../helpers/fake-ctx.mjs'
 
 const answer = JSON.parse(readFileSync(new URL('./fixtures/answer.json', import.meta.url), 'utf8'))
@@ -192,57 +192,90 @@ test('GitHub refuses the sign-in: it is looked up again once (renewed), then the
   assert.ok(ctx.signins.includes('github.com (fresh)'), 'a refused sign-in is looked up again, not taken from what Echo kept')
 })
 
-test('without a sign-in on the computer: Echo signs you in itself, GitHub is read with it, sign out forgets it', async () => {
-  const ECHO = { token: 'gho_viaecho' + 'x'.repeat(30), from: 'echo', scopes: 'repo read:org' }
-  let mine = null
-  const ctx = fakeCtx({ store: PICKED, device: true, signin: () => mine, sources: { gh: false, git: false }, fetch: (url, opts) => {
-    assert.equal(opts.headers.Authorization, `bearer ${ECHO.token}`)
-    return github(opts)
-  } })
+test('device sign-in answers: only a code and device code of plain characters; the address is never GitHub’s to choose', () => {
+  assert.deepEqual(deviceCodeOf({ device_code: 'dev-1', user_code: 'WDJB-MJHT', verification_uri: 'https://evil.example/', expires_in: 900, interval: 5 }), { code: 'WDJB-MJHT', device: 'dev-1', expires: 900, interval: 5 })
+  assert.deepEqual(deviceCodeOf({ device_code: 'd', user_code: 'ABCD-1234', expires_in: 99999, interval: 0 }), { code: 'ABCD-1234', device: 'd', expires: 1800, interval: 1 })
+  for (const bad of [null, {}, { device_code: 'd', user_code: '<b>x</b>' }, { device_code: 'a b', user_code: 'ABCD-1234' }, { error: 'unauthorized_client' }]) assert.equal(deviceCodeOf(bad), null)
+  assert.equal(DEVICE_URL, 'https://github.com/login/device')
+  assert.deepEqual(deviceStepOf({ error: 'authorization_pending' }, 5), { state: 'waiting' })
+  assert.deepEqual(deviceStepOf({ error: 'slow_down', interval: 10 }, 5), { state: 'waiting', interval: 10 })
+  assert.deepEqual(deviceStepOf({ error: 'slow_down' }, 5), { state: 'waiting', interval: 10 })
+  assert.deepEqual(deviceStepOf({ error: 'expired_token' }, 5), { state: 'expired' })
+  assert.deepEqual(deviceStepOf({ error: 'access_denied' }, 5), { state: 'denied' })
+  assert.deepEqual(deviceStepOf({ error: 'incorrect_client_credentials', error_description: 'The client_id\nis wrong' }, 5), { state: 'failed', error: 'The client_idis wrong' })
+  assert.deepEqual(deviceStepOf({ access_token: 'gho_x', scope: 'repo' }, 5), { state: 'done', token: 'gho_x' })
+  assert.equal(deviceStepOf({ access_token: 'gho x' }, 5).state, 'failed')
+})
+
+/** A made-up GitHub for the device sign-in and the API: `answers.token` is what the token endpoint says next. */
+const deviceGitHub = (answers) => (url, opts) => {
+  if (url === 'https://github.com/login/device/code') { answers.asked.push(opts.body); return { status: 200, body: JSON.stringify({ device_code: 'dev-1', user_code: 'WDJB-MJHT', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 1 }) } }
+  if (url === 'https://github.com/login/oauth/access_token') { answers.asked.push(opts.body); return { status: 200, body: JSON.stringify(answers.token) } }
+  assert.equal(opts.headers.Authorization, `bearer ${answers.api}`)
+  return github(opts)
+}
+
+test('without a sign-in on the computer: sign in here (GitHub’s device sign-in), Echo keeps it, GitHub is read with it; sign out', async () => {
+  const TOKEN = 'gho_madehere' + 'x'.repeat(29)
+  const answers = { asked: [], token: { error: 'authorization_pending' }, api: TOKEN }
+  const ctx = fakeCtx({ store: PICKED, keep: true, signin: null, sources: { gh: false, git: false }, fetch: deviceGitHub(answers) })
   apply(ctx)
   await ctx.tick()
   let s = await ctx.run('status')
-  assert.deepEqual([s.signedIn, s.canDevice], [false, true])
-  // Echo's app by default; the scopes are the sheet's, never the plugin's to choose.
+  assert.deepEqual([s.signedIn, s.canKeep], [false, true])
   assert.deepEqual(await ctx.run('signinStart'), { code: 'WDJB-MJHT', url: 'https://github.com/login/device', expires_in: 900 })
-  assert.deepEqual(ctx.deviceCalls[0], ['start', 'github.com', null])
-  assert.equal((await ctx.run('signinStatus')).state, 'waiting')
-  assert.equal(ctx.requests.length, 0, 'GitHub not read while waiting')
-  // Confirmed on GitHub: Echo keeps it; the plugin asks for it again and reads GitHub.
-  mine = ECHO
-  ctx.deviceEnds('done')
-  assert.deepEqual(await ctx.run('signinStatus'), { state: 'done', signed_in: true })
-  assert.ok(ctx.signins.includes('github.com (fresh)'))
+  assert.equal(answers.asked[0], 'client_id=Ov23liJp2izMv6RZZS23&scope=repo%20read%3Aorg')
+  // Asked again only after GitHub's interval (1 s here): a poll before it doesn't reach GitHub.
+  assert.deepEqual(await ctx.run('signinPoll'), { state: 'waiting', code: 'WDJB-MJHT', url: 'https://github.com/login/device' })
+  assert.equal(answers.asked.length, 1)
+  await new Promise((r) => setTimeout(r, 1050))
+  assert.equal((await ctx.run('signinPoll')).state, 'waiting')
+  assert.equal(answers.asked[1], 'client_id=Ov23liJp2izMv6RZZS23&device_code=dev-1&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code')
+  // Confirmed on GitHub: Echo keeps it; GitHub is read with it.
+  answers.token = { access_token: TOKEN, token_type: 'bearer', scope: 'repo,read:org' }
+  await new Promise((r) => setTimeout(r, 1050))
+  assert.deepEqual(await ctx.run('signinPoll'), { state: 'done' })
+  assert.deepEqual(ctx.keptNow, { 'github.com': TOKEN })
   await new Promise((r) => setTimeout(r, 10))
   s = await ctx.run('status')
   assert.deepEqual([s.signedIn, s.from, s.login], [true, 'echo', 'ada-acme'])
-  assert.ok(!JSON.stringify(s).includes(ECHO.token) && !Object.values(ctx.files).some((f) => f.includes(ECHO.token)), 'the token is never shown or kept')
-  // GitHub refuses it later: the section says to sign out and in again.
-  const refused = fakeCtx({ store: PICKED, device: true, signin: ECHO, fetch: () => ({ status: 401, body: '{"message":"Bad credentials"}' }) })
+  assert.ok(!JSON.stringify(s).includes(TOKEN) && !Object.values(ctx.files).some((f) => f.includes(TOKEN) || f.includes('dev-1')), 'neither the token nor the device code is shown or kept by the plugin')
+  assert.deepEqual(await ctx.run('signinPoll'), { state: 'done' })
+  // GitHub refuses it later: sign out and in again.
+  const refused = fakeCtx({ store: PICKED, keep: true, signin: null, fetch: () => ({ status: 401, body: '{"message":"Bad credentials"}' }) })
+  refused.keptNow['github.com'] = TOKEN
   apply(refused)
   await refused.run('refresh')
   assert.match((await refused.run('status')).problem.text, /sign-in you made in Echo.*Sign out, then sign in again/)
-  // Sign out: Echo forgets it; no sign-in left, nothing read.
-  mine = null
+  // Sign out: Echo forgets it; nothing left to read with.
   const before = ctx.requests.length
   assert.equal(await ctx.run('signOut'), true)
-  assert.deepEqual(ctx.deviceCalls.at(-1), ['forget', 'github.com'])
+  assert.deepEqual(ctx.keptNow, {})
   s = await ctx.run('status')
   assert.deepEqual([s.signedIn, s.problem.text], [false, 'Signed out of GitHub.'])
   assert.equal(ctx.requests.length, before)
 })
 
-test('device sign-in: cancel; an Echo without it says to update', async () => {
-  const ctx = fakeCtx({ device: true, signin: null })
+test('device sign-in: refused, cancelled (a later confirmation isn’t kept), GitHub won’t give a code; an Echo that can’t keep it says to update', async () => {
+  const answers = { asked: [], token: { error: 'access_denied' }, api: '' }
+  const ctx = fakeCtx({ keep: true, signin: null, fetch: deviceGitHub(answers) })
   apply(ctx)
   await ctx.run('signinStart')
-  assert.deepEqual(ctx.deviceCalls[0], ['start', 'github.com', null])
+  await new Promise((r) => setTimeout(r, 1050))
+  assert.deepEqual(await ctx.run('signinPoll'), { state: 'denied' })
+  await ctx.run('signinStart')
   assert.equal(await ctx.run('signinCancel'), true)
-  assert.equal((await ctx.run('signinStatus')).state, 'none')
+  answers.token = { access_token: 'gho_late', scope: 'repo' }
+  await new Promise((r) => setTimeout(r, 1050))
+  assert.deepEqual(await ctx.run('signinPoll'), { state: 'none' })
+  assert.deepEqual(ctx.keptNow, {})
+  const noCode = fakeCtx({ keep: true, signin: null, fetch: () => ({ status: 200, body: '{"error":"device_flow_disabled","error_description":"Device Flow must be explicitly enabled"}' }) })
+  apply(noCode)
+  await assert.rejects(noCode.run('signinStart'), /GitHub didn’t give a code \(200: Device Flow must be explicitly enabled\)/)
   const old = fakeCtx({ signin: null })
   apply(old)
-  assert.equal((await old.run('status')).canDevice, false)
-  await assert.rejects(old.run('signinStart'), /can’t sign you in to GitHub itself yet/)
+  assert.equal((await old.run('status')).canKeep, false)
+  await assert.rejects(old.run('signinStart'), /can’t keep a GitHub sign-in made here yet/)
 })
 
 test('a failed read keeps the last answer and says why', async () => {

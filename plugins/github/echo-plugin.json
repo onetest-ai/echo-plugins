@@ -3,26 +3,19 @@
   "name": "GitHub",
   "version": "0.2.0",
   "echo": ">=0.9.2",
-  "summary": "Your GitHub in Echo: CI, open pull requests and reviews on Today, GitHub's items in My work and in each thread's Work, with the computer's own GitHub sign-in or one Echo makes with you",
+  "summary": "Your GitHub in Echo: CI, open pull requests and reviews on Today, GitHub's items in My work and in each thread's Work, with the computer's own GitHub sign-in or one you make in Echo",
   "icon": "icon.svg",
   "uses": {
     "signin": {
       "hosts": [
         "github.com"
       ],
-      "device": {
-        "github.com": {
-          "client_id": "Ov23liJp2izMv6RZZS23",
-          "scopes": [
-            "repo",
-            "read:org"
-          ]
-        }
-      }
+      "keep": true
     },
     "network": {
       "hosts": [
-        "api.github.com"
+        "api.github.com",
+        "github.com"
       ]
     },
     "work": {},

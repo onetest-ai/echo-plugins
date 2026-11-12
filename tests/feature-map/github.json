@@ -124,7 +124,7 @@
   },
   {
    "id": "F-GH-21",
-   "title": "Without a GitHub sign-in on the computer, Echo signs you in itself (a code confirmed on github.com, onetest-ai's OAuth app, no secret): the section shows the code and github.com/login/device, reads GitHub with it, says when GitHub refuses it, and signs out; the token is never in the plugin's store",
+   "title": "Without a GitHub sign-in on the computer, sign in here: the plugin runs GitHub's device sign-in (a code confirmed at github.com/login/device, onetest-ai's OAuth app, no secret) and Echo keeps the sign-in; the section reads GitHub with it, says when GitHub refuses it, and signs out; the token is never in the plugin's store",
    "priority": "high",
    "check": "agent"
   }

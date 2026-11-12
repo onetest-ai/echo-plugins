@@ -1,5 +1,5 @@
 // GitHub — the client half: its own Settings section. Shows whose GitHub sign-in on this computer Echo reads with (or
-// signs you in with Echo: a code to confirm on github.com),
+// lets you sign in here: a code to confirm on github.com),
 // lets you pick what to show from your organisations and the repos you worked on lately (as a thread's sources are
 // picked: chips, + to add), and what Echo last read. The widgets themselves are Echo's (Today → Edit).
 
@@ -7,7 +7,7 @@ const MARK = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><p
 const MARK_SMALL = MARK.replace('<svg ', '<svg width="11" height="11" style="vertical-align:-1px" ')
 const CI = { passing: '✓ CI passing', failing: '✗ CI failing', running: '● CI running', none: 'no CI' }
 const FROM = { gh: 'the GitHub CLI’s sign-in on this computer', git: 'git’s sign-in to github.com on this computer', echo: 'the sign-in you made in Echo' }
-/** The only address the code is entered at (Echo's own, checked again here). */
+/** The only address the code is entered at (the host half's own, checked again here). */
 const DEVICE_URL = /^https:\/\/github\.com\/login\/device$/
 const SUGGESTED = 12
 const REPO = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/
@@ -17,7 +17,7 @@ export function apply(ctx) {
   const listen = ctx.listen || ((type, fn, opts) => document.addEventListener(type, fn, opts))
   const { esc, setCard, setRow } = ctx.ui
   let st = null, found = null, error = '', busy = '', polls = 0, more = false, adding = false
-  // Signing in with Echo: the code shown while Echo waits ({code, url}), and how the last one ended.
+  // Signing in here: the code shown while it waits ({code, url}), and how the last one ended.
   let code = null, codeTimer = null, codeSaid = ''
 
   // Reading the status never clears an action's error: it stays until the next action.
@@ -36,19 +36,19 @@ export function apply(ctx) {
     if (!st.echoCanSignIn) return setRow('Your GitHub sign-in', 'This Echo can’t use the GitHub sign-in on this computer yet. Update Echo, then open this again.', '')
     if (st.signedIn) {
       const refused = st.problem && st.problem.code === 'auth'
-      const out = st.from === 'echo' && st.canDevice ? `<button class="btn" data-gh-signout${busy === 'signout' ? ' disabled' : ''}>Sign out</button>` : ''
+      const out = st.from === 'echo' && st.canKeep ? `<button class="btn" data-gh-signout${busy === 'signout' ? ' disabled' : ''}>Sign out</button>` : ''
       return setRow(st.login ? `@${esc(st.login)}` : 'Signed in', `With ${FROM[st.from] || 'the GitHub sign-in on this computer'}. Echo only reads GitHub; it never changes anything there.`,
         `${refused ? '<button class="btn" data-gh-check>Check again</button>' : ok} ${out}`)
     }
     if (code) {
       const link = DEVICE_URL.test(code.url) ? `<a class="wp-link" data-ext href="${esc(code.url)}" title="Open GitHub to enter the code">github.com/login/device ↗</a>` : 'github.com/login/device'
-      return setRow('Enter this code on GitHub', `<b class="gh-code" style="font-size:16px;letter-spacing:1px;user-select:all">${esc(code.code)}</b> at ${link} — Echo waits for you to confirm it there (15 minutes at most).`,
+      return setRow('Enter this code on GitHub', `<b class="gh-code" style="font-size:16px;letter-spacing:1px;user-select:all">${esc(code.code)}</b> at ${link} — waiting for you to confirm it there (15 minutes at most).`,
         '<button class="btn" data-gh-signin-cancel>Cancel</button>')
     }
     const noGh = st.sources && st.sources.gh === false
     const said = codeSaid ? `<div class="set-sub error">${esc(codeSaid)}</div>` : ''
-    if (st.canDevice) {
-      return setRow('Sign in to GitHub', `Echo uses the GitHub sign-in this computer already has (<code>gh auth login</code>), or signs you in itself: you confirm a code on github.com, and Echo keeps that sign-in for this plugin.${said}`,
+    if (st.canKeep) {
+      return setRow('Sign in to GitHub', `Echo uses the GitHub sign-in this computer already has (<code>gh auth login</code>), or sign in here: you confirm a code on github.com, and Echo keeps that sign-in for this plugin.${said}`,
         `<button class="btn primary" data-gh-signin${busy === 'signin' ? ' disabled' : ''}>${busy === 'signin' ? 'Asking GitHub…' : 'Sign in with GitHub'}</button> <button class="btn" data-gh-check${busy === 'check' ? ' disabled' : ''}>${busy === 'check' ? 'Checking…' : 'Check again'}</button>`)
     }
     return setRow('Sign in to GitHub on this computer', noGh
@@ -57,13 +57,13 @@ export function apply(ctx) {
       `<button class="btn primary" data-gh-check${busy === 'check' ? ' disabled' : ''}>${busy === 'check' ? 'Checking…' : 'Check again'}</button>`)
   }
 
-  // While Echo waits for the code to be confirmed: ask how it is going every 2 s.
+  // While the code waits to be confirmed: ask the host half every 2 s (it asks GitHub no more often than GitHub said).
   const SAID = { denied: 'GitHub said no — not signed in.', expired: 'The code ran out before it was confirmed — sign in again.', none: 'The sign-in stopped (Echo restarted?) — sign in again.' }
   const watchCode = () => {
     clearTimeout(codeTimer)
     codeTimer = setTimeout(async () => {
       let v
-      try { v = await ctx.call('signinStatus') } catch (e) { code = null; codeSaid = e.message; return ctx.render() }
+      try { v = await ctx.call('signinPoll') } catch (e) { code = null; codeSaid = e.message; return ctx.render() }
       if (v.state === 'waiting') return watchCode()
       code = null
       codeSaid = v.state === 'done' ? '' : v.state === 'failed' ? `GitHub couldn’t sign you in: ${v.error || 'no reason given'}` : (SAID[v.state] || '')

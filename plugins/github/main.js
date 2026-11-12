@@ -6,8 +6,8 @@
 //   (`ctx.signin.keep`, outside its store); held in memory only — never kept, shown, logged, or sent anywhere but
 //   api.github.com;
 // - what to show: the organisations and repos you pick in its section, found for you (`discover`: your
-//   organisations, the repos you pushed to lately), kept in its store as `picks.json`; nothing picked = the repos
-//   you pushed to last;
+//   organisations, the repos you pushed to lately), kept in its store as `picks.json`; nothing picked = nothing
+//   watched: the widgets ask you to pick (a thread's own repos still show on a widget set to that thread);
 // - every 5 minutes (and on Refresh) one GraphQL query: each repo's default-branch checks, its open pull requests
 //   and issues, and the pull requests waiting on your review — kept in its store as `state.json`;
 // - widgets on Today: Repos (list), CI (status), GitHub at a glance (stats).
@@ -77,7 +77,6 @@ export function buildQuery(entries, extra = []) {
       fields.push(`p${i}: search(query: $p${i}, type: ISSUE) { issueCount }`, `i${i}: search(query: $i${i}, type: ISSUE) { issueCount }`)
     }
   })
-  if (!entries.length) fields.push(`mine: viewer { ${REPOS(PER_OWNER)}, ${MINE}) { nodes { ...R } } }`)
   extra.slice(0, MAX_REPOS).forEach((full, i) => {
     const [o, n] = full.split('/')
     vars.push(`$xo${i}: String!`, `$xn${i}: String!`)
@@ -143,12 +142,11 @@ export function digest(answer, entries, now, extra = []) {
       counted.issues += (data[`i${i}`] || {}).issueCount || 0
     }
   })
-  if (!entries.length && data.mine) for (const r of data.mine.repositories.nodes) add(r)
-  if (!entries.length) for (const r of repos) { counted.prs += r.prs; counted.issues += r.issues }
-  // Reviews waiting on you: all of them with no entries, else those in the entries' repos and organisations.
+  // Reviews waiting on you in the entries' repos and organisations (nothing picked: none; a thread's repos count theirs
+  // below).
   const inScope = (full) => {
     const [owner] = full.toLowerCase().split('/')
-    return !entries.length || owners.includes(owner) || entries.some((e) => e.kind === 'repo' && entryName(e).toLowerCase() === full.toLowerCase())
+    return owners.includes(owner) || entries.some((e) => e.kind === 'repo' && entryName(e).toLowerCase() === full.toLowerCase())
   }
   let reviews = 0
   const rv = data.reviews || { issueCount: 0, nodes: [] }
@@ -159,7 +157,6 @@ export function digest(answer, entries, now, extra = []) {
     const r = repos.find((x) => x.repo.toLowerCase() === full.toLowerCase())
     if (r) r.reviews++
   }
-  if (!entries.length) reviews = Math.max(reviews, rv.issueCount || 0)
   // The threads' repos, by name (lower case), for a widget set to a thread; reviews for you counted in each.
   const threadRepos = {}
   extra.slice(0, MAX_REPOS).forEach((full, i) => {
@@ -273,6 +270,13 @@ export function forThread(st, names) {
 }
 
 const NO_THREAD_REPOS = 'No GitHub repos for this thread yet — add them in its Profile'
+const NO_PICKS = 'Pick a repo or organisation to watch — Settings → From plugins → GitHub'
+/** A widget with nothing picked to watch (and not set to a thread). */
+export function noPicks(kind) {
+  if (kind === 'list') return { items: [], empty: NO_PICKS }
+  if (kind === 'status') return { state: 'warn', title: 'CI', text: NO_PICKS }
+  return { items: [{ label: 'Pick a repo to watch', value: '—', tone: 'warn' }], note: 'Settings → From plugins → GitHub' }
+}
 /** A widget set to a thread with no repos. */
 export function noThreadRepos(kind) {
   if (kind === 'list') return { items: [], empty: NO_THREAD_REPOS }
@@ -378,15 +382,49 @@ const SIGN_IN_HOST = 'github.com'
 const PER_THREAD_REPO = 20
 const MAX_ROWS = 200
 
-/** The work query: what waits on you (reviews asked of you, your PRs with changes asked or checks failing, issues
- *  assigned to you) and each thread repo's open PRs and issues (`t<i>`). {query, variables}. */
-export function buildWorkQuery(threadRepos = []) {
-  const vars = ['$qr: String!', '$qm: String!', '$qa: String!'], fields = []
-  const variables = {
-    qr: 'is:open is:pr review-requested:@me archived:false',
-    qm: 'is:open is:pr author:@me archived:false',
-    qa: 'is:open is:issue assignee:@me archived:false',
+/** Search qualifiers for the picks and the threads' repos (`user:login`, `repo:owner/name` — GitHub ORs them), in
+ *  groups that fit GitHub's 256-character query beside the longest search (49 characters): one search each. At most
+ *  `max` groups; what doesn't fit goes in one last group of '' (searched without qualifiers, filtered here). */
+export function pickScopes(entries, threadRepos = [], max = 4) {
+  const quals = [], seen = new Set()
+  const add = (q) => { const k = q.toLowerCase(); if (!seen.has(k)) { seen.add(k); quals.push(q) } }
+  for (const e of entries) add(e.kind === 'repo' ? `repo:${e.owner}/${e.name}` : `user:${e.login}`)
+  for (const full of threadRepos) if (!inPicks(entries, full)) add(`repo:${full}`)
+  const groups = []
+  let cur = ''
+  for (const q of quals) {
+    if (cur && cur.length + 1 + q.length > 180) { groups.push(cur); cur = '' }
+    cur = cur ? `${cur} ${q}` : q
   }
+  if (cur) groups.push(cur)
+  return groups.length > max ? [...groups.slice(0, max - 1), ''] : groups
+}
+
+/** Is `full` (owner/name) one of the picks — the repo, or a repo of a picked organisation or user? */
+export function inPicks(entries, full) {
+  const f = String(full || '').toLowerCase(), owner = f.split('/')[0]
+  return entries.some((e) => (e.kind === 'repo' ? `${e.owner}/${e.name}`.toLowerCase() === f : e.login.toLowerCase() === owner))
+}
+
+/** The work query: what waits on you in the repos and organisations you picked (reviews asked of you, your PRs with
+ *  changes asked or checks failing, issues assigned to you) — nothing picked, none of it — and each thread repo's open
+ *  PRs and issues (`t<i>`). {query, variables}. */
+export function buildWorkQuery(threadRepos = [], entries = []) {
+  const vars = [], fields = [], variables = {}
+  // What waits on you in the picks and in the threads' repos (each row goes to My work or to its thread: `workRows`).
+  pickScopes(entries, threadRepos.slice(0, MAX_REPOS)).forEach((scope, g) => {
+    vars.push(`$qr${g}: String!`, `$qm${g}: String!`, `$qa${g}: String!`)
+    Object.assign(variables, {
+      [`qr${g}`]: `is:open is:pr review-requested:@me archived:false ${scope}`.trim(),
+      [`qm${g}`]: `is:open is:pr author:@me archived:false ${scope}`.trim(),
+      [`qa${g}`]: `is:open is:issue assignee:@me archived:false ${scope}`.trim(),
+    })
+    fields.push(
+      `rv${g}: search(query: $qr${g}, type: ISSUE, first: 50) { nodes { ... on PullRequest { number title url repository { nameWithOwner } } } }`,
+      `my${g}: search(query: $qm${g}, type: ISSUE, first: 50) { nodes { ... on PullRequest { number title url isDraft reviewDecision repository { nameWithOwner } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } }`,
+      `asg${g}: search(query: $qa${g}, type: ISSUE, first: 50) { nodes { ... on Issue { number title url repository { nameWithOwner } milestone { dueOn } } } }`,
+    )
+  })
   threadRepos.slice(0, MAX_REPOS).forEach((full, i) => {
     const [o, n] = full.split('/')
     vars.push(`$to${i}: String!`, `$tn${i}: String!`)
@@ -394,12 +432,9 @@ export function buildWorkQuery(threadRepos = []) {
     const by = `first: ${PER_THREAD_REPO}, orderBy: {field: UPDATED_AT, direction: DESC}`
     fields.push(`t${i}: repository(owner: $to${i}, name: $tn${i}) { nameWithOwner pullRequests(states: OPEN, ${by}) { nodes { number title url isDraft } } issues(states: OPEN, ${by}) { nodes { number title url milestone { dueOn } } } }`)
   })
-  const query = `query Work(${vars.join(', ')}) {
+  const query = `query Work${vars.length ? `(${vars.join(', ')})` : ''} {
   viewer { login }
   rateLimit { remaining limit resetAt }
-  rv: search(query: $qr, type: ISSUE, first: 50) { nodes { ... on PullRequest { number title url repository { nameWithOwner } } } }
-  my: search(query: $qm, type: ISSUE, first: 50) { nodes { ... on PullRequest { number title url isDraft reviewDecision repository { nameWithOwner } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } }
-  asg: search(query: $qa, type: ISSUE, first: 50) { nodes { ... on Issue { number title url repository { nameWithOwner } milestone { dueOn } } } }
   ${fields.join('\n  ')}
 }`
   return { query, variables }
@@ -414,12 +449,14 @@ const dueOf = (m) => (m && /^\d{4}-\d{2}-\d{2}/.test(m.dueOn || '') ? m.dueOn.sl
 /** The work answer → Echo's rows: `me` (Today → My work) and `threads` {thread id: rows} (its Work tab). `threads`:
  *  [{thread, value: [owner/name]}] (ctx.threads.list('repos')); a "me" row in a thread's repo names that thread, so it
  *  shows there too (once). */
-export function workRows(answer, threads = []) {
+export function workRows(answer, threads = [], entries = null) {
   const data = (answer && answer.data) || {}
-  const threadOf = (full) => {
-    const hit = threads.find((t) => (t.value || []).some((r) => r.toLowerCase() === String(full).toLowerCase()))
-    return hit ? hit.thread : undefined
-  }
+  // My work: only what is in the picks (the search was scoped to them; checked again here). What is only in a
+  // thread's repo goes to that thread's Work alone (`onlyThread`).
+  const picked = (full) => !entries || inPicks(entries, full)
+  const onlyThread = {}
+  const threadsOf = (full) => threads.filter((t) => (t.value || []).some((r) => r.toLowerCase() === String(full).toLowerCase())).map((t) => t.thread)
+  const threadOf = (full) => threadsOf(full)[0]
   const row = (id, title, kind, full, url, more = {}) => {
     const r = { id, title: titled(title), kind, where: full }
     const u = pageUrl(url)
@@ -430,12 +467,27 @@ export function workRows(answer, threads = []) {
     return r
   }
   const me = [], ids = new Set()
-  const push = (list, r) => { if (!ids.has(r.id) && list.length < MAX_ROWS) { ids.add(r.id); list.push(r) } }
-  for (const n of ((data.rv || {}).nodes || [])) {
+  // A row for My work if it is in the picks, else for its thread's Work if it is in a thread's repo, else none.
+  const push = (_, r) => {
+    if (ids.has(r.id)) return
+    ids.add(r.id)
+    // On My work if it is picked (and My work isn't full); every thread with this repo gets it in its Work — a row on
+    // My work already shows in its first thread (`r.thread`).
+    const onMe = picked(r.where) && me.length < MAX_ROWS
+    if (onMe) me.push(r)
+    for (const t of threadsOf(r.where)) {
+      if (onMe && t === r.thread) continue
+      const list = (onlyThread[t] = onlyThread[t] || [])
+      if (list.length < MAX_ROWS) list.push({ ...r, thread: t })
+    }
+  }
+  // Each search may come in groups (`rv0`, `rv1`, … — the picks split to fit GitHub's query length).
+  const nodesOf = (name) => Object.keys(data).filter((k) => new RegExp(`^${name}\\d*$`).test(k)).flatMap((k) => (data[k] && data[k].nodes) || [])
+  for (const n of nodesOf('rv')) {
     if (!n || !n.repository) continue
     push(me, row(`pr:${n.repository.nameWithOwner}#${n.number}`, n.title, 'review', n.repository.nameWithOwner, n.url))
   }
-  for (const n of ((data.my || {}).nodes || [])) {
+  for (const n of nodesOf('my')) {
     if (!n || !n.repository) continue
     const c = n.commits && n.commits.nodes && n.commits.nodes[0] && n.commits.nodes[0].commit
     const checks = c && c.statusCheckRollup && c.statusCheckRollup.state
@@ -445,7 +497,7 @@ export function workRows(answer, threads = []) {
     const why = asked && failing ? 'changes asked, checks failing' : asked ? 'changes asked' : 'checks failing'
     push(me, row(`pr:${n.repository.nameWithOwner}#${n.number}`, `${titled(n.title)} — ${why}`, 'my PR', n.repository.nameWithOwner, n.url))
   }
-  for (const n of ((data.asg || {}).nodes || [])) {
+  for (const n of nodesOf('asg')) {
     if (!n || !n.repository) continue
     push(me, row(`issue:${n.repository.nameWithOwner}#${n.number}`, n.title, 'assigned', n.repository.nameWithOwner, n.url, { due: dueOf(n.milestone) }))
   }
@@ -467,6 +519,9 @@ export function workRows(answer, threads = []) {
   const out = {}
   for (const t of threads) {
     const rows = [], seen = new Set()
+    // What waits on you there first (a review asked, your PR, an issue assigned — even beyond its 20 latest), then
+    // the repos' open PRs and issues.
+    for (const r of onlyThread[t.thread] || []) { seen.add(r.id); rows.push(r) }
     for (const full of t.value || []) for (const r of byRepo[String(full).toLowerCase()] || []) {
       if (!seen.has(r.id) && rows.length < MAX_ROWS) { seen.add(r.id); rows.push(r) }
     }
@@ -488,7 +543,18 @@ export function threadRepoNames(threads = []) {
 export function apply(ctx) {
   const read = (path) => { try { const t = ctx.store.read(path); return t ? JSON.parse(t) : null } catch { return null } }
   let state = read('state.json')
-  let picks = read('picks.json') || []
+  const kept = () => { const v = read('picks.json'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] }
+  let picks = kept()
+  // The picks as kept now: another process (a terminal's or Claude's `echoctl plugin call github pick`) may have
+  // changed picks.json since this one read it — then GitHub is read again for them (the app's; a terminal reads itself).
+  const current = () => {
+    const now = kept()
+    if (JSON.stringify(now) !== JSON.stringify(picks)) {
+      picks = now
+      if (!ctx.terminal) Promise.resolve().then(() => refresh('user')).catch(() => {})
+    }
+    return picks
+  }
   let found = read('discovery.json')
   let running = null
   // The sign-in Echo gave: in memory only, asked for again when GitHub refuses it.
@@ -538,13 +604,17 @@ export function apply(ctx) {
   }
 
   /** Read GitHub once (one at a time); keeps the last good answer and says what went wrong beside it. */
+  let again = false
   const refresh = (why) => {
-    if (running) return running
+    // Asked while a read is on its way (the picks changed meanwhile, say): read once more after it.
+    if (running) { again = true; return running }
     running = (async () => {
       const rate = state && state.rate
       if (why !== 'user' && rate && rate.remaining < RESERVE && Date.now() < new Date(rate.resetAt).getTime()) return state
-      const { entries } = parseEntries(picks.join('\n'))
+      const { entries } = parseEntries(current().join('\n'))
       const now = new Date().toISOString()
+      // Nothing picked and no thread with repos: nothing to read (the widgets ask to pick; My work has no GitHub rows).
+      if (!entries.length && !threadRepoNames(threads()).length) { await readWork(threads()); return state }
       let res
       try { res = await askSigned(buildQuery(entries, threadRepoNames(threads()))) } catch {
         save({ ...(state || {}), problem: { code: 'down', text: 'GitHub can’t be reached from this computer; Echo tries again in 5 minutes.', at: now } })
@@ -570,7 +640,10 @@ export function apply(ctx) {
       save(digest(answer, entries, now, extra))
       await readWork(ts)
       return state
-    })().finally(() => { running = null })
+    })().finally(() => {
+      running = null
+      if (again) { again = false; refresh('user') }
+    })
     return running
   }
 
@@ -578,11 +651,18 @@ export function apply(ctx) {
    *  rows (Echo marks them "not updated" if they get old). Echo is told to ask again. */
   const readWork = async (ts) => {
     try {
-      const res = await askSigned(buildWorkQuery(threadRepoNames(ts)))
+      const { entries } = parseEntries(current().join('\n'))
+      if (!entries.length && !threadRepoNames(ts).length) {
+        // Nothing to look in: no rows, and GitHub isn't asked.
+        if (state && state.work && ((state.work.me || []).length || Object.keys(state.work.threads || {}).length)) save({ ...state, work: { at: new Date().toISOString(), me: [], threads: {} } })
+        else return
+      } else {
+      const res = await askSigned(buildWorkQuery(threadRepoNames(ts), entries))
       if (res.none || res.r.status !== 200) return
       const answer = JSON.parse(res.r.body)
       if (!answer || !answer.data) return
-      save({ ...state, work: { at: new Date().toISOString(), ...workRows(answer, ts) } })
+      save({ ...state, work: { at: new Date().toISOString(), ...workRows(answer, ts, entries) } })
+      }
     } catch (e) { ctx.log(`work: ${e.message}`); return }
     if (ctx.work) { try { ctx.work.changed() } catch (e) { ctx.log(`work.changed: ${e.message}`) } }
   }
@@ -614,7 +694,7 @@ export function apply(ctx) {
       from: (s && s.from) || '',
       sources,
       login: (state && state.login) || (found && found.login) || '',
-      picks,
+      picks: current(),
       checks: (state && state.checks) || [],
       at: (state && state.at) || '',
       problem: (state && state.problem) || null,
@@ -628,7 +708,7 @@ export function apply(ctx) {
   ctx.command('discover', async ({ force } = {}) => discover(!!force))
 
   ctx.command('pick', async ({ entry, on } = {}) => {
-    savePicks(toggled(picks, String(entry || ''), on !== false))
+    savePicks(toggled(current(), String(entry || ''), on !== false))
     await refresh('user')
     return picks
   })
@@ -720,11 +800,14 @@ export function apply(ctx) {
   })
 
   const signedIn = () => !!signin || !!(state && state.at && !(state.problem && state.problem.code === 'auth'))
-  // A widget set to a thread shows that thread's repos; none set → your picks.
-  const scoped = (params, kind, draw) => {
-    if (!params || !params.thread) return draw(state)
-    const st = forThread(state, reposOf(params.thread))
-    return st === null && signedIn() ? noThreadRepos(kind) : draw(st)
+  // A widget set to a thread shows that thread's repos; none set → your picks; nothing picked → it asks you to pick.
+  // The sign-in is looked up first (Echo may ask before the first read has): never "Sign in" while there is one.
+  const scoped = async (params, kind, draw) => {
+    await getSignin(false)
+    if (!params || !params.thread) return signedIn() && !parseEntries(current().join('\n')).entries.length ? noPicks(kind) : draw(state)
+    // A thread with no repos says so; one with repos shows them (or "Reading GitHub…" before the first good read).
+    const names = reposOf(params.thread)
+    return names.length ? draw(forThread(state, names)) : signedIn() ? noThreadRepos(kind) : draw(null)
   }
   ctx.widgets.provide('repos', ({ params } = {}) => scoped(params, 'list', (st) => reposWidget(st, params, signedIn())))
   ctx.widgets.provide('ci', ({ params } = {}) => scoped(params, 'status', (st) => ciWidget(st, signedIn())))
@@ -732,10 +815,14 @@ export function apply(ctx) {
 
   // Today → My work and the threads' Work tabs: from what was last read, never waiting on GitHub.
   if (ctx.work) {
-    ctx.work.provide(({ scope, thread } = {}) => {
+    ctx.work.provide(async ({ scope, thread } = {}) => {
       const w = state && state.work
+      if (w) await getSignin(false)
       if (!w || !signedIn()) return []
-      return scope === 'thread' ? (w.threads && w.threads[thread]) || [] : w.me || []
+      if (scope === 'thread') return (w.threads && w.threads[thread]) || []
+      // Only what is in the picks now (rows read before a pick was taken off, or by an older version, drop out at once).
+      const { entries } = parseEntries(current().join('\n'))
+      return (w.me || []).filter((r) => inPicks(entries, r.where))
     })
   }
   hint()

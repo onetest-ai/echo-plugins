@@ -203,6 +203,10 @@ test('device sign-in answers: only a code and device code of plain characters; t
   // At GitHub's 60 s already, slow_down stays at 60 (never more, never a failure).
   assert.deepEqual(deviceStepOf({ error: 'slow_down' }, 60), { state: 'waiting', interval: 60 })
   assert.deepEqual(deviceStepOf({ error: 'slow_down', interval: 600 }, 60), { state: 'waiting', interval: 60 })
+  // GitHub's interval of 0 or less, or one under ours: never faster than before.
+  assert.deepEqual(deviceStepOf({ error: 'slow_down', interval: 0 }, 5), { state: 'waiting', interval: 6 })
+  assert.deepEqual(deviceStepOf({ error: 'slow_down', interval: -5 }, 1), { state: 'waiting', interval: 2 })
+  assert.deepEqual(deviceStepOf({ error: 'slow_down', interval: 3 }, 5), { state: 'waiting', interval: 6 })
   assert.deepEqual(deviceStepOf({ error: 'expired_token' }, 5), { state: 'expired' })
   assert.deepEqual(deviceStepOf({ error: 'access_denied' }, 5), { state: 'denied' })
   assert.deepEqual(deviceStepOf({ error: 'incorrect_client_credentials', error_description: 'The client_id\nis wrong' }, 5), { state: 'failed', error: 'The client_idis wrong' })

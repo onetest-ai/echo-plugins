@@ -68,7 +68,10 @@ export function apply(ctx) {
     clearTimeout(codeTimer)
     codeTimer = setTimeout(async () => {
       let v
-      try { v = await ctx.call('signinPoll') } catch (e) { code = null; codeSaid = e.message; return ctx.render() }
+      const asked = code
+      try { v = await ctx.call('signinPoll') } catch (e) { if (code !== asked) return; code = null; codeSaid = e.message; return ctx.render() }
+      // Cancelled (or a new code asked for) while this answer was on its way: it is about nothing on screen.
+      if (code !== asked) return
       if (v.state === 'waiting') return watchCode()
       code = null
       codeSaid = v.state === 'done' ? '' : v.state === 'failed' ? `GitHub couldn’t sign you in: ${v.error || 'no reason given'}` : (SAID[v.state] || '')

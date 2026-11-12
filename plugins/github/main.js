@@ -222,7 +222,8 @@ export function deviceStepOf(v, interval) {
   const e = v && v.error
   if (!e && v && typeof v.access_token === 'string' && /^[\x21-\x7e]{1,8000}$/.test(v.access_token)) return { state: 'done', token: v.access_token }
   if (e === 'authorization_pending') return { state: 'waiting' }
-  if (e === 'slow_down') return { state: 'waiting', interval: Math.min(60, Number.isFinite(v.interval) ? v.interval : interval + 5) }
+  // Slower, never faster than before (nor 0): GitHub's new interval, else 5 s more; 60 s at most.
+  if (e === 'slow_down') return { state: 'waiting', interval: Math.min(60, Math.max(interval + 1, Number.isFinite(v.interval) ? v.interval : interval + 5)) }
   if (e === 'expired_token') return { state: 'expired' }
   if (e === 'access_denied') return { state: 'denied' }
   const said = String((v && (v.error_description || v.error)) || 'no reason given').replace(/[\x00-\x1f]/g, '').slice(0, 200)

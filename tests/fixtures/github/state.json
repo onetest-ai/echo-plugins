@@ -1,5 +1,7 @@
 {
   "token": "gho_acmetestfaketoken0000000000000000000",
+  "device_token": "gho_acmedevice00000000000000000000000000",
+  "device": "pending",
   "down": false,
   "rate_remaining": 4990,
   "viewer": "ada-acme",

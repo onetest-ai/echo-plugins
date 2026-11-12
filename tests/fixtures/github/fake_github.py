@@ -14,11 +14,21 @@ State keys: token (the one it accepts), down (answer 502), rate_remaining, viewe
 {owner/name: {ci, failing: [workflow names], prs, issues, pushed, pulls: [{number, title, draft}], open_issues:
 [{number, title, due}]}}, reviews [owner/name, …] (the widgets' count), and for the work query: review_requests
 [{repo, number, title}], my_prs [{repo, number, title, decision, checks}], assigned [{repo, number, title, due}].
-Echo reaches it through its debug-only ECHOCTL_TEST_HOSTS (api.github.com=http://127.0.0.1:<port>).
+
+GitHub's device sign-in (Echo's own, `ctx.signin.device`; github.com=http://127.0.0.1:<port>): POST /login/device/code
+answers the code WDJB-MJHT (device code dev-madeup-1, interval 1 s); POST /login/oauth/access_token answers
+authorization_pending until the state's `device` is "approved" (then the made-up `device_token`, scope repo,read:org,
+which /graphql accepts from then on, as `token`) or "denied" (access_denied). A case confirms the code for the user:
+
+    curl -s -X POST http://127.0.0.1:<port>/_state -d '{"device": "approved"}'
+
+Both are logged in /_log with their form's field names and client_id (never a token).
+Echo reaches it through its debug-only ECHOCTL_TEST_HOSTS (api.github.com=…,github.com=http://127.0.0.1:<port>).
 """
 import json
 import re
 import sys
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(sys.argv[1])
@@ -186,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
             state = merge(load(), json.loads(raw))
             save(state)
             return self.send(200, state)
+        if self.path in ("/login/device/code", "/login/oauth/access_token"):
+            return self.device(raw)
         if self.path != "/graphql":
             return self.send(404, {"message": "Not Found"})
         body = json.loads(raw)
@@ -194,9 +206,26 @@ class Handler(BaseHTTPRequestHandler):
         if state.get("down"):
             return self.send(502, {"message": "Server Error"})
         auth = self.headers.get("Authorization", "")
-        if auth.lower() != f"bearer {state['token']}".lower():
+        ok = [state["token"]] + ([state["device_token"]] if state.get("device") == "approved" and state.get("device_token") else [])
+        if auth.lower() not in [f"bearer {t}".lower() for t in ok]:
             return self.send(401, {"message": "Bad credentials"})
         self.send(200, answer(state, body))
+
+    def device(self, raw):
+        form = dict(urllib.parse.parse_qsl(raw))
+        LOG.append({"method": "POST", "path": self.path, "client_id": form.get("client_id", ""), "fields": sorted(form)})
+        state = load()
+        if self.path == "/login/device/code":
+            if not form.get("client_id"):
+                return self.send(200, {"error": "unauthorized_client"})
+            return self.send(200, {"device_code": "dev-madeup-1", "user_code": "WDJB-MJHT", "verification_uri": "https://github.com/login/device", "expires_in": 900, "interval": 1})
+        if form.get("device_code") != "dev-madeup-1":
+            return self.send(200, {"error": "incorrect_device_code"})
+        if state.get("device") == "denied":
+            return self.send(200, {"error": "access_denied"})
+        if state.get("device") == "approved":
+            return self.send(200, {"access_token": state["device_token"], "token_type": "bearer", "scope": "repo,read:org"})
+        return self.send(200, {"error": "authorization_pending"})
 
 
 if __name__ == "__main__":

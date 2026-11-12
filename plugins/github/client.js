@@ -1,11 +1,14 @@
-// GitHub — the client half: its own Settings section. Shows whose GitHub sign-in on this computer Echo reads with,
+// GitHub — the client half: its own Settings section. Shows whose GitHub sign-in on this computer Echo reads with (or
+// lets you sign in here: a code to confirm on github.com),
 // lets you pick what to show from your organisations and the repos you worked on lately (as a thread's sources are
 // picked: chips, + to add), and what Echo last read. The widgets themselves are Echo's (Today → Edit).
 
 const MARK = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>'
 const MARK_SMALL = MARK.replace('<svg ', '<svg width="11" height="11" style="vertical-align:-1px" ')
 const CI = { passing: '✓ CI passing', failing: '✗ CI failing', running: '● CI running', none: 'no CI' }
-const FROM = { gh: 'the GitHub CLI’s sign-in', git: 'git’s sign-in to github.com' }
+const FROM = { gh: 'the GitHub CLI’s sign-in on this computer', git: 'git’s sign-in to github.com on this computer', echo: 'the sign-in you made in Echo' }
+/** The only address the code is entered at (the host half's own, checked again here). */
+const DEVICE_URL = /^https:\/\/github\.com\/login\/device$/
 const SUGGESTED = 12
 const REPO = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/
 
@@ -14,6 +17,8 @@ export function apply(ctx) {
   const listen = ctx.listen || ((type, fn, opts) => document.addEventListener(type, fn, opts))
   const { esc, setCard, setRow } = ctx.ui
   let st = null, found = null, error = '', busy = '', polls = 0, more = false, adding = false
+  // Signing in here: the code shown while it waits ({code, url}), and how the last one ended.
+  let code = null, codeTimer = null, codeSaid = '', copied = false
 
   // Reading the status never clears an action's error: it stays until the next action.
   const load = async () => {
@@ -30,14 +35,56 @@ export function apply(ctx) {
   const signInRow = () => {
     if (!st.echoCanSignIn) return setRow('Your GitHub sign-in', 'This Echo can’t use the GitHub sign-in on this computer yet. Update Echo, then open this again.', '')
     if (st.signedIn) {
-      return setRow(st.login ? `@${esc(st.login)}` : 'Signed in', `With ${FROM[st.from] || 'the GitHub sign-in'} on this computer. Echo only reads GitHub; it never changes anything there.`,
-        st.problem && st.problem.code === 'auth' ? `<button class="btn" data-gh-check>Check again</button>` : ok)
+      const refused = st.problem && st.problem.code === 'auth'
+      const out = st.from === 'echo' && st.canKeep ? `<button class="btn" data-gh-signout${busy === 'signout' ? ' disabled' : ''}>Sign out</button>` : ''
+      return setRow(st.login ? `@${esc(st.login)}` : 'Signed in', `With ${FROM[st.from] || 'the GitHub sign-in on this computer'}. Echo only reads GitHub; it never changes anything there.`,
+        `${refused ? '<button class="btn" data-gh-check>Check again</button>' : ok} ${out}`)
+    }
+    if (code) {
+      // One click copies the code (an Echo with ctx.ui.copy) and opens GitHub's page, as `gh auth login` does; the code
+      // stays on screen. The address is the host half's own, checked again here — never one from GitHub's answer.
+      const canCopy = !!(ctx.ui && ctx.ui.copy)
+      const open = DEVICE_URL.test(code.url)
+        ? `<a class="btn primary" style="text-decoration:none" data-ext data-gh-copy href="${esc(code.url)}" title="${canCopy ? 'Copies the code and opens github.com/login/device' : 'Opens github.com/login/device'}">${canCopy ? 'Copy code &amp; open GitHub' : 'Open GitHub'}</a>`
+        : ''
+      return setRow('Enter this code on GitHub', `<b class="gh-code" style="font-size:16px;letter-spacing:1px;user-select:all">${esc(code.code)}</b> at github.com/login/device — waiting for you to confirm it there (15 minutes at most).${copied ? ' <span class="set-ok">Copied</span>' : ''}`,
+        `${open} <button class="btn" data-gh-signin-cancel>Cancel</button>`)
     }
     const noGh = st.sources && st.sources.gh === false
+    const said = codeSaid ? `<div class="set-sub error">${esc(codeSaid)}</div>` : ''
+    if (st.canKeep) {
+      return setRow('Sign in to GitHub', `Echo uses the GitHub sign-in this computer already has (<code>gh auth login</code>), or sign in here: you confirm a code on github.com, and Echo keeps that sign-in for this plugin.${said}`,
+        `<button class="btn primary" data-gh-signin${busy === 'signin' ? ' disabled' : ''}>${busy === 'signin' ? 'Asking GitHub…' : 'Sign in with GitHub'}</button> <button class="btn" data-gh-check${busy === 'check' ? ' disabled' : ''}>${busy === 'check' ? 'Checking…' : 'Check again'}</button>`)
+    }
     return setRow('Sign in to GitHub on this computer', noGh
       ? 'Echo uses the sign-in you already have here. Install the GitHub CLI (<code>brew install gh</code>), run <code>gh auth login</code> in a terminal, then check again.'
       : 'Echo uses the sign-in you already have here. Run <code>gh auth login</code> in a terminal, then check again.',
       `<button class="btn primary" data-gh-check${busy === 'check' ? ' disabled' : ''}>${busy === 'check' ? 'Checking…' : 'Check again'}</button>`)
+  }
+
+  // While the code waits to be confirmed: ask the host half every 2 s (it asks GitHub no more often than GitHub said).
+  const SAID = { denied: 'GitHub said no — not signed in.', expired: 'The code ran out before it was confirmed — sign in again.', none: 'The sign-in stopped (Echo restarted?) — sign in again.' }
+  const watchCode = () => {
+    clearTimeout(codeTimer)
+    codeTimer = setTimeout(async () => {
+      let v
+      const asked = code
+      try { v = await ctx.call('signinPoll') } catch (e) { if (code !== asked) return; code = null; codeSaid = e.message; return ctx.render() }
+      // Cancelled (or a new code asked for) while this answer was on its way: it is about nothing on screen.
+      if (code !== asked) return
+      if (v.state === 'waiting') return watchCode()
+      code = null
+      codeSaid = v.state === 'done' ? '' : v.state === 'failed' ? `GitHub couldn’t sign you in: ${v.error || 'no reason given'}` : (SAID[v.state] || '')
+      found = null
+      await load()
+      // GitHub is being read with the new sign-in: show what it finds.
+      if (v.state === 'done') setTimeout(load, 3000)
+    }, 2000)
+  }
+  const startSignIn = async () => {
+    busy = 'signin'; error = ''; codeSaid = ''; ctx.render()
+    try { code = await ctx.call('signinStart'); copied = false; watchCode() } catch (e) { codeSaid = e.message }
+    busy = ''; ctx.render()
   }
 
   const chip = (name, title = '') => `<span class="tok"${title ? ` title="${esc(title)}"` : ''}>${esc(name)}<button data-gh-pick="${esc(name)}" data-on="0" aria-label="Stop showing ${esc(name)}">×</button></span>`
@@ -166,10 +213,16 @@ export function apply(ctx) {
       if ('ghTadding' in d) { tAdding = d.thread; return ctx.render() }
       if ('ghTadd' in d) return tAddTyped(d.thread)
     }
-    const t = ev.target.closest && ev.target.closest('[data-gh-check],[data-gh-pick],[data-gh-more],[data-gh-adding],[data-gh-add],[data-gh-refresh]')
+    // The code copied on the click itself (Echo opens the link: it is an `a[data-ext]`).
+    const c = ev.target.closest && ev.target.closest('[data-gh-copy]')
+    if (c && code && ctx.ui && ctx.ui.copy) { try { ctx.ui.copy(code.code); copied = true } catch (e) { codeSaid = e.message } ctx.render(); return }
+    const t = ev.target.closest && ev.target.closest('[data-gh-check],[data-gh-pick],[data-gh-more],[data-gh-adding],[data-gh-add],[data-gh-refresh],[data-gh-signin],[data-gh-signin-cancel],[data-gh-signout]')
     if (!t || t.disabled) return
     const d = t.dataset
     if ('ghCheck' in d) { found = null; return run('check', () => ctx.call('refresh')) }
+    if ('ghSignin' in d) return startSignIn()
+    if ('ghSigninCancel' in d) { clearTimeout(codeTimer); code = null; codeSaid = ''; try { await ctx.call('signinCancel') } catch (e) { error = e.message } return ctx.render() }
+    if ('ghSignout' in d) { found = null; return run('signout', () => ctx.call('signOut')) }
     if ('ghPick' in d) return run('pick', () => ctx.call('pick', { entry: d.ghPick, on: d.on === '1' }))
     if ('ghMore' in d) { more = true; return ctx.render() }
     if ('ghAdding' in d) { adding = true; return ctx.render() }

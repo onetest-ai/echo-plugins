@@ -6,9 +6,11 @@
 
 /** `signin`: what Echo's `ctx.signin.get(host)` gives ({token, from} or null; a function of host for more); leave it
  *  out for an Echo without `ctx.signin`. `sources`: what `ctx.signin.sources(host)` says. */
+/** `keep`: true for an Echo that keeps a sign-in the plugin made (`ctx.signin.keep/forget`, with `signin`): what it
+ *  keeps is handed back first by `get` as {token, from: 'echo'}; it is in `keptNow` ({host: token}). */
 /** `threads`: Echo's values per thread for `ctx.threads` ({thread: {key: value}}; leave it out for an Echo without it);
  *  `work`: true for `ctx.work`; `hints`: true for `ctx.view.hints`. */
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, threads, work = false, hints = false } = {}) {
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
   const ctx = {
@@ -48,6 +50,13 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
       sources: async () => sources,
     }
   }
+  const keptNow = {}
+  if (keep && ctx.signin) {
+    const get = ctx.signin.get
+    ctx.signin.get = async (host, opts) => (host in keptNow ? (signins.push(opts && opts.fresh ? `${host} (fresh)` : host), { token: keptNow[host], from: 'echo' }) : get(host, opts))
+    ctx.signin.keep = (host, token) => { if (typeof token !== 'string' || !token || /[\x00-\x1f]/.test(token)) throw new Error('a sign-in is one line of text, 8 KB at most'); keptNow[host] = token; return true }
+    ctx.signin.forget = (host) => { const was = host in keptNow; delete keptNow[host]; return was }
+  }
   if (threads !== undefined) {
     ctx.threads = {
       get: (thread, key) => ((threads[thread] || {})[key] ?? null),
@@ -63,7 +72,7 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   if (hints) ctx.view = { hints: (list) => { hintsNow.splice(0, hintsNow.length, ...JSON.parse(JSON.stringify(list || []))) } }
   return Object.assign(ctx, {
     // What the tests look at.
-    commands, providers, timers, pushed, logs, requests, signins, files, settingsNow: settings, threadsNow: threads, workState, hintsNow,
+    commands, providers, timers, pushed, logs, requests, signins, keptNow, files, settingsNow: settings, threadsNow: threads, workState, hintsNow,
     /** Ask its work rows as Echo does. */
     rows: async (ask) => JSON.parse(JSON.stringify(await workState.provider(ask))),
     /** Run a command as Echo does: JSON in, JSON out. */

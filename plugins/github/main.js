@@ -1,7 +1,10 @@
 // GitHub — the host half. Reads GitHub for the repos and organisations you pick and keeps what it read, so Today's
 // widgets answer at once and never wait on GitHub:
 // - your sign-in: the one this computer already has (GitHub CLI, else git), which Echo hands it (`ctx.signin`,
-//   `uses.signin`); held in memory only — never kept, shown, logged, or sent anywhere but api.github.com;
+//   `uses.signin`) — or, without one, one you make here: GitHub's device sign-in (a code you confirm on github.com)
+//   with onetest-ai's OAuth app (a public client id; there is no secret), which Echo then keeps for it
+//   (`ctx.signin.keep`, outside its store); held in memory only — never kept, shown, logged, or sent anywhere but
+//   api.github.com;
 // - what to show: the organisations and repos you pick in its section, found for you (`discover`: your
 //   organisations, the repos you pushed to lately), kept in its store as `picks.json`; nothing picked = the repos
 //   you pushed to last;
@@ -187,14 +190,44 @@ export function digest(answer, entries, now, extra = []) {
 }
 
 /** A failed answer in the user's words: {code: auth | rate | down | error, text}. */
-export function problemOf(status, body) {
+export function problemOf(status, body, from = '') {
   let msg = ''
   try { msg = (JSON.parse(body || '{}').message || '') } catch { msg = '' }
+  if (status === 401 && from === 'echo') return { code: 'auth', text: 'GitHub refused the sign-in you made in Echo — it may have been revoked. Sign out, then sign in again.' }
   if (status === 401) return { code: 'auth', text: 'GitHub refused this computer’s sign-in — it may have expired. Run gh auth login again, then Check again.' }
   if (status === 403 && /rate limit/i.test(msg)) return { code: 'rate', text: 'GitHub’s limit for this hour is used up; Echo tries again after it resets.' }
   if (status === 403) return { code: 'auth', text: 'GitHub refused: this computer’s sign-in can’t read this (it needs repo access; gh auth login gives it).' }
   if (status >= 500 || status === 0) return { code: 'down', text: 'GitHub didn’t answer; Echo tries again in 5 minutes.' }
   return { code: 'error', text: `GitHub answered ${status}${msg ? `: ${msg}` : ''}.` }
+}
+
+// GitHub's device sign-in (RFC 8628) with onetest-ai's OAuth app: its id is public, it has no secret.
+export const CLIENT_ID = 'Ov23liJp2izMv6RZZS23'
+export const SCOPES = 'repo read:org'
+export const DEVICE_URL = 'https://github.com/login/device'
+
+/** GitHub's answer to "a code, please": {code, device, expires, interval}, or null when it isn't one (the address shown
+ *  is always DEVICE_URL, never one from the answer). */
+export function deviceCodeOf(v) {
+  const code = v && typeof v.user_code === 'string' && /^[A-Z0-9]{4,8}(-[A-Z0-9]{4,8})?$/.test(v.user_code) ? v.user_code : ''
+  const device = v && typeof v.device_code === 'string' && /^[\x21-\x7e]{1,200}$/.test(v.device_code) ? v.device_code : ''
+  if (!code || !device) return null
+  const num = (x, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(x) ? x : d))
+  return { code, device, expires: num(v.expires_in, 900, 60, 1800), interval: num(v.interval, 5, 1, 60) }
+}
+
+/** GitHub's answer while it waits for the code: {state: waiting | done | denied | expired | failed, token?, interval?,
+ *  error?}. */
+export function deviceStepOf(v, interval) {
+  const e = v && v.error
+  if (!e && v && typeof v.access_token === 'string' && /^[\x21-\x7e]{1,8000}$/.test(v.access_token)) return { state: 'done', token: v.access_token }
+  if (e === 'authorization_pending') return { state: 'waiting' }
+  // Slower, never faster than before (nor 0): GitHub's new interval, else 5 s more; 60 s at most.
+  if (e === 'slow_down') return { state: 'waiting', interval: Math.min(60, Math.max(interval + 1, Number.isFinite(v.interval) ? v.interval : interval + 5)) }
+  if (e === 'expired_token') return { state: 'expired' }
+  if (e === 'access_denied') return { state: 'denied' }
+  const said = String((v && (v.error_description || v.error)) || 'no reason given').replace(/[\x00-\x1f]/g, '').slice(0, 200)
+  return { state: 'failed', error: said }
 }
 
 /** "10:42", or "Mon 10:42" when not today (local time). */
@@ -523,7 +556,7 @@ export function apply(ctx) {
       }
       const r = res.r
       if (r.status !== 200) {
-        save({ ...(state || {}), problem: { ...problemOf(r.status, r.body), at: now } })
+        save({ ...(state || {}), problem: { ...problemOf(r.status, r.body, signin && signin.from), at: now } })
         return state
       }
       let answer
@@ -559,7 +592,7 @@ export function apply(ctx) {
     if (!force && found && Date.now() - new Date(found.at).getTime() < 600000) return found
     const res = await askSigned({ query: DISCOVER })
     if (res.none) return found
-    if (res.r.status !== 200) throw new Error(problemOf(res.r.status, res.r.body).text)
+    if (res.r.status !== 200) throw new Error(problemOf(res.r.status, res.r.body, signin && signin.from).text)
     let answer
     try { answer = JSON.parse(res.r.body) } catch { answer = null }
     const d = discovered(answer, new Date().toISOString())
@@ -575,6 +608,8 @@ export function apply(ctx) {
     if (!s && ctx.signin && ctx.signin.sources) { try { sources = await ctx.signin.sources(SIGN_IN_HOST) } catch { sources = null } }
     return {
       echoCanSignIn: !!ctx.signin,
+      // This Echo can keep a sign-in made here (GitHub's device sign-in, run by this plugin).
+      canKeep: !!(ctx.signin && ctx.signin.keep),
       signedIn: !!s,
       from: (s && s.from) || '',
       sources,
@@ -599,6 +634,74 @@ export function apply(ctx) {
   })
 
   ctx.command('refresh', async () => { await getSignin(true); await refresh('user'); return true })
+
+  // Signing in here (no sign-in on this computer): GitHub's device sign-in, run by this plugin — GitHub gives a code,
+  // the section shows it with DEVICE_URL, you confirm it there; the section asks `signinPoll` every 2 s and this asks
+  // GitHub no more often than it said. The device code stays in this memory; the sign-in goes to Echo to keep.
+  let pending = null, ended = ''
+  const keeper = () => {
+    if (!ctx.signin || !ctx.signin.keep) throw new Error('This Echo can’t keep a GitHub sign-in made here yet — update Echo, or run gh auth login')
+    return ctx.signin
+  }
+  const form = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')
+  const toGitHub = async (path, fields) => {
+    const r = await ctx.http.fetch(`https://github.com/${path}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'echo-github-plugin' },
+      body: form(fields),
+    })
+    let v = null
+    try { v = JSON.parse(r.body) } catch { v = null }
+    return { status: r.status, v: v && typeof v === 'object' ? v : {} }
+  }
+  ctx.command('signinStart', async () => {
+    keeper()
+    const { status, v } = await toGitHub('login/device/code', { client_id: CLIENT_ID, scope: SCOPES })
+    const c = deviceCodeOf(v)
+    if (!c) throw new Error(`GitHub didn’t give a code (${status}${v.error ? `: ${String(v.error_description || v.error).replace(/[\x00-\x1f]/g, '').slice(0, 120)}` : ''})`)
+    const now = Date.now()
+    pending = { code: c.code, device: c.device, interval: c.interval, next: now + c.interval * 1000, until: now + c.expires * 1000 }
+    ended = ''
+    return { code: c.code, url: DEVICE_URL, expires_in: c.expires }
+  })
+  ctx.command('signinPoll', async () => {
+    if (!pending) return { state: ended || 'none' }
+    const now = Date.now()
+    const waiting = () => ({ state: 'waiting', code: pending.code, url: DEVICE_URL })
+    if (now >= pending.until) { pending = null; ended = 'expired'; return { state: ended } }
+    if (now < pending.next) return waiting()
+    const p = pending
+    let step
+    try {
+      const { v } = await toGitHub('login/oauth/access_token', { client_id: CLIENT_ID, device_code: p.device, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' })
+      step = deviceStepOf(v, p.interval)
+    } catch { step = { state: 'waiting' } }  // not reached this time: asked again at the next turn
+    if (pending !== p) return { state: ended || 'none' }  // cancelled meanwhile
+    if (step.interval) p.interval = step.interval
+    p.next = Date.now() + p.interval * 1000
+    if (step.state === 'waiting') return waiting()
+    pending = null
+    if (step.state !== 'done') { ended = step.state; return step.error ? { state: ended, error: step.error } : { state: ended } }
+    keeper().keep(SIGN_IN_HOST, step.token)
+    ended = 'done'
+    signin = null
+    await getSignin(true)
+    found = null
+    refresh('user')
+    return { state: 'done' }
+  })
+  ctx.command('signinCancel', () => { const was = !!pending; pending = null; ended = ''; return was })
+  ctx.command('signOut', async () => {
+    keeper().forget(SIGN_IN_HOST)
+    signin = null
+    ended = ''
+    // The computer's own sign-in, if there is one, is used again.
+    await getSignin(true)
+    found = null
+    if (signin) await refresh('user')
+    else if (state && state.at) save({ ...state, problem: { code: 'auth', text: 'Signed out of GitHub.', at: new Date().toISOString() } })
+    return true
+  })
 
   // A thread's repos (its Profile row): read, and one turned on or off (owner/repo only).
   ctx.command('threadRepos', ({ thread } = {}) => reposOf(String(thread || '')))

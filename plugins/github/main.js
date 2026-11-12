@@ -538,6 +538,9 @@ export function apply(ctx) {
   const read = (path) => { try { const t = ctx.store.read(path); return t ? JSON.parse(t) : null } catch { return null } }
   let state = read('state.json')
   let picks = read('picks.json') || []
+  // The picks as kept now: another process (a terminal's or Claude's `echoctl plugin call github pick`) may have
+  // changed picks.json since this one read it.
+  const current = () => (picks = read('picks.json') || [])
   let found = read('discovery.json')
   let running = null
   // The sign-in Echo gave: in memory only, asked for again when GitHub refuses it.
@@ -592,7 +595,7 @@ export function apply(ctx) {
     running = (async () => {
       const rate = state && state.rate
       if (why !== 'user' && rate && rate.remaining < RESERVE && Date.now() < new Date(rate.resetAt).getTime()) return state
-      const { entries } = parseEntries(picks.join('\n'))
+      const { entries } = parseEntries(current().join('\n'))
       const now = new Date().toISOString()
       // Nothing picked and no thread with repos: nothing to read (the widgets ask to pick; My work has no GitHub rows).
       if (!entries.length && !threadRepoNames(threads()).length) { await readWork(threads()); return state }
@@ -629,7 +632,7 @@ export function apply(ctx) {
    *  rows (Echo marks them "not updated" if they get old). Echo is told to ask again. */
   const readWork = async (ts) => {
     try {
-      const { entries } = parseEntries(picks.join('\n'))
+      const { entries } = parseEntries(current().join('\n'))
       if (!entries.length && !threadRepoNames(ts).length) {
         // Nothing to look in: no rows, and GitHub isn't asked.
         if (state && state.work && ((state.work.me || []).length || Object.keys(state.work.threads || {}).length)) save({ ...state, work: { at: new Date().toISOString(), me: [], threads: {} } })
@@ -672,7 +675,7 @@ export function apply(ctx) {
       from: (s && s.from) || '',
       sources,
       login: (state && state.login) || (found && found.login) || '',
-      picks,
+      picks: current(),
       checks: (state && state.checks) || [],
       at: (state && state.at) || '',
       problem: (state && state.problem) || null,
@@ -686,7 +689,7 @@ export function apply(ctx) {
   ctx.command('discover', async ({ force } = {}) => discover(!!force))
 
   ctx.command('pick', async ({ entry, on } = {}) => {
-    savePicks(toggled(picks, String(entry || ''), on !== false))
+    savePicks(toggled(current(), String(entry || ''), on !== false))
     await refresh('user')
     return picks
   })
@@ -782,7 +785,7 @@ export function apply(ctx) {
   // The sign-in is looked up first (Echo may ask before the first read has): never "Sign in" while there is one.
   const scoped = async (params, kind, draw) => {
     await getSignin(false)
-    if (!params || !params.thread) return signedIn() && !parseEntries(picks.join('\n')).entries.length ? noPicks(kind) : draw(state)
+    if (!params || !params.thread) return signedIn() && !parseEntries(current().join('\n')).entries.length ? noPicks(kind) : draw(state)
     // A thread with no repos says so; one with repos shows them (or "Reading GitHub…" before the first good read).
     const names = reposOf(params.thread)
     return names.length ? draw(forThread(state, names)) : signedIn() ? noThreadRepos(kind) : draw(null)
@@ -799,7 +802,7 @@ export function apply(ctx) {
       if (!w || !signedIn()) return []
       if (scope === 'thread') return (w.threads && w.threads[thread]) || []
       // Only what is in the picks now (rows read before a pick was taken off, or by an older version, drop out at once).
-      const { entries } = parseEntries(picks.join('\n'))
+      const { entries } = parseEntries(current().join('\n'))
       return (w.me || []).filter((r) => inPicks(entries, r.where))
     })
   }

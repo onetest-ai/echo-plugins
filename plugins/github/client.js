@@ -168,7 +168,22 @@ export function apply(ctx) {
   // on lately and any other. Kept by Echo per thread (`ctx.threads`, through the host half).
   const repos = {}          // thread id → its repos (undefined: not read yet)
   let tAdding = '', tError = {}, discovering = false
-  const readThread = (id) => ctx.call('threadRepos', { thread: id }).then((v) => { repos[id] = v || []; ctx.render() }, (e) => { tError[id] = e.message; ctx.render() })
+  // A thread's repos as Echo keeps them — set here, in another window, by Claude or from a terminal: drawn again only
+  // when they changed.
+  const readThread = (id) => ctx.call('threadRepos', { thread: id }).then((v) => {
+    const next = v || []
+    if (JSON.stringify(next) !== JSON.stringify(repos[id])) { repos[id] = next; ctx.render() }
+  }, (e) => { tError[id] = e.message; ctx.render() })
+  // While a thread's GitHub row is on screen, look again every 5 s (Echo's own store, not GitHub); stops when none is.
+  let watching = null
+  const watchRows = () => {
+    if (watching) return
+    watching = setInterval(() => {
+      const boxes = [...document.querySelectorAll('[data-thread-slot="github:repos"]')].filter((b) => b._afterFor)
+      if (!boxes.length) { clearInterval(watching); watching = null; return }
+      for (const b of boxes) readThread(b._afterFor)
+    }, 5000)
+  }
   const tPick = async (id, entry, on) => {
     tError[id] = ''
     try { repos[id] = await ctx.call('threadPick', { thread: id, entry, on }) } catch (e) { tError[id] = e.message }
@@ -193,7 +208,9 @@ export function apply(ctx) {
       return `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${lead}${chips} ${offers} ${add}</div>${why}`
     },
     after(box, t) {
-      if (repos[t.id] === undefined) readThread(t.id)
+      // Each time the row is drawn afresh (the Profile opened again), and every few seconds while it is shown.
+      readThread(t.id)
+      watchRows()
       // Something to offer: the repos you worked on lately (read once).
       if (!found && !discovering) { discovering = true; ctx.call('discover').then((d) => { found = d; ctx.render() }, () => {}) }
     },

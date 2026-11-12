@@ -335,6 +335,21 @@ test('nothing picked, no thread repos: GitHub isn’t asked at all; a picks.json
   assert.deepEqual(await ctx.rows({ scope: 'me' }), [])
 })
 
+test('picks changed by another process (a terminal’s or Claude’s plugin call): the running plugin uses them at once', async () => {
+  const ctx = fakeCtx({ signin: GH, work: true, threads: {}, fetch: (url, opts) => github(opts) })
+  apply(ctx)
+  assert.match((await ctx.widget('glance')).items[0].label, /Pick a repo/)
+  // Another process writes picks.json (as `echoctl plugin call github pick` does in its own process).
+  ctx.files['picks.json'] = JSON.stringify(['acme-test'])
+  assert.deepEqual((await ctx.run('status')).picks, ['acme-test'])
+  await ctx.run('refresh')
+  assert.ok(ctx.requests.some((r) => JSON.parse(r.opts.body).query.startsWith('query GitHub')), 'read with the new picks')
+  assert.doesNotMatch(JSON.stringify(await ctx.widget('glance')), /Pick a repo/)
+  // And a pick toggled here builds on what is kept, not on what this process read before.
+  ctx.files['picks.json'] = JSON.stringify(['acme-test', 'acme-labs/site'])
+  assert.deepEqual(await ctx.run('pick', { entry: 'ada-acme/notes', on: true }), ['acme-test', 'acme-labs/site', 'ada-acme/notes'])
+})
+
 test('a failed read keeps the last answer and says why', async () => {
   let status = 200
   const ctx = fakeCtx({ signin: GH, store: PICKED, fetch: (url, opts) => (status === 200 ? github(opts) : { status, body: '' }) })

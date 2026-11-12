@@ -10,4 +10,4 @@ Each plugin is a folder in `plugins/` with `echo-plugin.json`, a host half (`mai
 | Area | Guide | What it covers |
 |---|---|---|
 | Development | .ai-run/guides/plugins/plugin-development.md | layout, manifest, the same look and words in every plugin, outside services, versions and commits |
-| Testing | .ai-run/guides/testing/plugin-testing.md | gates, unit tests outside Echo, checking in a running Echo, acceptance |
+| Testing | .ai-run/guides/testing/plugin-testing.md | as Echo: functional cases and the map run on Echo built from source with fake services; unit tests as a supplement |

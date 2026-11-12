@@ -1,0 +1,22 @@
+{
+  "data": {
+    "viewer": { "login": "ada-acme" },
+    "rateLimit": { "remaining": 4800, "limit": 5000, "resetAt": "2026-11-12T10:00:00Z" },
+    "rv": { "nodes": [
+      { "number": 7, "title": "Fix login", "url": "https://github.com/acme-test/api/pull/7", "repository": { "nameWithOwner": "acme-test/api" } },
+      { "number": 3, "title": "Elsewhere", "url": "https://github.com/elsewhere-co/tool/pull/3", "repository": { "nameWithOwner": "elsewhere-co/tool" } }
+    ] },
+    "my": { "nodes": [
+      { "number": 11, "title": "Speed up search", "url": "https://github.com/acme-test/web/pull/11", "isDraft": false, "reviewDecision": "CHANGES_REQUESTED", "repository": { "nameWithOwner": "acme-test/web" }, "commits": { "nodes": [ { "commit": { "statusCheckRollup": { "state": "SUCCESS" } } } ] } },
+      { "number": 12, "title": "Bump deps", "url": "https://github.com/acme-test/web/pull/12", "isDraft": false, "reviewDecision": "APPROVED", "repository": { "nameWithOwner": "acme-test/web" }, "commits": { "nodes": [ { "commit": { "statusCheckRollup": { "state": "FAILURE" } } } ] } },
+      { "number": 13, "title": "All good", "url": "https://github.com/acme-test/web/pull/13", "isDraft": false, "reviewDecision": "APPROVED", "repository": { "nameWithOwner": "acme-test/web" }, "commits": { "nodes": [ { "commit": { "statusCheckRollup": { "state": "SUCCESS" } } } ] } }
+    ] },
+    "asg": { "nodes": [
+      { "number": 21, "title": "Flaky test <b>", "url": "https://github.com/acme-test/api/issues/21", "repository": { "nameWithOwner": "acme-test/api" }, "milestone": { "dueOn": "2026-11-20T08:00:00Z" } },
+      { "number": 22, "title": "Tidy labels", "url": "javascript:alert(1)", "repository": { "nameWithOwner": "acme-labs/site" }, "milestone": null }
+    ] },
+    "t0": { "nameWithOwner": "acme-test/api",
+      "pullRequests": { "nodes": [ { "number": 7, "title": "Fix login", "url": "https://github.com/acme-test/api/pull/7", "isDraft": false }, { "number": 8, "title": "WIP: cache", "url": "https://github.com/acme-test/api/pull/8", "isDraft": true } ] },
+      "issues": { "nodes": [ { "number": 21, "title": "Flaky test <b>", "url": "https://github.com/acme-test/api/issues/21", "milestone": { "dueOn": "2026-11-20T08:00:00Z" } } ] } }
+  }
+}

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# A fake git for the GitHub plugin's functional cases: any credential call (`git credential fill`, also behind options
+# such as `-c credential.interactive=false`) answers from $FAKE_GIT_TOKEN_FILE (made up; none = no sign-in) and NEVER
+# reaches the real git — this computer's real credentials are never read. Anything else goes to the real git.
+set -u
+for a in "$@"; do
+  if [ "$a" = "credential" ]; then
+    fill=0
+    for b in "$@"; do [ "$b" = "fill" ] && fill=1; done
+    [ "$fill" = 1 ] || exit 0              # approve / reject / erase: nothing kept
+    cat > /dev/null                         # the request (protocol, host)
+    file="${FAKE_GIT_TOKEN_FILE:-}"
+    if [ -n "$file" ] && [ -s "$file" ]; then
+      printf 'protocol=https\nhost=github.com\nusername=ada-acme\npassword=%s\n' "$(cat "$file")"
+      exit 0
+    fi
+    echo "fatal: could not read Username for 'https://github.com': terminal prompts disabled" >&2
+    exit 128
+  fi
+done
+here="$(cd "$(dirname "$0")" && pwd)"
+real="$(PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -vx "$here" | paste -sd: -)" command -v git)"
+exec "$real" "$@"

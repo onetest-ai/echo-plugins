@@ -455,10 +455,8 @@ export function workRows(answer, threads = [], entries = null) {
   // thread's repo goes to that thread's Work alone (`onlyThread`).
   const picked = (full) => !entries || inPicks(entries, full)
   const onlyThread = {}
-  const threadOf = (full) => {
-    const hit = threads.find((t) => (t.value || []).some((r) => r.toLowerCase() === String(full).toLowerCase()))
-    return hit ? hit.thread : undefined
-  }
+  const threadsOf = (full) => threads.filter((t) => (t.value || []).some((r) => r.toLowerCase() === String(full).toLowerCase())).map((t) => t.thread)
+  const threadOf = (full) => threadsOf(full)[0]
   const row = (id, title, kind, full, url, more = {}) => {
     const r = { id, title: titled(title), kind, where: full }
     const u = pageUrl(url)
@@ -472,8 +470,15 @@ export function workRows(answer, threads = [], entries = null) {
   // A row for My work if it is in the picks, else for its thread's Work if it is in a thread's repo, else none.
   const push = (_, r) => {
     if (ids.has(r.id)) return
-    const list = picked(r.where) ? me : r.thread ? (onlyThread[r.thread] = onlyThread[r.thread] || []) : null
-    if (list && list.length < MAX_ROWS) { ids.add(r.id); list.push(r) }
+    ids.add(r.id)
+    const inPick = picked(r.where)
+    if (inPick && me.length < MAX_ROWS) me.push(r)
+    // Every thread with this repo gets it in its Work (a picked one already shows in its first thread, `r.thread`).
+    for (const t of threadsOf(r.where)) {
+      if (inPick && t === r.thread) continue
+      const list = (onlyThread[t] = onlyThread[t] || [])
+      if (list.length < MAX_ROWS) list.push({ ...r, thread: t })
+    }
   }
   // Each search may come in groups (`rv0`, `rv1`, … — the picks split to fit GitHub's query length).
   const nodesOf = (name) => Object.keys(data).filter((k) => new RegExp(`^${name}\\d*$`).test(k)).flatMap((k) => (data[k] && data[k].nodes) || [])
@@ -537,10 +542,18 @@ export function threadRepoNames(threads = []) {
 export function apply(ctx) {
   const read = (path) => { try { const t = ctx.store.read(path); return t ? JSON.parse(t) : null } catch { return null } }
   let state = read('state.json')
-  let picks = read('picks.json') || []
+  const kept = () => { const v = read('picks.json'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] }
+  let picks = kept()
   // The picks as kept now: another process (a terminal's or Claude's `echoctl plugin call github pick`) may have
-  // changed picks.json since this one read it.
-  const current = () => (picks = read('picks.json') || [])
+  // changed picks.json since this one read it — then GitHub is read again for them (the app's; a terminal reads itself).
+  const current = () => {
+    const now = kept()
+    if (JSON.stringify(now) !== JSON.stringify(picks)) {
+      picks = now
+      if (!ctx.terminal) Promise.resolve().then(() => refresh('user')).catch(() => {})
+    }
+    return picks
+  }
   let found = read('discovery.json')
   let running = null
   // The sign-in Echo gave: in memory only, asked for again when GitHub refuses it.

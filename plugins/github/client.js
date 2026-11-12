@@ -172,15 +172,21 @@ export function apply(ctx) {
   // when they changed.
   const readThread = (id) => ctx.call('threadRepos', { thread: id }).then((v) => {
     const next = v || []
-    if (JSON.stringify(next) !== JSON.stringify(repos[id])) { repos[id] = next; ctx.render() }
+    // A good read clears an error an earlier one left (the host half reloading during an update, say).
+    const hadError = !!tError[id]
+    delete tError[id]
+    if (hadError || JSON.stringify(next) !== JSON.stringify(repos[id])) { repos[id] = next; ctx.render() }
   }, (e) => { tError[id] = e.message; ctx.render() })
   // While a thread's GitHub row is on screen, look again every 5 s (Echo's own store, not GitHub); stops when none is.
-  let watching = null
+  // One check at a time for the window, whatever version set it (Echo can't stop an unloaded plugin's timers: an
+  // update's new half takes the old one's place).
+  const WATCH = '__echoGithubThreadWatch'
+  if (globalThis[WATCH]) { clearInterval(globalThis[WATCH]); globalThis[WATCH] = null }
   const watchRows = () => {
-    if (watching) return
-    watching = setInterval(() => {
+    if (globalThis[WATCH]) return
+    globalThis[WATCH] = setInterval(() => {
       const boxes = [...document.querySelectorAll('[data-thread-slot="github:repos"]')].filter((b) => b._afterFor)
-      if (!boxes.length) { clearInterval(watching); watching = null; return }
+      if (!boxes.length) { clearInterval(globalThis[WATCH]); globalThis[WATCH] = null; return }
       for (const b of boxes) readThread(b._afterFor)
     }, 5000)
   }

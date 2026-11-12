@@ -315,6 +315,13 @@ test('a thread’s repo that isn’t picked: what waits on you there goes to its
   assert.deepEqual(w.me.map((r) => r.id), ['issue:other-org/x#3'])
   // The review keeps its kind (not a plain "PR"), once; the assigned issue beyond the repo's latest 20 is there too.
   assert.deepEqual(w.threads.th.map((r) => [r.id, r.kind]), [['pr:acme/api#7', 'review'], ['issue:acme/api#99', 'assigned']])
+  // Two threads with the same repo (any case): both get them, each tagged with its own thread.
+  const two = workRows(ans, [{ thread: 'a', value: ['acme/api'] }, { thread: 'b', value: ['ACME/api'] }], entries)
+  for (const t of ['a', 'b']) assert.deepEqual(two.threads[t].slice(0, 2).map((r) => [r.id, r.kind, r.thread]), [['pr:acme/api#7', 'review', t], ['issue:acme/api#99', 'assigned', t]])
+  // Picked and in two threads: My work once (tagged with the first), the second thread's Work too.
+  const both = workRows(ans, [{ thread: 'a', value: ['other-org/x'] }, { thread: 'b', value: ['other-org/x'] }], entries)
+  assert.deepEqual(both.me.map((r) => [r.id, r.thread]), [['issue:other-org/x#3', 'a']])
+  assert.deepEqual(both.threads.b.map((r) => [r.id, r.thread]), [['issue:other-org/x#3', 'b']])
 })
 
 test('a widget set to a thread with repos, before any good read: "Reading", never "no repos"', async () => {
@@ -342,9 +349,15 @@ test('picks changed by another process (a terminal’s or Claude’s plugin call
   // Another process writes picks.json (as `echoctl plugin call github pick` does in its own process).
   ctx.files['picks.json'] = JSON.stringify(['acme-test'])
   assert.deepEqual((await ctx.run('status')).picks, ['acme-test'])
-  await ctx.run('refresh')
+  // Noticed: GitHub is read again for them, unasked (My work and the widgets don't wait 5 minutes).
+  await new Promise((r) => setTimeout(r, 20))
   assert.ok(ctx.requests.some((r) => JSON.parse(r.opts.body).query.startsWith('query GitHub')), 'read with the new picks')
+  assert.ok(ctx.requests.some((r) => JSON.parse(r.opts.body).variables.qa0 === 'is:open is:issue assignee:@me archived:false user:acme-test'), 'and My work for them')
   assert.doesNotMatch(JSON.stringify(await ctx.widget('glance')), /Pick a repo/)
+  // A picks.json that isn't a list counts as nothing picked (no call fails).
+  ctx.files['picks.json'] = '{"not": "a list"}'
+  assert.match((await ctx.widget('glance')).items[0].label, /Pick a repo/)
+  assert.deepEqual((await ctx.run('status')).picks, [])
   // And a pick toggled here builds on what is kept, not on what this process read before.
   ctx.files['picks.json'] = JSON.stringify(['acme-test', 'acme-labs/site'])
   assert.deepEqual(await ctx.run('pick', { entry: 'ada-acme/notes', on: true }), ['acme-test', 'acme-labs/site', 'ada-acme/notes'])
@@ -441,7 +454,8 @@ test('the work query: three searches scoped to the picks, each thread repo, name
   const groups = pickScopes(many)
   assert.ok(groups.length >= 2 && groups.length <= 4)
   assert.ok(groups.every((g) => `is:open is:pr review-requested:@me archived:false ${g}`.length <= 256))
-  assert.equal(groups.join(' ').split(' ').filter(Boolean).length, groups.at(-1) === '' ? groups.join(' ').split(' ').filter(Boolean).length : 12, 'every pick in a group')
+  assert.notEqual(groups.at(-1), '', '12 picks fit in 4 groups: none searched without qualifiers')
+  assert.equal(groups.join(' ').split(' ').filter(Boolean).length, 12, 'every pick in a group, once')
   const huge = parseEntries(Array.from({ length: 40 }, (_, i) => `some-organisation-${i}/some-repository-${i}`).join('\n')).entries
   const hg = pickScopes(huge)
   assert.equal(hg.length, 4)

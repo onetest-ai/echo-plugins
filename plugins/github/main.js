@@ -1,7 +1,9 @@
 // GitHub — the host half. Reads GitHub for the repos and organisations you pick and keeps what it read, so Today's
 // widgets answer at once and never wait on GitHub:
 // - your sign-in: the one this computer already has (GitHub CLI, else git), which Echo hands it (`ctx.signin`,
-//   `uses.signin`); held in memory only — never kept, shown, logged, or sent anywhere but api.github.com;
+//   `uses.signin`) — or, without one, the one Echo makes with you (`ctx.signin.device`: GitHub's device sign-in with
+//   onetest-ai's OAuth app, a public client id and no secret; Echo keeps it, never this plugin); held in memory only —
+//   never kept, shown, logged, or sent anywhere but api.github.com;
 // - what to show: the organisations and repos you pick in its section, found for you (`discover`: your
 //   organisations, the repos you pushed to lately), kept in its store as `picks.json`; nothing picked = the repos
 //   you pushed to last;
@@ -187,9 +189,10 @@ export function digest(answer, entries, now, extra = []) {
 }
 
 /** A failed answer in the user's words: {code: auth | rate | down | error, text}. */
-export function problemOf(status, body) {
+export function problemOf(status, body, from = '') {
   let msg = ''
   try { msg = (JSON.parse(body || '{}').message || '') } catch { msg = '' }
+  if (status === 401 && from === 'echo') return { code: 'auth', text: 'GitHub refused the sign-in you made in Echo — it may have been revoked. Sign out, then sign in again.' }
   if (status === 401) return { code: 'auth', text: 'GitHub refused this computer’s sign-in — it may have expired. Run gh auth login again, then Check again.' }
   if (status === 403 && /rate limit/i.test(msg)) return { code: 'rate', text: 'GitHub’s limit for this hour is used up; Echo tries again after it resets.' }
   if (status === 403) return { code: 'auth', text: 'GitHub refused: this computer’s sign-in can’t read this (it needs repo access; gh auth login gives it).' }
@@ -523,7 +526,7 @@ export function apply(ctx) {
       }
       const r = res.r
       if (r.status !== 200) {
-        save({ ...(state || {}), problem: { ...problemOf(r.status, r.body), at: now } })
+        save({ ...(state || {}), problem: { ...problemOf(r.status, r.body, signin && signin.from), at: now } })
         return state
       }
       let answer
@@ -559,7 +562,7 @@ export function apply(ctx) {
     if (!force && found && Date.now() - new Date(found.at).getTime() < 600000) return found
     const res = await askSigned({ query: DISCOVER })
     if (res.none) return found
-    if (res.r.status !== 200) throw new Error(problemOf(res.r.status, res.r.body).text)
+    if (res.r.status !== 200) throw new Error(problemOf(res.r.status, res.r.body, signin && signin.from).text)
     let answer
     try { answer = JSON.parse(res.r.body) } catch { answer = null }
     const d = discovered(answer, new Date().toISOString())
@@ -575,6 +578,8 @@ export function apply(ctx) {
     if (!s && ctx.signin && ctx.signin.sources) { try { sources = await ctx.signin.sources(SIGN_IN_HOST) } catch { sources = null } }
     return {
       echoCanSignIn: !!ctx.signin,
+      // This Echo can sign you in itself (GitHub's device sign-in).
+      canDevice: !!(ctx.signin && ctx.signin.device),
       signedIn: !!s,
       from: (s && s.from) || '',
       sources,
@@ -599,6 +604,35 @@ export function apply(ctx) {
   })
 
   ctx.command('refresh', async () => { await getSignin(true); await refresh('user'); return true })
+
+  // Signing in with Echo (no sign-in on this computer): Echo asks GitHub for a code, the section shows it with GitHub's
+  // address, Echo waits for you to confirm it there and keeps the sign-in. The code's address is Echo's own.
+  const device = () => {
+    if (!ctx.signin || !ctx.signin.device) throw new Error('This Echo can’t sign you in to GitHub itself yet — update Echo, or run gh auth login')
+    return ctx.signin.device
+  }
+  ctx.command('signinStart', async () => device().start(SIGN_IN_HOST))
+  ctx.command('signinStatus', async () => {
+    const v = device().status(SIGN_IN_HOST)
+    // Signed in just now: read GitHub with it.
+    if (v.state === 'done' && v.signed_in && !(signin && signin.from === 'echo')) {
+      await getSignin(true)
+      found = null
+      refresh('user')
+    }
+    return v
+  })
+  ctx.command('signinCancel', () => device().cancel(SIGN_IN_HOST))
+  ctx.command('signOut', async () => {
+    device().forget(SIGN_IN_HOST)
+    signin = null
+    // The computer's own sign-in, if there is one, is used again.
+    await getSignin(true)
+    found = null
+    if (signin) await refresh('user')
+    else if (state && state.at) save({ ...state, problem: { code: 'auth', text: 'Signed out of GitHub.', at: new Date().toISOString() } })
+    return true
+  })
 
   // A thread's repos (its Profile row): read, and one turned on or off (owner/repo only).
   ctx.command('threadRepos', ({ thread } = {}) => reposOf(String(thread || '')))

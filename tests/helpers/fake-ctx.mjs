@@ -6,9 +6,12 @@
 
 /** `signin`: what Echo's `ctx.signin.get(host)` gives ({token, from} or null; a function of host for more); leave it
  *  out for an Echo without `ctx.signin`. `sources`: what `ctx.signin.sources(host)` says. */
+/** `device`: true for Echo's own device sign-in (`ctx.signin.device`, with `signin`): `start` answers a made-up code
+ *  and waits; `deviceEnds(state)` ends it as Echo would ('done' keeps Echo's own sign-in: `signin` should then give
+ *  {from: 'echo'}); what the plugin asked is in `deviceCalls`. */
 /** `threads`: Echo's values per thread for `ctx.threads` ({thread: {key: value}}; leave it out for an Echo without it);
  *  `work`: true for `ctx.work`; `hints`: true for `ctx.view.hints`. */
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, threads, work = false, hints = false } = {}) {
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, device = false, threads, work = false, hints = false } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
   const ctx = {
@@ -48,6 +51,23 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
       sources: async () => sources,
     }
   }
+  const deviceCalls = [], deviceNow = { state: 'none', signed_in: false }
+  if (device && ctx.signin) {
+    ctx.signin.device = {
+      start: async (host, opts) => {
+        deviceCalls.push(['start', host, opts ? JSON.parse(JSON.stringify(opts)) : null])
+        Object.assign(deviceNow, { state: 'waiting', code: 'WDJB-MJHT', url: `https://${host}/login/device` })
+        return { code: 'WDJB-MJHT', url: `https://${host}/login/device`, expires_in: 900 }
+      },
+      status: (host) => {
+        deviceCalls.push(['status', host])
+        const { code, url, ...rest } = deviceNow
+        return deviceNow.state === 'waiting' ? { ...rest, code, url } : rest
+      },
+      cancel: (host) => { deviceCalls.push(['cancel', host]); const was = deviceNow.state === 'waiting'; deviceNow.state = 'none'; return was },
+      forget: (host) => { deviceCalls.push(['forget', host]); const was = deviceNow.signed_in; Object.assign(deviceNow, { state: 'none', signed_in: false }); return { forgot: was } },
+    }
+  }
   if (threads !== undefined) {
     ctx.threads = {
       get: (thread, key) => ((threads[thread] || {})[key] ?? null),
@@ -63,7 +83,9 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   if (hints) ctx.view = { hints: (list) => { hintsNow.splice(0, hintsNow.length, ...JSON.parse(JSON.stringify(list || []))) } }
   return Object.assign(ctx, {
     // What the tests look at.
-    commands, providers, timers, pushed, logs, requests, signins, files, settingsNow: settings, threadsNow: threads, workState, hintsNow,
+    commands, providers, timers, pushed, logs, requests, signins, deviceCalls, files,
+    /** End the device sign-in waiting as Echo would: 'done' (signed in), 'denied', 'expired' or 'failed'. */
+    deviceEnds: (state) => { Object.assign(deviceNow, { state, signed_in: state === 'done' || deviceNow.signed_in }); delete deviceNow.code; delete deviceNow.url }, settingsNow: settings, threadsNow: threads, workState, hintsNow,
     /** Ask its work rows as Echo does. */
     rows: async (ask) => JSON.parse(JSON.stringify(await workState.provider(ask))),
     /** Run a command as Echo does: JSON in, JSON out. */

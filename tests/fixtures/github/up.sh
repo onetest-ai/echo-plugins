@@ -40,7 +40,7 @@ cat >> "$dir/env" <<EOF
 export PATH="$here/bin:$echo_repo/target/debug:\$PATH"
 export FAKE_GH_TOKEN_FILE="$dir/gh-token"
 export FAKE_GIT_TOKEN_FILE="$dir/git-token"
-export ECHOCTL_TEST_HOSTS="api.github.com=http://127.0.0.1:$fport"
+export ECHOCTL_TEST_HOSTS="api.github.com=http://127.0.0.1:$fport,github.com=http://127.0.0.1:$fport"
 export FAKE_GITHUB="http://127.0.0.1:$fport"
 EOF
 

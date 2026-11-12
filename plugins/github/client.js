@@ -6,6 +6,7 @@ const MARK = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><p
 const CI = { passing: '✓ CI passing', failing: '✗ CI failing', running: '● CI running', none: 'no CI' }
 const FROM = { gh: 'the GitHub CLI’s sign-in', git: 'git’s sign-in to github.com' }
 const SUGGESTED = 12
+const REPO = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/
 
 export function apply(ctx) {
   // Taken out by Echo when the plugin unloads; an older Echo keeps them on the document.
@@ -13,8 +14,9 @@ export function apply(ctx) {
   const { esc, setCard, setRow } = ctx.ui
   let st = null, found = null, error = '', busy = '', polls = 0, more = false, adding = false
 
+  // Reading the status never clears an action's error: it stays until the next action.
   const load = async () => {
-    try { st = await ctx.call('status'); error = '' } catch (e) { error = e.message }
+    try { st = await ctx.call('status') } catch (e) { error = e.message }
     if (st && st.signedIn && !found) { try { found = await ctx.call('discover') } catch (e) { error = e.message } }
     ctx.render()
     // A read in progress: look again shortly, a few times.
@@ -75,7 +77,9 @@ export function apply(ctx) {
   const repoRows = () => (st.list || []).map((r) => {
     const bits = [r.ci === 'failing' && r.failing.length ? `${CI.failing}: ${esc(r.failing.join(', '))}` : CI[r.ci], count(r.prs, 'open PR', 'open PRs'), count(r.issues, 'open issue', 'open issues')]
     if (r.reviews) bits.push(`<b>${count(r.reviews, 'review for you', 'reviews for you')}</b>`)
-    return setRow(`<a data-ext href="${esc(r.url)}">${esc(r.repo)}</a>`, bits.join(' · '), '')
+    // A link only for a name GitHub could have; anything else is shown as text.
+    const title = REPO.test(r.repo) ? `<a class="wp-link" data-ext href="https://github.com/${esc(r.repo)}" title="Open on GitHub">${esc(r.repo)} ↗</a>` : esc(r.repo)
+    return setRow(title, bits.join(' · '), '')
   })
 
   ctx.settings.section({
@@ -100,8 +104,8 @@ export function apply(ctx) {
   })
 
   const run = async (what, fn) => {
-    busy = what; ctx.render()
-    try { await fn(); error = '' } catch (e) { error = e.message }
+    busy = what; error = ''; ctx.render()
+    try { await fn() } catch (e) { error = e.message }
     busy = ''
     await load()
   }

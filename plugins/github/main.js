@@ -218,6 +218,10 @@ export function reposWidget(st, params = {}, signedIn = true) {
   return { items: sorted, empty: st.problem ? st.problem.text : 'No repos — add yours in Settings → From plugins → GitHub', actions: [{ label: 'Refresh', command: 'refresh', args: {} }] }
 }
 
+/** A repo's Actions page, only for a name GitHub could have (owner/repo of plain characters): a link is never built
+ *  from text GitHub sent that could be anything else. */
+export const actionsUrl = (full) => (/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(full || '') ? `https://github.com/${full}/actions` : '')
+
 /** The CI widget (`status`): the worst of the repos' default-branch checks. */
 export function ciWidget(st, signedIn = true, now = Date.now()) {
   if (!signedIn) return { state: 'warn', title: 'CI', text: SIGN_IN }
@@ -235,7 +239,7 @@ export function ciWidget(st, signedIn = true, now = Date.now()) {
   } else text = withCi.length ? `All passing (${n(withCi.length, 'repo', 'repos')})` : 'No checks on these repos'
   const when = dated(st, now)
   const out = { state, title: 'CI', text: when ? `${text} · ${when}` : text, actions: [{ label: 'Refresh', command: 'refresh', args: {} }] }
-  if (failing.length === 1) out.open = `${failing[0].url}/actions`
+  if (failing.length === 1 && actionsUrl(failing[0].repo)) out.open = actionsUrl(failing[0].repo)
   return out
 }
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { parseEntries, buildQuery, ciOf, digest, problemOf, reposWidget, ciWidget, glanceWidget, discovered, toggled, apply } from '../../plugins/github/main.js'
+import { parseEntries, buildQuery, ciOf, digest, problemOf, reposWidget, ciWidget, glanceWidget, discovered, toggled, actionsUrl, apply } from '../../plugins/github/main.js'
 import { fakeCtx } from '../helpers/fake-ctx.mjs'
 
 const answer = JSON.parse(readFileSync(new URL('./fixtures/answer.json', import.meta.url), 'utf8'))
@@ -222,4 +222,11 @@ test('near GitHub’s hourly limit the timer waits for the reset; Refresh still 
   assert.equal(ctx.requests.length, 1)
   await ctx.run('refresh')
   assert.equal(ctx.requests.length, 2)
+})
+
+test('links are built only from names GitHub could have (a hostile name gives none)', () => {
+  assert.equal(actionsUrl('acme-test/api'), 'https://github.com/acme-test/api/actions')
+  for (const bad of ['acme-labs/<img src=x onerror=alert(1)>', 'acme/a b', 'javascript:alert(1)', '', null]) assert.equal(actionsUrl(bad), '')
+  const st = { at: NOW, repos: [{ repo: 'acme-labs/<img src=x>', url: 'https://github.com/acme-labs/<img src=x>', ci: 'failing', failing: ['x'], prs: 0, issues: 0, reviews: 0 }] }
+  assert.equal(ciWidget(st, true, Date.parse(NOW)).open, undefined)
 })

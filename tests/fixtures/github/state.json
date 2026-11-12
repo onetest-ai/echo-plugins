@@ -3,14 +3,129 @@
   "down": false,
   "rate_remaining": 4990,
   "viewer": "ada-acme",
-  "orgs": { "acme-test": "Acme Test", "acme-labs": "Acme Labs" },
-  "repos": {
-    "acme-test/api": { "ci": "FAILURE", "failing": ["deploy"], "prs": 4, "issues": 9, "pushed": "2026-11-11T10:00:00Z" },
-    "acme-test/web": { "ci": "PENDING", "prs": 2, "issues": 1, "pushed": "2026-11-10T10:00:00Z" },
-    "acme-test/docs": { "ci": "NONE", "prs": 0, "issues": 0, "pushed": "2026-11-01T10:00:00Z" },
-    "acme-labs/site": { "ci": "SUCCESS", "prs": 1, "issues": 5, "pushed": "2026-11-09T10:00:00Z" },
-    "acme-labs/<img src=x onerror=alert(1)>": { "ci": "FAILURE", "failing": ["<b>bold</b> <img src=x onerror=alert(2)>"], "prs": 0, "issues": 0, "pushed": "2026-10-01T10:00:00Z" },
-    "ada-acme/notes": { "ci": "SUCCESS", "prs": 0, "issues": 2, "pushed": "2026-11-08T10:00:00Z" }
+  "orgs": {
+    "acme-test": "Acme Test",
+    "acme-labs": "Acme Labs"
   },
-  "reviews": ["acme-test/api", "acme-test/web", "elsewhere-co/tool"]
+  "repos": {
+    "acme-test/api": {
+      "ci": "FAILURE",
+      "failing": [
+        "deploy"
+      ],
+      "prs": 4,
+      "issues": 9,
+      "pushed": "2026-11-11T10:00:00Z",
+      "pulls": [
+        {
+          "number": 7,
+          "title": "Fix login"
+        },
+        {
+          "number": 8,
+          "title": "WIP: cache",
+          "draft": true
+        }
+      ],
+      "open_issues": [
+        {
+          "number": 21,
+          "title": "Flaky test <b>",
+          "due": "2026-11-20"
+        }
+      ]
+    },
+    "acme-test/web": {
+      "ci": "PENDING",
+      "prs": 2,
+      "issues": 1,
+      "pushed": "2026-11-10T10:00:00Z",
+      "pulls": [
+        {
+          "number": 11,
+          "title": "Speed up search"
+        }
+      ]
+    },
+    "acme-test/docs": {
+      "ci": "NONE",
+      "prs": 0,
+      "issues": 0,
+      "pushed": "2026-11-01T10:00:00Z"
+    },
+    "acme-labs/site": {
+      "ci": "SUCCESS",
+      "prs": 1,
+      "issues": 5,
+      "pushed": "2026-11-09T10:00:00Z"
+    },
+    "acme-labs/<img src=x onerror=alert(1)>": {
+      "ci": "FAILURE",
+      "failing": [
+        "<b>bold</b> <img src=x onerror=alert(2)>"
+      ],
+      "prs": 0,
+      "issues": 0,
+      "pushed": "2026-10-01T10:00:00Z"
+    },
+    "ada-acme/notes": {
+      "ci": "SUCCESS",
+      "prs": 0,
+      "issues": 2,
+      "pushed": "2026-11-08T10:00:00Z"
+    }
+  },
+  "reviews": [
+    "acme-test/api",
+    "acme-test/web",
+    "elsewhere-co/tool"
+  ],
+  "review_requests": [
+    {
+      "repo": "acme-test/api",
+      "number": 7,
+      "title": "Fix login"
+    },
+    {
+      "repo": "elsewhere-co/tool",
+      "number": 3,
+      "title": "Elsewhere"
+    }
+  ],
+  "my_prs": [
+    {
+      "repo": "acme-test/web",
+      "number": 11,
+      "title": "Speed up search",
+      "decision": "CHANGES_REQUESTED",
+      "checks": "SUCCESS"
+    },
+    {
+      "repo": "acme-test/web",
+      "number": 12,
+      "title": "Bump deps",
+      "decision": "APPROVED",
+      "checks": "FAILURE"
+    },
+    {
+      "repo": "acme-test/web",
+      "number": 13,
+      "title": "All good",
+      "decision": "APPROVED",
+      "checks": "SUCCESS"
+    }
+  ],
+  "assigned": [
+    {
+      "repo": "acme-test/api",
+      "number": 21,
+      "title": "Flaky test <b>",
+      "due": "2026-11-20"
+    },
+    {
+      "repo": "acme-labs/site",
+      "number": 22,
+      "title": "Tidy labels"
+    }
+  ]
 }

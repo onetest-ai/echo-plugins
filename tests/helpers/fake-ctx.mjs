@@ -6,7 +6,9 @@
 
 /** `signin`: what Echo's `ctx.signin.get(host)` gives ({token, from} or null; a function of host for more); leave it
  *  out for an Echo without `ctx.signin`. `sources`: what `ctx.signin.sources(host)` says. */
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true } } = {}) {
+/** `threads`: Echo's values per thread for `ctx.threads` ({thread: {key: value}}; leave it out for an Echo without it);
+ *  `work`: true for `ctx.work`; `hints`: true for `ctx.view.hints`. */
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, threads, work = false, hints = false } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
   const ctx = {
@@ -46,9 +48,24 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
       sources: async () => sources,
     }
   }
+  if (threads !== undefined) {
+    ctx.threads = {
+      get: (thread, key) => ((threads[thread] || {})[key] ?? null),
+      set: (thread, key, value) => {
+        if (value === null) { if (threads[thread]) delete threads[thread][key] } else { (threads[thread] = threads[thread] || {})[key] = JSON.parse(JSON.stringify(value)) }
+      },
+      list: (key) => Object.entries(threads).filter(([, v]) => v[key] != null).map(([thread, v]) => ({ thread, value: v[key] })),
+    }
+  }
+  const workState = { provider: null, changed: 0 }
+  if (work) ctx.work = { provide: (fn) => { workState.provider = fn }, changed: () => { workState.changed++ } }
+  const hintsNow = []
+  if (hints) ctx.view = { hints: (list) => { hintsNow.splice(0, hintsNow.length, ...JSON.parse(JSON.stringify(list || []))) } }
   return Object.assign(ctx, {
     // What the tests look at.
-    commands, providers, timers, pushed, logs, requests, signins, files, settingsNow: settings,
+    commands, providers, timers, pushed, logs, requests, signins, files, settingsNow: settings, threadsNow: threads, workState, hintsNow,
+    /** Ask its work rows as Echo does. */
+    rows: async (ask) => JSON.parse(JSON.stringify(await workState.provider(ask))),
     /** Run a command as Echo does: JSON in, JSON out. */
     run: async (name, args = {}) => {
       if (!commands[name]) throw new Error(`no command “${name}”`)

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { parseEntries, buildQuery, ciOf, digest, problemOf, reposWidget, ciWidget, glanceWidget, discovered, toggled, actionsUrl, apply } from '../../plugins/github/main.js'
+import { parseEntries, buildQuery, ciOf, digest, problemOf, reposWidget, ciWidget, glanceWidget, discovered, toggled, actionsUrl, forThread, noThreadRepos, buildWorkQuery, workRows, threadRepoNames, apply } from '../../plugins/github/main.js'
 import { fakeCtx } from '../helpers/fake-ctx.mjs'
 
 const answer = JSON.parse(readFileSync(new URL('./fixtures/answer.json', import.meta.url), 'utf8'))
@@ -128,6 +128,9 @@ test('discovery: your organisations and the repos you pushed to lately', () => {
   assert.equal(discovered({ errors: [{}] }, NOW), null)
 })
 
+
+/** Requests of the widgets' query only (each refresh also asks the work query). */
+const mains = (ctx) => ctx.requests.filter((r) => JSON.parse(r.opts.body).query.startsWith('query GitHub')).length
 // The host half, with a fake ctx: the computer's sign-in from Echo, GitHub's answers from fixtures.
 const ok = (body) => ({ status: 200, body: JSON.stringify(body) })
 const GH = { token: 'gho_' + 'x'.repeat(36), from: 'gh' }
@@ -183,7 +186,7 @@ test('GitHub refuses the sign-in: it is looked up again once (renewed), then the
   apply(ctx)
   await ctx.tick()
   assert.equal((await ctx.run('status')).list.length, 4)
-  assert.equal(ctx.requests.length, 2)
+  assert.equal(mains(ctx), 2)
   assert.ok(ctx.signins.includes('github.com (fresh)'), 'a refused sign-in is looked up again, not taken from what Echo kept')
 })
 
@@ -207,7 +210,7 @@ test('pick: kept in the store, GitHub read again; in a terminal no timer is set'
   assert.deepEqual(await ctx.run('pick', { entry: 'acme-test/api', on: true }), ['acme-test', 'acme-test/api'])
   assert.deepEqual(await ctx.run('pick', { entry: 'acme-test', on: false }), ['acme-test/api'])
   assert.deepEqual(JSON.parse(ctx.files['picks.json']), ['acme-test/api'])
-  assert.equal(ctx.requests.length, 3)
+  assert.equal(mains(ctx), 3)
   await assert.rejects(ctx.run('pick', { entry: 'no good', on: true }), /not a repo or an organisation/)
   const term = fakeCtx({ terminal: true, signin: GH })
   apply(term)
@@ -220,9 +223,9 @@ test('near GitHub’s hourly limit the timer waits for the reset; Refresh still 
   apply(ctx)
   await ctx.run('refresh')
   await ctx.tick()
-  assert.equal(ctx.requests.length, 1)
+  assert.equal(mains(ctx), 1)
   await ctx.run('refresh')
-  assert.equal(ctx.requests.length, 2)
+  assert.equal(mains(ctx), 2)
 })
 
 test('links are built only from names GitHub could have (a hostile name gives none)', () => {
@@ -230,4 +233,103 @@ test('links are built only from names GitHub could have (a hostile name gives no
   for (const bad of ['acme-labs/<img src=x onerror=alert(1)>', 'acme/a b', 'javascript:alert(1)', '', null]) assert.equal(actionsUrl(bad), '')
   const st = { at: NOW, repos: [{ repo: 'acme-labs/<img src=x>', url: 'https://github.com/acme-labs/<img src=x>', ci: 'failing', failing: ['x'], prs: 0, issues: 0, reviews: 0 }] }
   assert.equal(ciWidget(st, true, Date.parse(NOW)).open, undefined)
+})
+
+// ── Threads and work rows ──
+const work = JSON.parse(readFileSync(new URL('./fixtures/work.json', import.meta.url), 'utf8'))
+const THREADS = [{ thread: 'acme-rollout', value: ['acme-test/api'] }, { thread: 'globex-pilot', value: [] }]
+
+test('the threads’ repos ride the main query as x<i>, by variables; digest keeps them apart', () => {
+  const { query, variables } = buildQuery(parseEntries('acme-labs/site').entries, ['acme-test/api'])
+  assert.match(query, /x0: repository\(owner: \$xo0, name: \$xn0\)/)
+  assert.equal(variables.xo0, 'acme-test')
+  const a = { data: { ...answer.data, x0: answer.data.w0.repositories.nodes[0] } }
+  const st = digest(a, parseEntries('acme-labs/site').entries, NOW, ['acme-test/api'])
+  assert.deepEqual(Object.keys(st.threadRepos), ['acme-test/api'])
+  assert.equal(st.threadRepos['acme-test/api'].reviews, 1)
+  assert.ok(!st.repos.some((r) => r.repo === 'acme-test/api'), 'a thread’s repo isn’t one of your picks')
+})
+
+test('a widget set to a thread: its repos, totals over them; none → says where to add them', () => {
+  const st = { ...state(), threadRepos: {} }
+  const v = forThread(st, ['acme-test/web', 'ACME-LABS/site', 'nope/gone'])
+  assert.deepEqual(v.repos.map((r) => r.repo), ['acme-test/web', 'acme-labs/site'])
+  assert.deepEqual(v.totals, { prs: 3, issues: 6, reviews: 1, failing: 0, running: 1 })
+  assert.equal(forThread(st, []), null)
+  assert.match(noThreadRepos('list').empty, /add them in its Profile/)
+  assert.equal(noThreadRepos('status').state, 'warn')
+  assert.equal(noThreadRepos('stats').items.length, 1)
+})
+
+test('the work query: three searches and each thread repo, names in variables', () => {
+  const { query, variables } = buildWorkQuery(['acme-test/api'])
+  assert.match(query, /^query Work\(/)
+  assert.match(query, /t0: repository\(owner: \$to0, name: \$tn0\)/)
+  assert.equal(variables.qr, 'is:open is:pr review-requested:@me archived:false')
+  assert.ok(!query.includes('acme'))
+  assert.deepEqual(threadRepoNames([{ thread: 'a', value: ['x/y', 'X/Y'] }, { thread: 'b', value: ['z/w'] }]), ['x/y', 'z/w'])
+})
+
+test('work rows: reviews, your PRs that need you, assigned issues; a thread’s PRs and issues; links only to github.com', () => {
+  const w = workRows(work, THREADS)
+  assert.deepEqual(w.me.map((r) => [r.id, r.kind]), [
+    ['pr:acme-test/api#7', 'review'], ['pr:elsewhere-co/tool#3', 'review'],
+    ['pr:acme-test/web#11', 'my PR'], ['pr:acme-test/web#12', 'my PR'],
+    ['issue:acme-test/api#21', 'assigned'], ['issue:acme-labs/site#22', 'assigned'],
+  ])
+  assert.equal(w.me[2].title, 'Speed up search — changes asked')
+  assert.equal(w.me[3].title, 'Bump deps — checks failing')
+  assert.equal(w.me[0].thread, 'acme-rollout', 'a review in a thread’s repo shows in that thread too')
+  assert.equal(w.me[1].thread, undefined)
+  assert.equal(w.me[4].due, '2026-11-20')
+  assert.equal(w.me[4].title, 'Flaky test <b>', 'text as GitHub gave it (Echo escapes)')
+  assert.equal(w.me[5].url, undefined, 'a link that isn’t https://github.com/… is left out')
+  assert.equal(w.me[5].due, undefined)
+  assert.deepEqual(w.threads['acme-rollout'].map((r) => [r.id, r.kind]), [['pr:acme-test/api#7', 'PR'], ['pr:acme-test/api#8', 'draft PR'], ['issue:acme-test/api#21', 'issue']])
+  assert.deepEqual(w.threads['globex-pilot'], [])
+  // What Echo checks of a row (jshost::work::check_rows): id unique, kind short, url https, due YYYY-MM-DD.
+  for (const rows of [w.me, ...Object.values(w.threads)]) {
+    assert.equal(new Set(rows.map((r) => r.id)).size, rows.length)
+    for (const r of rows) {
+      assert.ok(r.title && r.kind.length <= 30)
+      assert.ok(r.url === undefined || /^https:\/\//.test(r.url))
+      assert.ok(r.due === undefined || /^\d{4}-\d{2}-\d{2}$/.test(r.due))
+    }
+  }
+})
+
+test('the host half: a thread’s repos kept per thread, Claude told, rows answered from what was read', async () => {
+  const threads = {}
+  const ctx = fakeCtx({ signin: GH, threads, work: true, hints: true, fetch: (url, opts) => {
+    const q = JSON.parse(opts.body).query
+    return ok(q.startsWith('query Work') ? work : q.startsWith('query Discover') ? found : answer)
+  } })
+  apply(ctx)
+  assert.deepEqual(await ctx.run('threadPick', { thread: 'acme-rollout', entry: 'acme-test/api', on: true }), ['acme-test/api'])
+  assert.deepEqual(threads['acme-rollout'].repos, ['acme-test/api'])
+  assert.match(ctx.hintsNow[0].text, /This thread's GitHub repos: acme-test\/api/)
+  assert.equal(ctx.hintsNow[0].thread, 'acme-rollout')
+  await assert.rejects(ctx.run('threadPick', { thread: 'acme-rollout', entry: 'acme-test', on: true }), /owner\/repo/)
+  assert.ok(ctx.workState.changed >= 1, 'Echo told to ask again after a read')
+  const me = await ctx.rows({ scope: 'me' })
+  assert.equal(me.length, 6)
+  const th = await ctx.rows({ scope: 'thread', thread: 'acme-rollout' })
+  assert.equal(th.length, 3)
+  assert.deepEqual(await ctx.rows({ scope: 'thread', thread: 'nope' }), [])
+  // A widget set to the thread: its repo only.
+  const ci = await ctx.widget('ci', { params: { thread: 'acme-rollout' } })
+  assert.ok(ci.text)
+  assert.match((await ctx.widget('repos', { params: { thread: 'globex-pilot' } })).empty, /add them in its Profile/)
+  // Off again: no repos, no hint.
+  assert.deepEqual(await ctx.run('threadPick', { thread: 'acme-rollout', entry: 'acme-test/api', on: false }), [])
+  assert.equal(threads['acme-rollout'].repos, undefined)
+  assert.deepEqual(ctx.hintsNow, [])
+  assert.ok(!JSON.stringify(me).includes(GH.token))
+})
+
+test('signed out: no rows (Echo shows none), nothing asked', async () => {
+  const ctx = fakeCtx({ signin: null, threads: {}, work: true, fetch: () => { throw new Error('should not fetch') } })
+  apply(ctx)
+  await ctx.tick()
+  assert.deepEqual(await ctx.rows({ scope: 'me' }), [])
 })

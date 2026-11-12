@@ -42,7 +42,7 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   const signins = []
   if (signin !== undefined) {
     ctx.signin = {
-      get: async (host) => { signins.push(host); return typeof signin === 'function' ? signin(host) : signin },
+      get: async (host, opts) => { signins.push(opts && opts.fresh ? `${host} (fresh)` : host); return typeof signin === 'function' ? signin(host, opts) : signin },
       sources: async () => sources,
     }
   }

@@ -149,7 +149,7 @@ test('signed in on this computer: GitHub is read with that sign-in; the token ne
   await ctx.run('refresh')
   const s = await ctx.run('status')
   assert.deepEqual([s.signedIn, s.from, s.login, s.list.length], [true, 'gh', 'ada-acme', 4])
-  assert.deepEqual(ctx.signins.every((h) => h === 'github.com'), true)
+  assert.ok(ctx.signins.every((h) => h.startsWith('github.com')), ctx.signins.join())
   const d = await ctx.run('discover')
   assert.equal(d.orgs[0].login, 'acme-test')
   for (const out of [s, d, await ctx.widget('repos'), await ctx.widget('ci'), await ctx.widget('glance')]) {
@@ -184,6 +184,7 @@ test('GitHub refuses the sign-in: it is looked up again once (renewed), then the
   await ctx.tick()
   assert.equal((await ctx.run('status')).list.length, 4)
   assert.equal(ctx.requests.length, 2)
+  assert.ok(ctx.signins.includes('github.com (fresh)'), 'a refused sign-in is looked up again, not taken from what Echo kept')
 })
 
 test('a failed read keeps the last answer and says why', async () => {

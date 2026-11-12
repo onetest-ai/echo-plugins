@@ -311,7 +311,8 @@ export function apply(ctx) {
     if (signin && !fresh) return signin
     if (!signin && !fresh && Date.now() - signinAt < 60000) return null
     signinAt = Date.now()
-    try { signin = await ctx.signin.get(SIGN_IN_HOST) } catch (e) { ctx.log(`sign-in: ${e.message}`); signin = null }
+    // After GitHub refused it, Echo is asked to look again rather than give the sign-in it kept (its minute).
+    try { signin = await ctx.signin.get(SIGN_IN_HOST, fresh ? { fresh: true } : undefined) } catch (e) { ctx.log(`sign-in: ${e.message}`); signin = null }
     return signin
   }
   const ask = (t, body) => ctx.http.fetch(API, {

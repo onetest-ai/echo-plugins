@@ -4,7 +4,9 @@
 //   apply(ctx); await ctx.run('status')
 // Add a service here when a plugin needs it — the same name and shape as in PRELUDE.
 
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch } = {}) {
+/** `signin`: what Echo's `ctx.signin.get(host)` gives ({token, from} or null; a function of host for more); leave it
+ *  out for an Echo without `ctx.signin`. `sources`: what `ctx.signin.sources(host)` says. */
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true } } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
   const ctx = {
@@ -37,9 +39,16 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
       clear: (wid) => { delete pushed[wid] },
     },
   }
+  const signins = []
+  if (signin !== undefined) {
+    ctx.signin = {
+      get: async (host) => { signins.push(host); return typeof signin === 'function' ? signin(host) : signin },
+      sources: async () => sources,
+    }
+  }
   return Object.assign(ctx, {
     // What the tests look at.
-    commands, providers, timers, pushed, logs, requests, files, settingsNow: settings,
+    commands, providers, timers, pushed, logs, requests, signins, files, settingsNow: settings,
     /** Run a command as Echo does: JSON in, JSON out. */
     run: async (name, args = {}) => {
       if (!commands[name]) throw new Error(`no command “${name}”`)

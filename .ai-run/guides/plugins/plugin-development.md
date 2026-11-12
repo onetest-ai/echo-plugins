@@ -24,8 +24,8 @@
 ### Rules
 - R1. Write `summary` as one sentence the user reads on the install sheet: what they get, not how it works. Evidence: `plugins/scheduler/echo-plugin.json::summary`
 - R2. Ask in `uses` for the least that works: `network.hosts` names each host exactly (`api.github.com`, not a pattern); `echo.read` only the kinds read; no `claude` unless it runs Claude. Each line is one the user agrees to, and an update that adds one asks them again. Evidence: `plugins/telegram/echo-plugin.json::uses`
-- R3. Keep an account's credential in a `secret` setting, entered in the plugin's own Settings section and checked against the service by a host command (`connect`) before it is kept; never show it back, log it, put it in a widget or a row, or send it to any host but its own service. Evidence: `plugins/telegram/main.js::connect`
-- R4. Make anything that differs between users a setting (organisations, repos, projects, filters), never a constant in the code. Evidence: issue #2 (Settings: "which organisations or repos to read")
+- R3. Use the sign-in the user already has on this computer (`ctx.signin.get(host)`, `uses.signin.hosts`: the GitHub CLI's, git's) and never ask them to paste a token when there is one; with none, say in the section how to sign in (`gh auth login`), then a device or browser sign-in. Hold a credential in memory only: never keep, show, log, put in a widget or row, or send it to any host but its own service. Evidence: `plugins/github/main.js::getSignin`
+- R4. Make anything that differs between users a choice, never a constant in the code — picked in the plugin's own section from what it finds for them (their organisations, their recent repos), kept in its store. Manifest `settings` draw Echo's plain card of raw inputs under the plugin ("Its settings"): use them only for a value with no better place to pick it. Evidence: `plugins/github/client.js::pickRows`
 
 ## Look and words (the same experience in every plugin)
 

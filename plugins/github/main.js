@@ -1,9 +1,10 @@
 // GitHub — the host half. Reads GitHub for the repos and organisations you pick and keeps what it read, so Today's
 // widgets answer at once and never wait on GitHub:
-// - your sign-in: a personal access token, its secret setting `token`, checked against GitHub before it is kept —
-//   never shown back, logged, or sent anywhere but api.github.com;
-// - your repos and organisations: its setting `repos` (owner/repo or an organisation, one per line); empty = the
-//   repos you pushed to last;
+// - your sign-in: the one this computer already has (GitHub CLI, else git), which Echo hands it (`ctx.signin`,
+//   `uses.signin`); held in memory only — never kept, shown, logged, or sent anywhere but api.github.com;
+// - what to show: the organisations and repos you pick in its section, found for you (`discover`: your
+//   organisations, the repos you pushed to lately), kept in its store as `picks.json`; nothing picked = the repos
+//   you pushed to last;
 // - every 5 minutes (and on Refresh) one GraphQL query: each repo's default-branch checks, its open pull requests
 //   and issues, and the pull requests waiting on your review — kept in its store as `state.json`;
 // - widgets on Today: Repos (list), CI (status), GitHub at a glance (stats).
@@ -51,6 +52,8 @@ const REPO = `fragment R on Repository {
   pullRequests(states: OPEN) { totalCount }
   issues(states: OPEN) { totalCount }
 }`
+/** Every repo you can see — yours, your organisations', and ones you collaborate on. */
+const MINE = 'affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]'
 const REPOS = (first) => `repositories(first: ${first}, orderBy: {field: PUSHED_AT, direction: DESC}, isArchived: false`
 
 /** One GraphQL query for all entries: {query, variables}. A repo is `r<i>`, an owner `w<i>` (its last-pushed repos)
@@ -70,7 +73,7 @@ export function buildQuery(entries) {
       fields.push(`p${i}: search(query: $p${i}, type: ISSUE) { issueCount }`, `i${i}: search(query: $i${i}, type: ISSUE) { issueCount }`)
     }
   })
-  if (!entries.length) fields.push(`mine: viewer { ${REPOS(PER_OWNER)}, ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR]) { nodes { ...R } } }`)
+  if (!entries.length) fields.push(`mine: viewer { ${REPOS(PER_OWNER)}, ${MINE}) { nodes { ...R } } }`)
   const head = vars.length ? `query GitHub(${vars.join(', ')})` : 'query GitHub'
   const query = `${head} {
   viewer { login }
@@ -183,7 +186,7 @@ export function clock(iso, now = new Date()) {
   return d.toDateString() === now.toDateString() ? hm : `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]} ${hm}`
 }
 
-const SIGN_IN = 'Sign in to GitHub: Settings → From plugins → GitHub'
+const SIGN_IN = 'Sign in to GitHub on this computer (gh auth login), then Refresh'
 const CI_WORD = { passing: '✓ CI passing', failing: '✗ CI failing', running: '● CI running', none: 'no CI' }
 const on = (params, key, dflt) => (params && typeof params[key] === 'boolean' ? params[key] : dflt)
 const n = (count, one, many) => `${count} ${count === 1 ? one : many}`
@@ -252,35 +255,96 @@ export function glanceWidget(st, params = {}, signedIn = true, now = Date.now())
   return out
 }
 
+/** What there is to pick from: your organisations (with how many repos each) and the repos you pushed to lately. */
+export const DISCOVER = `query Discover {
+  viewer { login
+    organizations(first: 100) { nodes { login name repositories(isArchived: false) { totalCount } } }
+    ${REPOS(30)}, ${MINE}) { totalCount nodes { nameWithOwner pushedAt } }
+  }
+}`
+
+export function discovered(answer, now) {
+  const v = answer && answer.data && answer.data.viewer
+  if (!v) return null
+  return {
+    at: now,
+    login: v.login,
+    orgs: v.organizations.nodes.map((o) => ({ login: o.login, name: o.name || '', repos: o.repositories.totalCount })),
+    repos: v.repositories.nodes.map((r) => ({ repo: r.nameWithOwner, pushedAt: r.pushedAt })),
+    // Organisations need GitHub's read:org; a sign-in without it sees none (the section says so).
+    allRepos: v.repositories.totalCount,
+  }
+}
+
+/** Your picks with one turned on or off (case ignored), in a stable order: organisations first, then repos. */
+export function toggled(picks, entry, on) {
+  const { entries } = parseEntries(entry)
+  if (entries.length !== 1) throw new Error(`not a repo or an organisation: ${entry} (write owner/repo, or an organisation’s name)`)
+  const name = entryName(entries[0])
+  const rest = (picks || []).filter((p) => p.toLowerCase() !== name.toLowerCase())
+  const next = on ? [...rest, name] : rest
+  if (next.length > MAX_REPOS) throw new Error(`${MAX_REPOS} at most`)
+  return [...next.filter((p) => !p.includes('/')), ...next.filter((p) => p.includes('/'))]
+}
+
+const SIGN_IN_HOST = 'github.com'
+
 export function apply(ctx) {
-  const token = () => { try { return ctx.settings.get('token') || '' } catch { return '' } }
-  const reposText = () => { try { return ctx.settings.get('repos') || '' } catch { return '' } }
   const read = (path) => { try { const t = ctx.store.read(path); return t ? JSON.parse(t) : null } catch { return null } }
   let state = read('state.json')
+  let picks = read('picks.json') || []
+  let found = read('discovery.json')
   let running = null
+  // The sign-in Echo gave: in memory only, asked for again when GitHub refuses it.
+  let signin = null, signinAt = 0
 
   const save = (st) => { state = st; ctx.store.write('state.json', JSON.stringify(st)) }
+  const savePicks = (list) => { picks = list; ctx.store.write('picks.json', JSON.stringify(list)) }
+
+  /** The computer's sign-in to GitHub, from Echo: {token, from} or null; looked up again after a minute when none. */
+  const getSignin = async (fresh) => {
+    if (!ctx.signin) return null
+    if (signin && !fresh) return signin
+    if (!signin && !fresh && Date.now() - signinAt < 60000) return null
+    signinAt = Date.now()
+    try { signin = await ctx.signin.get(SIGN_IN_HOST) } catch (e) { ctx.log(`sign-in: ${e.message}`); signin = null }
+    return signin
+  }
   const ask = (t, body) => ctx.http.fetch(API, {
     method: 'POST',
     headers: { Authorization: `bearer ${t}`, 'Content-Type': 'application/json', 'User-Agent': 'echo-github-plugin' },
     body: JSON.stringify(body),
   })
+  /** Ask GitHub with the sign-in; refused once → look the sign-in up again (it may have been renewed) and retry. */
+  const askSigned = async (body) => {
+    let s = await getSignin(false)
+    if (!s) return { none: true }
+    let r = await ask(s.token, body)
+    if (r.status === 401) {
+      s = await getSignin(true)
+      if (s) r = await ask(s.token, body)
+    }
+    return { r }
+  }
 
   /** Read GitHub once (one at a time); keeps the last good answer and says what went wrong beside it. */
   const refresh = (why) => {
     if (running) return running
     running = (async () => {
-      const t = token()
-      if (!t) return state
       const rate = state && state.rate
       if (why !== 'user' && rate && rate.remaining < RESERVE && Date.now() < new Date(rate.resetAt).getTime()) return state
-      const { entries } = parseEntries(reposText())
+      const { entries } = parseEntries(picks.join('\n'))
       const now = new Date().toISOString()
-      let r
-      try { r = await ask(t, buildQuery(entries)) } catch (e) {
+      let res
+      try { res = await askSigned(buildQuery(entries)) } catch {
         save({ ...(state || {}), problem: { code: 'down', text: 'GitHub can’t be reached from this computer; Echo tries again in 5 minutes.', at: now } })
         return state
       }
+      if (res.none) {
+        if (state && state.at) save({ ...state, problem: { code: 'auth', text: 'This computer isn’t signed in to GitHub any more.', at: now } })
+        return state
+      }
+      const r = res.r
       if (r.status !== 200) {
         save({ ...(state || {}), problem: { ...problemOf(r.status, r.body), at: now } })
         return state
@@ -298,14 +362,32 @@ export function apply(ctx) {
     return running
   }
 
-  ctx.command('status', () => {
-    const { entries, bad } = parseEntries(reposText())
+  /** What there is to pick from; asked again when older than 10 minutes, or when the section asks. */
+  const discover = async (force) => {
+    if (!force && found && Date.now() - new Date(found.at).getTime() < 600000) return found
+    const res = await askSigned({ query: DISCOVER })
+    if (res.none) return found
+    if (res.r.status !== 200) throw new Error(problemOf(res.r.status, res.r.body).text)
+    let answer
+    try { answer = JSON.parse(res.r.body) } catch { answer = null }
+    const d = discovered(answer, new Date().toISOString())
+    if (!d) throw new Error('GitHub didn’t say what you can see')
+    found = d
+    ctx.store.write('discovery.json', JSON.stringify(d))
+    return found
+  }
+
+  ctx.command('status', async () => {
+    const s = await getSignin(false)
+    let sources = null
+    if (!s && ctx.signin && ctx.signin.sources) { try { sources = await ctx.signin.sources(SIGN_IN_HOST) } catch { sources = null } }
     return {
-      signedIn: !!token(),
-      login: (state && state.login) || '',
-      repos: reposText(),
-      entries: entries.map(entryName),
-      bad,
+      echoCanSignIn: !!ctx.signin,
+      signedIn: !!s,
+      from: (s && s.from) || '',
+      sources,
+      login: (state && state.login) || (found && found.login) || '',
+      picks,
       checks: (state && state.checks) || [],
       at: (state && state.at) || '',
       problem: (state && state.problem) || null,
@@ -316,40 +398,20 @@ export function apply(ctx) {
     }
   })
 
-  ctx.command('connect', async ({ token: t } = {}) => {
-    t = String(t || '').trim()
-    if (!/^[A-Za-z0-9_]{20,255}$/.test(t)) throw new Error('that isn’t a GitHub token (it starts with github_pat_ or ghp_)')
-    const r = await ask(t, { query: 'query { viewer { login } }' })
-    if (r.status !== 200) throw new Error(problemOf(r.status, r.body).text.replace(' Sign in again.', ''))
-    let login = ''
-    try { login = JSON.parse(r.body).data.viewer.login } catch { login = '' }
-    if (!login) throw new Error('GitHub didn’t say who this token belongs to')
-    ctx.settings.set('token', t)
-    save({ ...(state || {}), login, problem: null })
-    refresh('user')
-    return { login }
-  })
+  ctx.command('discover', async ({ force } = {}) => discover(!!force))
 
-  ctx.command('forget', () => {
-    ctx.settings.set('token', '')
-    save({})
-    return true
-  })
-
-  ctx.command('repos', async ({ text } = {}) => {
-    const { entries, bad } = parseEntries(text)
-    if (bad.length) throw new Error(`not a repo or an organisation: ${bad.slice(0, 3).join(', ')} (write owner/repo, or an organisation’s name)`)
-    if (entries.length > MAX_REPOS) throw new Error(`${MAX_REPOS} at most`)
-    ctx.settings.set('repos', entries.map(entryName).join('\n'))
+  ctx.command('pick', async ({ entry, on } = {}) => {
+    savePicks(toggled(picks, String(entry || ''), on !== false))
     await refresh('user')
-    return true
+    return picks
   })
 
-  ctx.command('refresh', async () => { await refresh('user'); return true })
+  ctx.command('refresh', async () => { await getSignin(true); await refresh('user'); return true })
 
-  ctx.widgets.provide('repos', ({ params } = {}) => reposWidget(state, params, !!token()))
-  ctx.widgets.provide('ci', () => ciWidget(state, !!token()))
-  ctx.widgets.provide('glance', ({ params } = {}) => glanceWidget(state, params, !!token()))
+  const signedIn = () => !!signin || !!(state && state.at && !(state.problem && state.problem.code === 'auth'))
+  ctx.widgets.provide('repos', ({ params } = {}) => reposWidget(state, params, signedIn()))
+  ctx.widgets.provide('ci', () => ciWidget(state, signedIn()))
+  ctx.widgets.provide('glance', ({ params } = {}) => glanceWidget(state, params, signedIn()))
 
   if (!ctx.terminal) ctx.every(EVERY, () => refresh('timer'))
 }

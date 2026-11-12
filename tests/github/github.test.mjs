@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { parseEntries, buildQuery, ciOf, digest, problemOf, reposWidget, ciWidget, glanceWidget, apply } from '../../plugins/github/main.js'
+import { parseEntries, buildQuery, ciOf, digest, problemOf, reposWidget, ciWidget, glanceWidget, discovered, toggled, apply } from '../../plugins/github/main.js'
 import { fakeCtx } from '../helpers/fake-ctx.mjs'
 
 const answer = JSON.parse(readFileSync(new URL('./fixtures/answer.json', import.meta.url), 'utf8'))
@@ -77,7 +77,7 @@ test('Repos widget: failing first, what the settings ask for', () => {
   assert.deepEqual(d.items.map((i) => i.title), ['acme-test/api', 'acme-test/web', 'acme-test/docs', 'acme-labs/site'])
   assert.equal(d.items[0].sub, '✗ CI failing: deploy · 4 open PRs · 1 review for you')
   assert.equal(reposWidget(state(), { ci: false, prs: false, reviews: false, issues: true }).items[3].sub, '5 open issues')
-  assert.equal(reposWidget(null, {}, false).empty, 'Sign in to GitHub: Settings → From plugins → GitHub')
+  assert.match(reposWidget(null, {}, false).empty, /gh auth login/)
 })
 
 test('CI widget: the worst state, the failing repo opens its Actions', () => {
@@ -107,77 +107,115 @@ test('glance widget: up to four numbers, tones where they matter', () => {
   assert.equal(d.note, undefined)
 })
 
-// The host half, with a fake ctx and GitHub's answers from fixtures.
-const ok = (body) => ({ status: 200, body: JSON.stringify(body) })
+test('picks: one on or off, organisations first, junk refused', () => {
+  assert.deepEqual(toggled([], 'acme-test/api', true), ['acme-test/api'])
+  assert.deepEqual(toggled(['acme-test/api'], 'acme-test', true), ['acme-test', 'acme-test/api'])
+  assert.deepEqual(toggled(['acme-test', 'acme-test/api'], 'ACME-TEST/API', false), ['acme-test'])
+  assert.deepEqual(toggled(['acme-test'], 'https://github.com/acme-labs/site', true), ['acme-test', 'acme-labs/site'])
+  assert.throws(() => toggled([], 'not a repo', true), /not a repo or an organisation/)
+})
 
-test('connect: a token is checked with GitHub before it is kept, then GitHub is read', async () => {
-  let calls = 0
-  const ctx = fakeCtx({ settings: { repos: REPOS }, fetch: (url, opts) => {
-    calls++
+const found = { data: { viewer: { login: 'ada-acme',
+  organizations: { nodes: [{ login: 'acme-test', name: 'Acme Test', repositories: { totalCount: 14 } }] },
+  repositories: { totalCount: 52, nodes: [{ nameWithOwner: 'acme-test/api', pushedAt: '2026-11-11T10:00:00Z' }, { nameWithOwner: 'ada-acme/notes', pushedAt: '2026-11-01T10:00:00Z' }] } } } }
+
+test('discovery: your organisations and the repos you pushed to lately', () => {
+  assert.deepEqual(discovered(found, NOW), {
+    at: NOW, login: 'ada-acme', allRepos: 52,
+    orgs: [{ login: 'acme-test', name: 'Acme Test', repos: 14 }],
+    repos: [{ repo: 'acme-test/api', pushedAt: '2026-11-11T10:00:00Z' }, { repo: 'ada-acme/notes', pushedAt: '2026-11-01T10:00:00Z' }],
+  })
+  assert.equal(discovered({ errors: [{}] }, NOW), null)
+})
+
+// The host half, with a fake ctx: the computer's sign-in from Echo, GitHub's answers from fixtures.
+const ok = (body) => ({ status: 200, body: JSON.stringify(body) })
+const GH = { token: 'gho_' + 'x'.repeat(36), from: 'gh' }
+/** The fixture's entries, picked. */
+const PICKED = { 'picks.json': JSON.stringify(REPOS.split('\n')) }
+const github = (opts) => {
+  const q = JSON.parse(opts.body).query
+  return ok(q.startsWith('query Discover') ? found : answer)
+}
+
+test('signed in on this computer: GitHub is read with that sign-in; the token never leaves the host half', async () => {
+  const ctx = fakeCtx({ signin: GH, store: PICKED, fetch: (url, opts) => {
     assert.equal(url, 'https://api.github.com/graphql')
     assert.equal(opts.method, 'POST')
-    assert.equal(opts.headers.Authorization, 'bearer github_pat_' + 'x'.repeat(30))
-    return JSON.parse(opts.body).query.includes('rateLimit') ? ok(answer) : ok({ data: { viewer: { login: 'ada-acme' } } })
+    assert.equal(opts.headers.Authorization, `bearer ${GH.token}`)
+    return github(opts)
   } })
   apply(ctx)
-  await assert.rejects(ctx.run('connect', { token: 'nope' }), /isn’t a GitHub token/)
-  assert.equal(calls, 0)
-  assert.deepEqual(await ctx.run('connect', { token: 'github_pat_' + 'x'.repeat(30) }), { login: 'ada-acme' })
-  assert.equal(ctx.settingsNow.token, 'github_pat_' + 'x'.repeat(30))
   await ctx.run('refresh')
   const s = await ctx.run('status')
-  assert.equal(s.signedIn, true)
-  assert.equal(s.login, 'ada-acme')
-  assert.equal(s.list.length, 4)
-  assert.ok(!JSON.stringify(s).includes('github_pat_'), 'the token is never shown back')
+  assert.deepEqual([s.signedIn, s.from, s.login, s.list.length], [true, 'gh', 'ada-acme', 4])
+  assert.deepEqual(ctx.signins.every((h) => h === 'github.com'), true)
+  const d = await ctx.run('discover')
+  assert.equal(d.orgs[0].login, 'acme-test')
+  for (const out of [s, d, await ctx.widget('repos'), await ctx.widget('ci'), await ctx.widget('glance')]) {
+    assert.ok(!JSON.stringify(out).includes(GH.token), 'the token is never shown')
+  }
+  assert.ok(!Object.values(ctx.files).some((f) => f.includes(GH.token)), 'the token is never kept')
   assert.equal((await ctx.widget('ci')).state, 'bad')
 })
 
-test('connect: a refused token is not kept', async () => {
-  const ctx = fakeCtx({ fetch: () => ({ status: 401, body: '{"message":"Bad credentials"}' }) })
+test('not signed in on this computer: nothing is fetched, the section says how, widgets ask to sign in', async () => {
+  const ctx = fakeCtx({ signin: null, sources: { gh: false, git: true }, fetch: () => { throw new Error('should not fetch') } })
   apply(ctx)
-  await assert.rejects(ctx.run('connect', { token: 'ghp_' + 'y'.repeat(36) }), /GitHub refused the token/)
-  assert.equal(ctx.settingsNow.token, undefined)
-  assert.equal((await ctx.run('status')).signedIn, false)
+  await ctx.tick()
+  const s = await ctx.run('status')
+  assert.deepEqual([s.echoCanSignIn, s.signedIn, s.sources.gh], [true, false, false])
+  assert.equal(ctx.requests.length, 0)
+  assert.match((await ctx.widget('repos')).empty, /gh auth login/)
 })
 
-test('a failed read keeps the last answer and says why; a revoked token shows as a sign-in problem', async () => {
+test('an Echo without ctx.signin: the section says to update Echo', async () => {
+  const ctx = fakeCtx({})
+  apply(ctx)
+  const s = await ctx.run('status')
+  assert.deepEqual([s.echoCanSignIn, s.signedIn], [false, false])
+})
+
+test('GitHub refuses the sign-in: it is looked up again once (renewed), then the refusal is said', async () => {
+  let n = 0
+  const tokens = ['gho_old' + 'x'.repeat(32), 'gho_new' + 'x'.repeat(32)]
+  const ctx = fakeCtx({ store: PICKED, signin: () => ({ token: tokens[Math.min(n++, 1)], from: 'gh' }), fetch: (url, opts) => (opts.headers.Authorization.includes('gho_old') ? { status: 401, body: '{"message":"Bad credentials"}' } : github(opts)) })
+  apply(ctx)
+  await ctx.tick()
+  assert.equal((await ctx.run('status')).list.length, 4)
+  assert.equal(ctx.requests.length, 2)
+})
+
+test('a failed read keeps the last answer and says why', async () => {
   let status = 200
-  const ctx = fakeCtx({ settings: { token: 'ghp_' + 'z'.repeat(36), repos: REPOS }, fetch: () => (status === 200 ? ok(answer) : { status, body: '{"message":"Bad credentials"}' }) })
+  const ctx = fakeCtx({ signin: GH, store: PICKED, fetch: (url, opts) => (status === 200 ? github(opts) : { status, body: '' }) })
   apply(ctx)
   await ctx.run('refresh')
-  status = 401
+  status = 502
   await ctx.run('refresh')
   const s = await ctx.run('status')
-  assert.equal(s.list.length, 4)
-  assert.equal(s.problem.code, 'auth')
+  assert.equal(s.problem.code, 'down')
+  assert.ok(s.list.length > 0)
   assert.match((await ctx.widget('ci')).text, /as of/)
 })
 
-test('repos: only repos and organisations are kept, and GitHub is read again', async () => {
-  let reads = 0
-  const ctx = fakeCtx({ settings: { token: 'ghp_' + 'z'.repeat(36) }, fetch: () => { reads++; return ok(answer) } })
+test('pick: kept in the store, GitHub read again; in a terminal no timer is set', async () => {
+  const ctx = fakeCtx({ signin: GH, fetch: (url, opts) => github(opts) })
   apply(ctx)
-  await assert.rejects(ctx.run('repos', { text: 'acme-test/api\nnot a repo' }), /not a repo or an organisation: not a repo/)
-  await ctx.run('repos', { text: 'https://github.com/acme-test/api\nacme-test' })
-  assert.equal(ctx.settingsNow.repos, 'acme-test/api\nacme-test')
-  assert.equal(reads, 1)
-})
-
-test('signed out: nothing is fetched, widgets ask to sign in; in a terminal no timer is set', async () => {
-  const ctx = fakeCtx({ fetch: () => { throw new Error('should not fetch') } })
-  apply(ctx)
-  await ctx.tick()
-  assert.equal(ctx.requests.length, 0)
-  assert.match((await ctx.widget('repos')).empty, /Sign in to GitHub/)
-  const term = fakeCtx({ terminal: true })
+  assert.deepEqual(await ctx.run('pick', { entry: 'acme-test', on: true }), ['acme-test'])
+  assert.deepEqual(await ctx.run('pick', { entry: 'acme-test/api', on: true }), ['acme-test', 'acme-test/api'])
+  assert.deepEqual(await ctx.run('pick', { entry: 'acme-test', on: false }), ['acme-test/api'])
+  assert.deepEqual(JSON.parse(ctx.files['picks.json']), ['acme-test/api'])
+  assert.equal(ctx.requests.length, 3)
+  await assert.rejects(ctx.run('pick', { entry: 'no good', on: true }), /not a repo or an organisation/)
+  const term = fakeCtx({ terminal: true, signin: GH })
   apply(term)
   assert.equal(term.timers.length, 0)
 })
 
 test('near GitHub’s hourly limit the timer waits for the reset; Refresh still reads', async () => {
   const low = { ...answer, data: { ...answer.data, rateLimit: { remaining: 10, limit: 5000, resetAt: '2999-01-01T00:00:00Z' } } }
-  const ctx = fakeCtx({ settings: { token: 'ghp_' + 'z'.repeat(36), repos: REPOS }, fetch: () => ok(low) })
+  const ctx = fakeCtx({ signin: GH, fetch: () => ok(low) })
   apply(ctx)
   await ctx.run('refresh')
   await ctx.tick()

@@ -5,26 +5,15 @@
   "echo": ">=0.9.0",
   "summary": "Your GitHub on Today: CI, open pull requests and the reviews waiting on you, for the repos and organisations you pick",
   "uses": {
+    "signin": {
+      "hosts": ["github.com"]
+    },
     "network": {
       "hosts": ["api.github.com"]
     }
   },
   "main": "main.js",
   "client": "client.js",
-  "settings": [
-    {
-      "key": "token",
-      "label": "GitHub token",
-      "type": "secret",
-      "help": "A personal access token with read access to your repositories (contents, pull requests, issues, actions). Kept on this computer only."
-    },
-    {
-      "key": "repos",
-      "label": "Repos and organisations",
-      "type": "string",
-      "help": "owner/repo, or an organisation's name for its repos — one per line. Empty: the repos you pushed to last."
-    }
-  ],
   "widgets": [
     {
       "id": "repos",

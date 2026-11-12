@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { parseEntries, buildQuery, ciOf, digest, problemOf, deviceCodeOf, deviceStepOf, DEVICE_URL, reposWidget, ciWidget, glanceWidget, discovered, toggled, actionsUrl, forThread, noThreadRepos, buildWorkQuery, workRows, threadRepoNames, apply } from '../../plugins/github/main.js'
+import { parseEntries, buildQuery, ciOf, digest, problemOf, deviceCodeOf, deviceStepOf, DEVICE_URL, pickScope, inPicks, reposWidget, ciWidget, glanceWidget, discovered, toggled, actionsUrl, forThread, noThreadRepos, buildWorkQuery, workRows, threadRepoNames, apply } from '../../plugins/github/main.js'
 import { fakeCtx } from '../helpers/fake-ctx.mjs'
 
 const answer = JSON.parse(readFileSync(new URL('./fixtures/answer.json', import.meta.url), 'utf8'))
@@ -20,7 +20,7 @@ test('entries: repos, organisations, links; duplicates and junk out', () => {
   assert.deepEqual(parseEntries('').entries, [])
 })
 
-test('query: names go in variables, never in the text; no entries reads your last-pushed repos', () => {
+test('query: names go in variables, never in the text; nothing picked reads no repos', () => {
   const { query, variables } = buildQuery(parseEntries('acme-test\nacme-labs/site').entries)
   assert.match(query, /w0: repositoryOwner\(login: \$l0\)/)
   assert.match(query, /r1: repository\(owner: \$o1, name: \$n1\)/)
@@ -28,7 +28,7 @@ test('query: names go in variables, never in the text; no entries reads your las
   assert.deepEqual(variables, { l0: 'acme-test', p0: 'user:acme-test is:pr is:open archived:false', i0: 'user:acme-test is:issue is:open archived:false', o1: 'acme-labs', n1: 'site' })
   const none = buildQuery([])
   assert.match(none.query, /^query GitHub \{/)
-  assert.match(none.query, /mine: viewer/)
+  assert.ok(!/mine: viewer|repositories\(/.test(none.query.split('fragment')[0]), 'no fallback to your last-pushed repos')
   assert.deepEqual(none.variables, {})
 })
 
@@ -285,6 +285,24 @@ test('device sign-in: refused, cancelled (a later confirmation isn’t kept), Gi
   await assert.rejects(old.run('signinStart'), /can’t keep a GitHub sign-in made here yet/)
 })
 
+test('nothing picked: the widgets ask to pick, nothing is read for them; right after start a signed-in plugin never says "Sign in"', async () => {
+  const ctx = fakeCtx({ signin: GH, fetch: (url, opts) => github(opts) })
+  apply(ctx)
+  // Asked before any read (Echo just started): the sign-in is looked up, not assumed missing.
+  assert.match((await ctx.widget('repos')).empty, /Pick a repo or organisation to watch/)
+  assert.equal((await ctx.widget('ci')).text, 'Pick a repo or organisation to watch — Settings → From plugins → GitHub')
+  assert.equal((await ctx.widget('glance')).items[0].label, 'Pick a repo to watch')
+  assert.ok(ctx.signins.length >= 1)
+  await ctx.run('refresh')
+  const q = ctx.requests.map((r) => JSON.parse(r.opts.body).query).find((x) => x.startsWith('query GitHub'))
+  assert.ok(!/repositories\(/.test(q.split('fragment')[0]), 'no repos read with nothing picked')
+  assert.match((await ctx.widget('glance')).items[0].label, /Pick a repo/)
+  // Not signed in at all: it still says how to sign in.
+  const out = fakeCtx({ signin: null, sources: { gh: false, git: false } })
+  apply(out)
+  assert.match((await out.widget('ci')).text, /Sign in to GitHub/)
+})
+
 test('a failed read keeps the last answer and says why', async () => {
   let status = 200
   const ctx = fakeCtx({ signin: GH, store: PICKED, fetch: (url, opts) => (status === 200 ? github(opts) : { status, body: '' }) })
@@ -356,12 +374,22 @@ test('a widget set to a thread: its repos, totals over them; none → says where
   assert.equal(noThreadRepos('stats').items.length, 1)
 })
 
-test('the work query: three searches and each thread repo, names in variables', () => {
-  const { query, variables } = buildWorkQuery(['acme-test/api'])
+test('the work query: three searches scoped to the picks, each thread repo, names in variables; nothing picked: no searches', () => {
+  const entries = parseEntries('acme-test\nacme-labs/site').entries
+  const { query, variables } = buildWorkQuery(['acme-test/api'], entries)
   assert.match(query, /^query Work\(/)
   assert.match(query, /t0: repository\(owner: \$to0, name: \$tn0\)/)
-  assert.equal(variables.qr, 'is:open is:pr review-requested:@me archived:false')
+  assert.equal(variables.qr, 'is:open is:pr review-requested:@me archived:false user:acme-test repo:acme-labs/site')
+  assert.equal(variables.qa, 'is:open is:issue assignee:@me archived:false user:acme-test repo:acme-labs/site')
   assert.ok(!query.includes('acme'))
+  const none = buildWorkQuery(['acme-test/api'])
+  assert.ok(!/rv:|my:|asg:/.test(none.query) && !('qr' in none.variables), 'nothing picked: nothing searched for My work')
+  assert.match(none.query, /t0: repository/, 'a thread’s repos are still read for its Work')
+  // Too many picks for GitHub's 256 characters: searched without them, filtered here.
+  const many = parseEntries(Array.from({ length: 12 }, (_, i) => `some-organisation-${i}/some-repository-${i}`).join('\n')).entries
+  assert.equal(pickScope(many), '')
+  assert.equal(buildWorkQuery([], many).variables.qr, 'is:open is:pr review-requested:@me archived:false')
+  assert.ok(inPicks(entries, 'ACME-TEST/anything') && inPicks(entries, 'acme-labs/site') && !inPicks(entries, 'acme-labs/other') && !inPicks(entries, 'elsewhere-co/tool'))
   assert.deepEqual(threadRepoNames([{ thread: 'a', value: ['x/y', 'X/Y'] }, { thread: 'b', value: ['z/w'] }]), ['x/y', 'z/w'])
 })
 
@@ -406,8 +434,13 @@ test('the host half: a thread’s repos kept per thread, Claude told, rows answe
   assert.equal(ctx.hintsNow[0].thread, 'acme-rollout')
   await assert.rejects(ctx.run('threadPick', { thread: 'acme-rollout', entry: 'acme-test', on: true }), /owner\/repo/)
   assert.ok(ctx.workState.changed >= 1, 'Echo told to ask again after a read')
+  // Nothing picked: nothing on My work (a thread's own repos still fill its Work).
+  assert.deepEqual(await ctx.rows({ scope: 'me' }), [])
+  // acme-test picked: only its rows (GitHub's answer is the same here — the filter is the plugin's own).
+  await ctx.run('pick', { entry: 'acme-test', on: true })
   const me = await ctx.rows({ scope: 'me' })
-  assert.equal(me.length, 6)
+  assert.deepEqual(me.map((r) => r.id), ['pr:acme-test/api#7', 'pr:acme-test/web#11', 'pr:acme-test/web#12', 'issue:acme-test/api#21'])
+  assert.ok(ctx.requests.some((r) => JSON.parse(r.opts.body).variables.qa === 'is:open is:issue assignee:@me archived:false user:acme-test'), 'the search itself scoped')
   const th = await ctx.rows({ scope: 'thread', thread: 'acme-rollout' })
   assert.equal(th.length, 3)
   assert.deepEqual(await ctx.rows({ scope: 'thread', thread: 'nope' }), [])

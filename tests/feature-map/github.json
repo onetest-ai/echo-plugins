@@ -34,7 +34,7 @@
   },
   {
    "id": "F-GH-06",
-   "title": "Nothing picked: the 10 repos pushed to last",
+   "title": "Nothing picked watches nothing: the widgets ask to pick a repo or organisation (never a guess like your last-pushed repos), My work has no GitHub rows, nothing is read for them; a signed-in plugin never shows \"Sign in\" right after Echo starts",
    "priority": "medium",
    "check": "agent"
   },
@@ -106,7 +106,7 @@
   },
   {
    "id": "F-GH-18",
-   "title": "GitHub's items on Today → My work with GitHub's icon: reviews asked of you, your PRs with changes asked or checks failing, issues assigned (milestone date); links ask before opening",
+   "title": "GitHub's items on Today → My work with GitHub's icon: reviews asked of you, your PRs with changes asked or checks failing, issues assigned (milestone date); links ask before opening — only for the repos and organisations picked (nothing picked: none)",
    "priority": "high",
    "check": "agent"
   },

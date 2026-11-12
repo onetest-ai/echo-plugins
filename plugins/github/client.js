@@ -95,7 +95,7 @@ export function apply(ctx) {
     const failed = new Map((st.checks || []).filter((c) => !c.ok).map((c) => [c.entry.toLowerCase(), c.why]))
     const mine = picks.length
       ? picks.map((p) => chip(p, failed.get(p.toLowerCase()) ? `${p} — ${failed.get(p.toLowerCase())}` : p.includes('/') ? '' : 'The organisation: its counts cover all its repos; its 10 pushed to last are listed')).join(' ')
-      : '<span class="set-sub">Nothing picked: Today shows the 10 repos you pushed to last.</span>'
+      : '<span class="set-sub warn">Nothing picked yet — pick at least one repo or organisation below to start watching it.</span>'
     const bad = [...failed].map(([e, why]) => `<div class="set-sub error">⚠ ${esc(e)} — ${esc(why)}</div>`).join('')
     const orgs = ((found && found.orgs) || []).filter((o) => !picked(o.login))
       .map((o) => offer(o.login, `${o.login} · ${count(o.repos, 'repo', 'repos')}`, o.name || o.login)).join(' ')

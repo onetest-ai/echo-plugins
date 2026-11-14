@@ -25,7 +25,8 @@
 - R1. Write `summary` as one sentence the user reads on the install sheet: what they get, not how it works. Evidence: `plugins/scheduler/echo-plugin.json::summary`
 - R2. Ask in `uses` for the least that works: `network.hosts` names each host exactly (`api.github.com`, not a pattern); `echo.read` only the kinds read; no `claude` unless it runs Claude. Each line is one the user agrees to, and an update that adds one asks them again. Evidence: `plugins/telegram/echo-plugin.json::uses`
 - R3. Use the sign-in the user already has on this computer (`ctx.signin.get(host)`, `uses.signin.hosts`: the GitHub CLI's, git's) and never ask them to paste a token when there is one; with none, say in the section how to sign in (`gh auth login`), then a device or browser sign-in. Hold a credential in memory only: never keep, show, log, put in a widget or row, or send it to any host but its own service. Evidence: `plugins/github/main.js::getSignin`
-- R4. Make anything that differs between users a choice, never a constant in the code — picked in the plugin's own section from what it finds for them (their organisations, their recent repos), kept in its store. Manifest `settings` draw Echo's plain card of raw inputs under the plugin ("Its settings"): use them only for a value with no better place to pick it. Evidence: `plugins/github/client.js::pickRows`
+- R4. Give every plugin a part for Claude in Echo: `"agent": {"summary": "<one line: what it gives Claude, when to turn to it>"}` and `agent/CLAUDE.md` saying, only as the code does it, what Claude can do with the plugin — the commands it lists in `uses.sessions.commands` (`${CLAUDE_PLUGIN_ROOT}/scripts/echoctl plugin call <id> <command>`), the data it keeps, its widgets — and where the user manages it; a plugin with nothing for Claude to act on says what it is and where the user manages it. What differs per user (a vault, a repo) goes in entries its host half gives (`ctx.agent.set`), not in a runtime skill. Keep both true to what the plugin does with every change. Evidence: `plugins/obsidian/agent/CLAUDE.md`, `plugins/obsidian/main.js::agentPart`
+- R5. Make anything that differs between users a choice, never a constant in the code — picked in the plugin's own section from what it finds for them (their organisations, their recent repos), kept in its store. Manifest `settings` draw Echo's plain card of raw inputs under the plugin ("Its settings"): use them only for a value with no better place to pick it. Evidence: `plugins/github/client.js::pickRows`
 
 ## Look and words (the same experience in every plugin)
 
@@ -52,7 +53,7 @@
 - R1. Bump `version` for every change a user would get: patch for fixes, minor for something new, and raise `echo` when it needs a newer Echo. Echo compares only `X.Y.Z` (a `-dev.N` suffix is ignored), so a change with the same `X.Y.Z` is never offered as an update. Evidence: `echo:crates/echoctl/src/update.rs::newer`
 - R2. Write the commit subject as `<Name> <version>: <what changed, in the user's words>`; several plugins in one commit as `Scheduler 0.2.3, Telegram 0.3.1: …`; say `(needs Echo X.Y.Z)` when it does. Evidence: `git log` (`Scheduler 0.3.0: send a routine's answer to Echo's Today page`)
 - R3. Do work of more than one commit on a branch `<plugin>-<topic>` and merge it as `Merge <branch>: <Name> <version> — <what it brings>`. Evidence: `git log` (`Merge obsidian-echo-knowledge-caps: Obsidian 0.7.0 — Knowledge`)
-- R4. Before a change is done, pass the gates in `.ai-run/guides/testing/plugin-testing.md`. Evidence: `.ai-run/guides/testing/plugin-testing.md`
+- R4. Before a change is done, pass the gates in `.ai-run/guides/testing/plugin-testing.md`; before every commit, `scripts/check.sh`. Evidence: `scripts/check.sh`
 
 ### Constraints
 | Do not | Do instead | Evidence |
@@ -68,7 +69,7 @@
 |---|---|---|
 | writing a sign-in and a setup section | `plugins/telegram/client.js`, `plugins/telegram/main.js::connect` | no covering test |
 | running work on a schedule, with a list and detail section | `plugins/scheduler/main.js`, `plugins/scheduler/client.js` | no covering test |
-| reading folders and Echo's data, giving Echo's sessions skills, adding a Knowledge tab | `plugins/obsidian/main.js`, `plugins/obsidian/client.js` | no covering test |
+| reading folders and Echo's data, giving Claude in Echo entries at run time (`ctx.agent.set`), adding a Knowledge tab | `plugins/obsidian/main.js`, `plugins/obsidian/client.js` | `tests/obsidian/obsidian.test.mjs`, `tests/cases/obsidian/` |
 | adding Today widgets | `echo:tests/fixtures/plugins/plugins/widget-demo` (one widget of each kind) | `echo:jshost::a_plugins_widgets_are_in_the_catalog_and_give_their_data_by_provide_and_set` |
 
 `echo:` paths are in the Echo repository, `onetest-ai/echo`.

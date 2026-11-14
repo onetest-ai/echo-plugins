@@ -5,7 +5,7 @@ Primary AI entrypoint for **Echo plugins**, the onetest marketplace of plugins f
 
 Each plugin is a folder in `plugins/` with `echo-plugin.json`, a host half (`main.js`) and usually a client half
 (`client.js`), listed in `echo-marketplace.json`. The plugin API is Echo's: its guide is
-`onetest-ai/echo` → `.ai-run/guides/plugins/plugin-authoring.md`, and Echo's code wins where they differ.
+`onetest-ai/echo` → `.ai-run/reference/plugins/plugin-api.md` (the API; `echoctl plugin guide` prints it) with its rules in `.ai-run/guides/plugins/plugin-authoring.md`, and Echo's code wins where they differ.
 
 | Area | Guide | What it covers |
 |---|---|---|

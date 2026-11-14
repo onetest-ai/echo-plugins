@@ -5,7 +5,7 @@
 ## Where the API is documented
 
 ### Rules
-- R1. Learn the plugin API from Echo's own guide, `onetest-ai/echo` → `.ai-run/guides/plugins/plugin-authoring.md` (manifest, `uses`, host half, client half, widgets, publishing); this guide does not repeat it, so a change there needs no change here. Evidence: `echo:.ai-run/guides/plugins/plugin-authoring.md`
+- R1. Learn the plugin API from Echo's reference, `onetest-ai/echo` → `.ai-run/reference/plugins/plugin-api.md` (manifest, `uses`, host half, client half, widgets, `agent/`, publishing; `echoctl plugin guide` prints it), and follow Echo's plugin rules in `.ai-run/guides/plugins/plugin-authoring.md`; this guide repeats neither, so a change there needs no change here. Evidence: `echo:.ai-run/reference/plugins/plugin-api.md`
 - R2. When that guide and Echo's code disagree, the code wins: the host half's `ctx` is `PRELUDE` in `crates/echoctl/src/jshost.rs`, the client half's slots are `SLOTS` in `crates/echoctl/ui/app/33-plugins-client.js`, manifest checks are `read_manifest` in `crates/echoctl/src/plugins.rs`. `docs/*-design.md` is intent and may be ahead of the code (a slot it names may not exist) or behind it. Evidence: `echo:crates/echoctl/src/jshost.rs::PRELUDE`
 - R3. Check what the user's Echo really has before relying on it: `echoctl --version`, and the release that shipped the capability; set the manifest's `echo` (`">=X.Y.Z"`) to that release. Evidence: `plugins/obsidian/echo-plugin.json::echo`
 - R4. When a plugin needs something Echo lacks (a slot, a `ctx` service, rows in an Echo view), open an issue in `onetest-ai/echo` and link it from the plugin's issue here; never reach around it — no reading Echo's DOM or globals, no writing Echo's files, no private endpoints. Evidence: `echo#85` (My work rows), linked from issue #2
@@ -42,7 +42,7 @@
 
 ### Rules
 - R1. Reach a service only with `ctx.http.fetch` and check `status` on every answer; turn 401, 403, 404 and rate limits into a state `status` reports, so the section can say why. Evidence: `plugins/telegram/main.js::connect`
-- R2. Fetch on the plugin's own timer (`ctx.every`) or on the user's action, keep the last answer in the store (`cache/` for what can be lost), and answer widgets and rows from it: a widget's provider has 5 s, and Today never waits on a service. Push a change with `ctx.widgets.set`. Evidence: `echo:.ai-run/guides/plugins/plugin-authoring.md` (Host half R15)
+- R2. Fetch on the plugin's own timer (`ctx.every`) or on the user's action, keep the last answer in the store (`cache/` for what can be lost), and answer widgets and rows from it: a widget's provider has 5 s, and Today never waits on a service. Push a change with `ctx.widgets.set`. Evidence: `echo:.ai-run/guides/plugins/plugin-api.md` § Widgets → Giving data)
 - R3. Treat the service's text (titles, names, branch names) as untrusted: through `ctx.ui.esc` in the window (Markdown rendered in the host half with `ctx.markdown`, its HTML handed over by `ctx.call`), plain text in widget data; an outside link only `https://` to the service's own host. Evidence: `echo:.ai-run/guides/security/untrusted-text.md`
 - R4. Spend the service's rate limit carefully: one batched request per refresh where the API allows (GraphQL, search counts), conditional requests (`ETag` / `If-None-Match`) where it has them, refresh no more often than every 5 minutes unless the user asks, and back off when it says so. Evidence: no exemplar yet — the GitHub plugin (issue #2) is the first
 
@@ -61,7 +61,7 @@
 | Put tests, fixtures or dev scripts in `plugins/<id>/` | `tests/<id>/` at the repository root | `plugins/scheduler` |
 | Hard-code a user's organisation, repos, project or token | A setting (`secret` for credentials) | `plugins/telegram/echo-plugin.json::settings` |
 | Fetch from a service inside a widget's `provide` and wait | Fetch on a timer, keep it, answer `provide` from the store, `ctx.widgets.set` on change | `echo:crates/echoctl/src/jshost.rs::widget_ask` |
-| Copy Echo's API rules into this repository | Link `plugin-authoring.md` in Echo | `echo:.ai-run/guides/plugins/plugin-authoring.md` |
+| Copy Echo's API reference or rules into this repository | Link `plugin-api.md` and `plugin-authoring.md` in Echo | `echo:.ai-run/reference/plugins/plugin-api.md` |
 
 ### Read first
 | When you are | Exemplar | Tests |

@@ -26,7 +26,18 @@
     "sessions": {
       "skills": true,
       "read": true,
-      "hints": true
+      "hints": true,
+      "commands": [
+        "search",
+        "info",
+        "links",
+        "backlinks",
+        "resolve",
+        "tags",
+        "where",
+        "tasks",
+        "unresolved"
+      ]
     }
   },
   "main": "main.js",

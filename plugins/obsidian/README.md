@@ -18,7 +18,8 @@ then on Claude in Echo knows where to look.
   headings, block ids, tasks — whether or not Obsidian is open, kept in the plugin's own folder (never in the vault).
   Claude asks it through the plugin's commands (`echoctl plugin call obsidian search | info | backlinks | links |
   resolve | tags | where | tasks | unresolved | rename_plan`); `rename_plan` gives every line to change so a renamed or
-  moved note keeps its links.
+  moved note keeps its links. The install sheet's line "lets Claude in Echo run its commands “search”, “info”, … without
+  asking" covers the nine that only read the index — so a Scheduler routine may use them too; `rename_plan` still asks.
 - **Knowledge** (a switch in its Settings card, off by default): Echo keeps the lasting facts it learns from your calls
   and mail as an Obsidian vault of its own, in the plugin's folder. Each fact links back to Recall, Echo's index of
   everything said. Its notes are a tab of Echo's **Knowledge** section (Notes, beside Recall's Sources, Dictionary and

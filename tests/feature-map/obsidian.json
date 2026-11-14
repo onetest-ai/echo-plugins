@@ -37,6 +37,12 @@
    "title": "No runtime skill: the skill older versions gave (obsidian-vaults) is taken away and none is laid out",
    "priority": "medium",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-07",
+   "title": "Claude in Echo may run the index's read commands without asking (uses.sessions.commands: search, info, links, backlinks, resolve, tags, where, tasks, unresolved — named on the install sheet, not rename_plan); they work from the laid-out launcher, also in a read-only routine",
+   "priority": "high",
+   "check": "agent"
   }
  ]
 }

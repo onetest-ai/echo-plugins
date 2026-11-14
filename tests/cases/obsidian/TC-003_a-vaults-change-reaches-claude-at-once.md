@@ -21,7 +21,7 @@ tags: [obsidian, claude-code, sessions]
 | # | Action | Expected Result |
 |---|--------|----------------|
 | 1 | `echoctl plugin call obsidian rename '{"id":"acme-wiki","name":"Acme wiki"}'`; `echoctl plugin call obsidian belongs '{"id":"acme-wiki","belongs":[{"client":"acme"}]}'`; `head -3 "$P/acme-wiki/CLAUDE.md"`; `echoctl core` | The file starts "# Acme wiki" and says "An Obsidian vault the user connected to Echo, for Acme. Folder: …"; the core's plugin row says "The user's notes: 1 Obsidian vault — Acme wiki"; the entry keeps its name `acme-wiki` |
-| 2 | `echoctl plugin call obsidian save '{"id":"acme-wiki","key":"when","text":"Acme decisions, and who made them"}'`; `echoctl core` | The row `\| Obsidian vaults · acme-wiki \| Acme decisions, and who made them \| … \|` |
+| 2 | `echoctl plugin call obsidian save '{"id":"acme-wiki","key":"when","text":"Acme decisions, and who made them"}'`; `echoctl core` | The row "Obsidian vaults · acme-wiki" now gives "Acme decisions, and who made them" |
 | 3 | `ECHOCTL_PICK_FOLDER="$VAULTS/home-notes" echoctl plugin call obsidian add '{"wait":true}'`; `save` its `when` "Trips and recipes"; `confirm` it; `echoctl core` | Two vault rows: `acme-wiki` and `home-notes` ("Trips and recipes"); the plugin's row "The user's notes: 2 Obsidian vaults — Acme wiki, home-notes" |
 | 4 | `echoctl plugin call obsidian remove '{"id":"home-notes"}'`; `ls "$P"`; `echoctl core` | `true`; `home-notes` is gone from `$P` and from the core; the plugin's row names only Acme wiki |
 

@@ -32,7 +32,9 @@ Echo keeps an index of every vault as Obsidian does (links and where they lead, 
 headings, tasks), whether or not Obsidian is open. Ask it instead of searching file by file:
 
 `${CLAUDE_PLUGIN_ROOT}/scripts/echoctl plugin call obsidian <command> '<json>'` — "vault": a vault's name or folder
-(Knowledge: "echo"); "note": its path in the vault, or its name as a [[link]] would say it.
+(Knowledge: "echo"); "note": its path in the vault, or its name as a [[link]] would say it. Echo lets its sessions run
+these commands without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `where`, `tasks`,
+`unresolved` — they only read the index.
 
 - `search {"vault","q","tag"?,"folder"?}` — notes by title, alias, heading, tag and property, best first. For words
   inside notes, Grep the folder.
@@ -47,11 +49,9 @@ headings, tasks), whether or not Obsidian is open. Ask it instead of searching f
   not written yet.
 - `rename_plan {"vault","note","to"}` — before renaming or moving a note (`to`: a new name, or a new path in the
   vault): the move and every line to change so no link breaks. Move the file, then make each edit as given (the whole
-  line, "before" → "after"). Never rename or move a note without it.
-
-The plugin doesn't let Echo's runs use these commands on their own (a routine is refused them); in the Claude · Echo
-folder session the user's own Claude Code permissions decide. Where they can't be run, read the files — the catalog,
-the description, Grep — and don't rename or move notes.
+  line, "before" → "after"). Never rename or move a note without it. It isn't among the commands above (it can also
+  rename notes in Knowledge, which you never change): it asks first, and where it can't be run, don't rename or move
+  notes.
 
 ## Adding to a vault
 

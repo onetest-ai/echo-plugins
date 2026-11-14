@@ -8,7 +8,7 @@ then on Claude in Echo knows where to look.
   Echo's index, adding notes in its own way), and one entry per vault — its "when Claude looks here" line and where its
   description is, read as notes, not instructions — plus Knowledge when it is on. Echo lists each in what its folder
   session starts with; Claude reads one only when it works with that vault. Routines (and Yolo) get the vaults through
-  Echo's core the same way from Echo 0.9.10 on. Rebuilt whenever a vault is added, removed, read again or its
+  Echo's core the same way (Echo 0.9.9). Rebuilt whenever a vault is added, removed, read again or its
   description edited.
 - **Claude in Echo may read the vaults** (the Claude · Echo folder session, Scheduler routines). Writing into a vault is
   the folder session's, under your own Claude Code permissions, guided by the description.

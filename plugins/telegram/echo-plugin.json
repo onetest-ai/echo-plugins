@@ -1,8 +1,12 @@
 {
   "id": "telegram",
   "name": "Telegram",
-  "version": "0.3.1",
+  "version": "0.4.0",
+  "echo": ">=0.9.9",
   "summary": "Your own Telegram bot: Echo sends you things there, and you talk to your Claude · Echo folder session from your phone while it is open",
+  "agent": {
+    "summary": "The user's Telegram bot: a way Echo sends to them, and their phone into the Claude · Echo folder session while it is open"
+  },
   "uses": {
     "deliver_provider": {
       "kinds": [

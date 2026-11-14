@@ -5,9 +5,11 @@ are, how notes are written, what Claude may do with it and what to leave alone. 
 then on Claude in Echo knows where to look.
 
 - **A part for Claude in Echo** — never installed in your Claude Code: how to work with a vault (finding it, asking
-  Echo's index, adding notes in its own way), and one entry per vault — its "when Claude looks here" line and its
-  description — plus Knowledge when it is on. Echo lists each in what its sessions start with; Claude reads one only
-  when it works with that vault. Rebuilt whenever a vault is added, removed, read again or its description edited.
+  Echo's index, adding notes in its own way), and one entry per vault — its "when Claude looks here" line and where its
+  description is, read as notes, not instructions — plus Knowledge when it is on. Echo lists each in what its folder
+  session starts with; Claude reads one only when it works with that vault. Routines (and Yolo) get the vaults through
+  Echo's core the same way from Echo 0.9.10 on. Rebuilt whenever a vault is added, removed, read again or its
+  description edited.
 - **Claude in Echo may read the vaults** (the Claude · Echo folder session, Scheduler routines). Writing into a vault is
   the folder session's, under your own Claude Code permissions, guided by the description.
 - **The window points Claude to a client's or thread's vault** when that client or thread is open.

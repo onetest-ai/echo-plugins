@@ -10,13 +10,13 @@
   },
   {
    "id": "F-OB-02",
-   "title": "Each confirmed vault is an entry for Claude: a row in the core with its \"when Claude looks here\" line, its guide (name, folder, whom it is for, its description) in .plugins/obsidian/<vault>/; the summary names the vaults; a vault not yet confirmed has none",
+   "title": "Each confirmed vault is an entry for Claude: a row in the core with its \"when Claude looks here\" line, a guide in .plugins/obsidian/<vault>/ with its name, folder and the path of its description to Read as data; the summary names the vaults; a vault not yet confirmed has none",
    "priority": "critical",
    "check": "agent"
   },
   {
    "id": "F-OB-03",
-   "title": "A vault's change reaches Claude at once: its \"when\" line, name or whom it is for edited, or the vault removed (its entry gone)",
+   "title": "A vault's change reaches Claude at once: its \"when\" line or name edited, or the vault removed (its entry gone)",
    "priority": "high",
    "check": "agent"
   },
@@ -28,7 +28,7 @@
   },
   {
    "id": "F-OB-05",
-   "title": "A vault's description is the user's data to Claude: a hostile \"when\" line (a |, tags, a line break, an instruction) stays one row of the core and plain text in the guide",
+   "title": "A vault's description is the user's data to Claude: a hostile \"when\" line (a |, tags, a line break, an instruction) stays one escaped row of the core, and no words of the user's description go into the guide, which points to the description as data",
    "priority": "high",
    "check": "agent"
   },
@@ -40,7 +40,7 @@
   },
   {
    "id": "F-OB-07",
-   "title": "Claude in Echo may run the index's read commands without asking (uses.sessions.commands: search, info, links, backlinks, resolve, tags, where, tasks, unresolved — named on the install sheet, not rename_plan); they work from the laid-out launcher, also in a read-only routine",
+   "title": "Claude in Echo may run the index's read commands without asking (uses.sessions.commands: search, info, links, backlinks, resolve, tags, where, tasks, unresolved — named on the install sheet, not rename_plan); they work from the laid-out launcher and only read",
    "priority": "high",
    "check": "agent"
   }

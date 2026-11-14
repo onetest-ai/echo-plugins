@@ -20,12 +20,14 @@ for the repos and organisations you pick. Echo only reads GitHub; it never chang
   requests with changes asked or checks failing, and the issues assigned to you (by their milestone's date; undated
   ones after the dated); in a thread's Work tab, its repos' open pull requests and issues. A link asks before it opens
   github.com. Nothing is written to GitHub.
+- **Claude in Echo knows it is there**: what the widgets show now, GitHub's rows in your task lists, a thread's repos
+  — read when you ask about them.
 - **Reads every 5 minutes**, in two requests, and keeps the answer, so Today never waits on GitHub; when GitHub is
   down or its hourly limit is used up, the last answer stays, dated.
 - Nothing is watched until you pick at least one repo or organisation; the widgets say so. An organisation counts all
   its repos; the 10 pushed to last are listed.
 
-It needs Echo 0.9.2 or later, and a GitHub sign-in: `gh auth login`, git's credentials for github.com, or — with an
+It needs Echo 0.9.9 or later, and a GitHub sign-in: `gh auth login`, git's credentials for github.com, or — with an
 Echo that keeps a sign-in made here (onetest-ai/echo#488) — Sign in with GitHub. Organisations are listed when that sign-in
 may read them (GitHub's `read:org`, which `gh` and the sign-in made here have).
 

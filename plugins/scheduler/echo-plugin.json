@@ -5,7 +5,8 @@
   "echo": ">=0.9.9",
   "summary": "Run your own Claude prompts on a schedule — a Monday digest, the day's plan — and get the answer in Telegram, Teams or mail",
   "agent": {
-    "summary": "The user's scheduled Claude prompts (routines): what runs when and where its answer goes, each run's answer, cost or failure"
+    "summary": "The user's scheduled Claude prompts (routines): what runs when and where its answer goes, each run's answer, cost or failure",
+    "prefix": "schd"
   },
   "uses": {
     "claude": {

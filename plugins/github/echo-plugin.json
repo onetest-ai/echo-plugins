@@ -5,7 +5,8 @@
   "echo": ">=0.9.9",
   "summary": "Your GitHub in Echo: CI, open pull requests and reviews on Today, GitHub's items in My work and in each thread's Work, with the computer's own GitHub sign-in or one you make in Echo",
   "agent": {
-    "summary": "The user's GitHub as Echo reads it: CI, open pull requests and reviews for the repos they picked — the widgets' data, GitHub's rows in My work and a thread's Work, a thread's repos"
+    "summary": "The user's GitHub as Echo reads it: CI, open pull requests and reviews for the repos they picked — the widgets' data, GitHub's rows in My work and a thread's Work, a thread's repos",
+    "prefix": "git"
   },
   "icon": "icon.svg",
   "uses": {

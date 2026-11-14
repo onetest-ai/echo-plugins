@@ -1,0 +1,42 @@
+{
+ "plugin": "obsidian",
+ "prefix": "F-OB",
+ "features": [
+  {
+   "id": "F-OB-01",
+   "title": "Claude in Echo is told what the plugin gives: installed, its part is laid out in the data folder's .plugins/obsidian/ (finding a vault, asking Echo's index with the CLI there, adding notes, where the user manages it) and the core lists it with the manifest's summary",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-02",
+   "title": "Each confirmed vault is an entry for Claude: a row in the core with its \"when Claude looks here\" line, its guide (name, folder, whom it is for, its description) in .plugins/obsidian/<vault>/; the summary names the vaults; a vault not yet confirmed has none",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-03",
+   "title": "A vault's change reaches Claude at once: its \"when\" line, name or whom it is for edited, or the vault removed (its entry gone)",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-04",
+   "title": "Knowledge is an entry for Claude while it is on and holds notes, first; turned off, the entry goes",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-05",
+   "title": "A vault's description is the user's data to Claude: a hostile \"when\" line (a |, tags, a line break, an instruction) stays one row of the core and plain text in the guide",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-06",
+   "title": "No runtime skill: the skill older versions gave (obsidian-vaults) is taken away and none is laid out",
+   "priority": "medium",
+   "check": "agent"
+  }
+ ]
+}

@@ -1,9 +1,12 @@
 {
   "id": "obsidian",
   "name": "Obsidian vaults",
-  "version": "0.7.1",
-  "echo": ">=0.8.0",
+  "version": "0.8.0",
+  "echo": ">=0.9.9",
   "summary": "Connect the Obsidian vaults you already have: Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
+  "agent": {
+    "summary": "The user's Obsidian vaults and Echo's Knowledge: which vault to look in, asking Echo's index of them, adding notes in each vault's own way"
+  },
   "uses": {
     "folders": {
       "what": "Obsidian vaults"

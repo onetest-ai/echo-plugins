@@ -43,7 +43,7 @@
 ### Rules
 - R1. Reach a service only with `ctx.http.fetch` and check `status` on every answer; turn 401, 403, 404 and rate limits into a state `status` reports, so the section can say why. Evidence: `plugins/telegram/main.js::connect`
 - R2. Fetch on the plugin's own timer (`ctx.every`) or on the user's action, keep the last answer in the store (`cache/` for what can be lost), and answer widgets and rows from it: a widget's provider has 5 s, and Today never waits on a service. Push a change with `ctx.widgets.set`. Evidence: `echo:.ai-run/guides/plugins/plugin-authoring.md` (Host half R15)
-- R3. Treat the service's text (titles, names, branch names) as untrusted: through `ctx.ui.esc` or `ctx.markdown` in the window, plain text in widget data; an outside link only `https://` to the service's own host. Evidence: `echo:.ai-run/guides/security/untrusted-text.md`
+- R3. Treat the service's text (titles, names, branch names) as untrusted: through `ctx.ui.esc` in the window (Markdown rendered in the host half with `ctx.markdown`, its HTML handed over by `ctx.call`), plain text in widget data; an outside link only `https://` to the service's own host. Evidence: `echo:.ai-run/guides/security/untrusted-text.md`
 - R4. Spend the service's rate limit carefully: one batched request per refresh where the API allows (GraphQL, search counts), conditional requests (`ETag` / `If-None-Match`) where it has them, refresh no more often than every 5 minutes unless the user asks, and back off when it says so. Evidence: no exemplar yet — the GitHub plugin (issue #2) is the first
 
 ## Versions and commits

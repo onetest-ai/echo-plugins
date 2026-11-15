@@ -6,11 +6,14 @@ Plugins are tested as Echo is: `onetest-ai/echo` → `.ai-run/guides/testing/tes
 
 ## Gates
 
-Run from the repository root, fastest first.
+Run from the repository root, fastest first. `scripts/check.sh` runs syntax, package, unit and map in one go (`echoctl`
+from `$ECHOCTL`, else `PATH`: an Echo with `plugin check`) — run it before every commit; it exits non-zero when any fails.
 
 | Gate | Run | Pass |
 |---|---|---|
+| all but functional and person | `scripts/check.sh` (`ECHOCTL=<echo checkout>/target/debug/echoctl scripts/check.sh`) | exit 0 |
 | syntax | `for f in plugins/*/*.js; do node --check "$f" \|\| exit 1; done` | exit 0 |
+| package | `echoctl plugin check --json plugins/*`, and `agent` in every manifest (both in `scripts/check.sh`) | no problem named: each package passes Echo's install checks and has its part for Claude |
 | unit | `node --test 'tests/**/*.test.mjs'` | exit 0 |
 | map | `python3 -I tests/tools/feature-map.py check` | exit 0: every feature has a case, every case names known features |
 | functional | the `run: agent` cases of what the change touched, in an environment from `tests/fixtures/<plugin>/up.sh` (Echo built from source) | each PASS with evidence (the command's output, a Playwright snapshot); a report in `tests/reports/` (git-ignored) |

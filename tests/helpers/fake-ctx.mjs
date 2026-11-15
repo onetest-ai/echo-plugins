@@ -10,7 +10,11 @@
  *  keeps is handed back first by `get` as {token, from: 'echo'}; it is in `keptNow` ({host: token}). */
 /** `threads`: Echo's values per thread for `ctx.threads` ({thread: {key: value}}; leave it out for an Echo without it);
  *  `work`: true for `ctx.work`; `hints`: true for `ctx.view.hints`. */
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false } = {}) {
+/** `agent`: true for `ctx.agent.set` (its part for Claude in Echo), checked as Echo checks it; the last set is `agentNow`.
+ *  `sessions`: true for `ctx.sessions.skills` / `read` (the last of each: `sessionsNow`). `folders`: the folders the
+ *  user gave it (`ctx.fs.folders()`). `echo`: Echo's data for `ctx.echo.read` ({clients, threads, …}). `inbox`: true
+ *  for `ctx.inbox` (`inboxNow`). The store's files are at `/store/<path>` (`ctx.store.path`). */
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
   const ctx = {
@@ -24,6 +28,7 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
       write: (path, text) => { files[path] = String(text) },
       list: (dir = '') => Object.keys(files).filter((p) => p.startsWith(dir)),
       remove: (path) => { delete files[path] },
+      path: (path = '') => `/store/${path}`,
     },
     settings: {
       get: (key) => (key in settings ? settings[key] : null),
@@ -70,9 +75,17 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   if (work) ctx.work = { provide: (fn) => { workState.provider = fn }, changed: () => { workState.changed++ } }
   const hintsNow = []
   if (hints) ctx.view = { hints: (list) => { hintsNow.splice(0, hintsNow.length, ...JSON.parse(JSON.stringify(list || []))) } }
+  const agentNow = { part: null, sets: 0 }
+  if (agent) ctx.agent = { set: (part) => { agentNow.part = checkAgent(part || {}); agentNow.sets++ } }
+  const sessionsNow = { skills: null, read: null }
+  if (sessions) ctx.sessions = { skills: (list) => { sessionsNow.skills = JSON.parse(JSON.stringify(list || [])) }, read: (dirs) => { sessionsNow.read = [...(dirs || [])] } }
+  if (folders !== undefined) ctx.fs = { folders: () => [...folders] }
+  if (echo !== undefined) ctx.echo = { read: (kind) => JSON.parse(JSON.stringify(echo[kind] || [])) }
+  const inboxNow = {}
+  if (inbox) ctx.inbox = { set: (key, item) => { inboxNow[key] = item }, clear: (key) => { delete inboxNow[key] } }
   return Object.assign(ctx, {
     // What the tests look at.
-    commands, providers, timers, pushed, logs, requests, signins, keptNow, files, settingsNow: settings, threadsNow: threads, workState, hintsNow,
+    commands, providers, timers, pushed, logs, requests, signins, keptNow, files, settingsNow: settings, threadsNow: threads, workState, hintsNow, agentNow, sessionsNow, inboxNow,
     /** Ask its work rows as Echo does. */
     rows: async (ask) => JSON.parse(JSON.stringify(await workState.provider(ask))),
     /** Run a command as Echo does: JSON in, JSON out. */
@@ -88,4 +101,31 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
     /** Run every timer once (Echo runs them at their first tick). */
     tick: async () => { for (const t of timers) await t.fn() },
   })
+}
+
+/** `ctx.agent.set` as Echo checks it (`plugins::agent::set_runtime`): {summary?, entries: [{name, summary, guide}]} —
+ *  a summary of 1–200 characters, at most 20 entries, each name a–z 0–9 - (up to 40; not guides or scripts) once, a
+ *  summary of 1–200 characters, a guide of at most 16 KB. Gives back what Echo keeps. */
+export function checkAgent(part) {
+  const chars = (s) => [...String(s)].length
+  if (typeof part !== 'object' || Array.isArray(part)) throw new Error('ctx.agent.set takes {summary?, entries: [{name, summary, guide}]}')
+  const extra = Object.keys(part).find((k) => !['summary', 'entries'].includes(k))
+  if (extra) throw new Error(`ctx.agent.set has no “${extra}” (summary, entries)`)
+  const summary = part.summary == null ? null : part.summary
+  if (summary !== null && (typeof summary !== 'string' || !summary.trim() || chars(summary) > 200)) throw new Error('its summary is text of 1–200 characters')
+  const list = part.entries == null ? [] : part.entries
+  if (!Array.isArray(list)) throw new Error('entries are a list of {name, summary, guide}')
+  if (list.length > 20) throw new Error('at most 20 entries')
+  const entries = []
+  for (const e of list) {
+    const name = typeof e.name === 'string' ? e.name : ''
+    if (!/^[a-z0-9-]{1,40}$/.test(name) || ['guides', 'scripts'].includes(name)) throw new Error('an entry\'s name is a few lowercase words with dashes (a–z, 0–9, -; up to 40), not guides or scripts')
+    if (entries.some((x) => x.name === name)) throw new Error(`entry ${name} is given twice`)
+    const s = typeof e.summary === 'string' ? e.summary : ''
+    if (!s.trim() || chars(s) > 200) throw new Error(`entry ${name}: a summary of 1–200 characters`)
+    const g = typeof e.guide === 'string' ? e.guide : ''
+    if (!g.trim() || new TextEncoder().encode(g).length > 16 * 1024) throw new Error(`entry ${name}: a guide of Markdown text, 16 KB at most`)
+    entries.push({ name, summary: s, guide: g })
+  }
+  return { summary, entries }
 }

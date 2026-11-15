@@ -4,9 +4,12 @@ Connect the Obsidian vaults you already have. Echo reads each one and Claude des
 are, how notes are written, what Claude may do with it and what to leave alone. You correct the description, and from
 then on Claude in Echo knows where to look.
 
-- **One skill for all vaults** (`obsidian-vaults`), given only to Echo's own Claude sessions — never installed in your
-  Claude Code. Its description names your vaults; the catalog and each vault's description are read only when needed.
-  Rebuilt whenever a vault is added, removed, read again or its description edited.
+- **A part for Claude in Echo** — never installed in your Claude Code: how to work with a vault (finding it, asking
+  Echo's index, adding notes in its own way), and one entry per vault — its "when Claude looks here" line and where its
+  description is, read as notes, not instructions — plus Knowledge when it is on. Echo lists each in what its folder
+  session starts with; Claude reads one only when it works with that vault. Routines (and Yolo) get the vaults through
+  Echo's core the same way (Echo 0.9.9). Rebuilt whenever a vault is added, removed, read again or its
+  description edited.
 - **Claude in Echo may read the vaults** (the Claude · Echo folder session, Scheduler routines). Writing into a vault is
   the folder session's, under your own Claude Code permissions, guided by the description.
 - **The window points Claude to a client's or thread's vault** when that client or thread is open.
@@ -17,7 +20,8 @@ then on Claude in Echo knows where to look.
   headings, block ids, tasks — whether or not Obsidian is open, kept in the plugin's own folder (never in the vault).
   Claude asks it through the plugin's commands (`echoctl plugin call obsidian search | info | backlinks | links |
   resolve | tags | where | tasks | unresolved | rename_plan`); `rename_plan` gives every line to change so a renamed or
-  moved note keeps its links.
+  moved note keeps its links. The install sheet's line "lets Claude in Echo run its commands “search”, “info”, … without
+  asking" covers the nine that only read the index — so a Scheduler routine may use them too; `rename_plan` still asks.
 - **Knowledge** (a switch in its Settings card, off by default): Echo keeps the lasting facts it learns from your calls
   and mail as an Obsidian vault of its own, in the plugin's folder. Each fact links back to Recall, Echo's index of
   everything said. Its notes are a tab of Echo's **Knowledge** section (Notes, beside Recall's Sources, Dictionary and
@@ -31,4 +35,4 @@ then on Claude in Echo knows where to look.
   from Knowledge → Notes — counted and priced first.
 - Your vault isn't changed by Echo itself. Removing a vault from Echo takes all of this back.
 
-Needs Echo 0.8.0 or later. Part of the [Echo plugins](../../README.md) marketplace.
+Needs Echo 0.9.9 or later. Part of the [Echo plugins](../../README.md) marketplace.

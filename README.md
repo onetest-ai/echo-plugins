@@ -13,7 +13,10 @@ An Echo plugin is a package that brings **its own code** — the way dsh-desktop
   `call.menu`, `task.actions`, `calendar.event`), `ctx.palette.add`, `ctx.ui` (Echo's own pieces, so it looks like Echo).
 - `echo-plugin.json` — what it is and what it touches (`uses`); Echo writes the install sheet from it, and installing is
   trusting its code.
-- Anything else it needs: skills, templates, prompts.
+- `agent/` — its part for Claude in Echo (`"agent": {"summary": …}` in the manifest): `CLAUDE.md` (what it gives
+  Claude, when to turn to it, its commands), and skills, rules and guides when it needs them. Echo lays it out in the
+  data folder's `.plugins/<id>/`; Claude reads it only when it works with the plugin.
+- Anything else it needs: templates, prompts.
 
 | Plugin | What it does |
 |---|---|
@@ -22,7 +25,7 @@ An Echo plugin is a package that brings **its own code** — the way dsh-desktop
 | [Obsidian vault](plugins/obsidian) | Your vault as Echo's second brain; minutes and people written into it |
 | [GitHub](plugins/github) | CI, pull requests and reviews on Today; GitHub's items in My work and in each thread's Work; a thread's repos |
 
-Scheduler needs an Echo with plugins (0.7 or later); Telegram and Obsidian vault need capabilities that arrive after it — until then Echo lists them as "Needs a newer Echo". Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
+Each needs Echo 0.9.9 or later, which reads a plugin's part for Claude (`agent/`) — until then Echo lists them as "Needs a newer Echo". Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
 
 ## Make a marketplace of your own
 

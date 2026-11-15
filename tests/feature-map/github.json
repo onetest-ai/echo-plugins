@@ -127,6 +127,12 @@
    "title": "Without a GitHub sign-in on the computer, sign in here: the plugin runs GitHub's device sign-in (a code confirmed at github.com/login/device, onetest-ai's OAuth app, no secret) and Echo keeps the sign-in; the section reads GitHub with it, says when GitHub refuses it, and signs out; the token is never in the plugin's store",
    "priority": "high",
    "check": "agent"
+  },
+  {
+   "id": "F-GH-22",
+   "title": "Claude in Echo is told what the plugin gives: its part laid out in the data folder's .plugins/github/ (what its widgets show and how to read them, GitHub's rows in the task lists, a thread's repos, where the user manages it) and a row in the core",
+   "priority": "medium",
+   "check": "agent"
   }
  ]
 }

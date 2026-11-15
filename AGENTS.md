@@ -11,3 +11,6 @@ Each plugin is a folder in `plugins/` with `echo-plugin.json`, a host half (`mai
 |---|---|---|
 | Development | .ai-run/guides/plugins/plugin-development.md | layout, manifest, the same look and words in every plugin, outside services, versions and commits |
 | Testing | .ai-run/guides/testing/plugin-testing.md | as Echo: functional cases and the map run on Echo built from source with fake services; unit tests as a supplement |
+
+Before every commit run `scripts/check.sh` (`echoctl` from `$ECHOCTL` or `PATH`; an Echo with `plugin check`): syntax,
+Echo's package checks (each plugin has its part for Claude, `agent/`), unit tests and the map. It must exit 0.

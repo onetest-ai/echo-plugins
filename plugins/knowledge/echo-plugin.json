@@ -1,0 +1,22 @@
+{
+  "id": "knowledge",
+  "name": "Knowledge",
+  "version": "0.1.0",
+  "echo": ">=0.9.9",
+  "summary": "Your Markdown vaults: read, edit, ask, ingest sources and review their health, with minutes saved by your rules.",
+  "uses": {
+    "knowledge": {},
+    "sessions": {
+      "commands": [
+        "status",
+        "read"
+      ]
+    }
+  },
+  "agent": {
+    "summary": "Connected Markdown knowledge vaults: inspect their pages, links and health; the user manages them in Knowledge.",
+    "prefix": "kn"
+  },
+  "main": "main.js",
+  "client": "client.js"
+}

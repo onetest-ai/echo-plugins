@@ -1,11 +1,12 @@
 {
   "name": "onetest",
   "owner": "onetest-ai",
-  "featured": ["scheduler", "telegram", "obsidian", "github"],
+  "featured": ["scheduler", "telegram", "obsidian", "github", "knowledge"],
   "plugins": [
     { "id": "scheduler", "source": "./plugins/scheduler", "categories": ["automation"] },
     { "id": "telegram", "source": "./plugins/telegram", "categories": ["chat"] },
     { "id": "obsidian", "source": "./plugins/obsidian", "categories": ["knowledge"] },
-    { "id": "github", "source": "./plugins/github", "categories": ["developer"] }
+    { "id": "github", "source": "./plugins/github", "categories": ["developer"] },
+    { "id": "knowledge", "source": "./plugins/knowledge", "categories": ["knowledge"] }
   ]
 }

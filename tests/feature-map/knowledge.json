@@ -1,0 +1,14 @@
+{
+  "plugin": "knowledge",
+  "prefix": "F-KNP",
+  "features": [
+    {"id":"F-KNP-01","title":"Installable Knowledge owns all seven vault tabs through Echo's native engine","priority":"critical","check":"agent"},
+    {"id":"F-KNP-02","title":"Pages, search, graph and conflict-safe editing retain existing behavior","priority":"critical","check":"agent"},
+    {"id":"F-KNP-03","title":"Existing Knowledge links and registry remain usable","priority":"high","check":"agent"},
+    {"id":"F-KNP-04","title":"Minutes exports preserve receipts, idempotence and user edits","priority":"critical","check":"agent"},
+    {"id":"F-KNP-05","title":"Ask, Curate and Research retain native profile and permission guards","priority":"critical","check":"agent"},
+    {"id":"F-KNP-06","title":"Ingest and Health retain scratch isolation, review and validated evidence","priority":"critical","check":"agent"},
+    {"id":"F-KNP-07","title":"Disable, enable and removal clean up the plugin and preserve vault data","priority":"critical","check":"agent"},
+    {"id":"F-KNP-08","title":"Native Knowledge access requires its declared capability and enabled plugin","priority":"critical","check":"agent"}
+  ]
+}

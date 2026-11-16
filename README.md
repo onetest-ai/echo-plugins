@@ -23,9 +23,13 @@ An Echo plugin is a package that brings **its own code** — the way dsh-desktop
 | [Scheduler](plugins/scheduler) | Your own Claude prompts on a schedule, answers delivered to you in Telegram, Teams or mail |
 | [Telegram](plugins/telegram) | Your Claude · Echo folder session from your phone, through your own bot |
 | [Obsidian vault](plugins/obsidian) | Your vault as Echo's second brain; minutes and people written into it |
+| [Knowledge](plugins/knowledge) | Your Markdown vaults: pages, graph, guarded Ask, source ingestion and Health reviews |
 | [GitHub](plugins/github) | CI, pull requests and reviews on Today; GitHub's items in My work and in each thread's Work; a thread's repos |
 
 Each needs Echo 0.9.9 or later, which reads a plugin's part for Claude (`agent/`) — until then Echo lists them as "Needs a newer Echo". Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
+
+Knowledge currently requires the paired Echo build with native Knowledge plugin support; it is not compatible with
+an older Echo 0.9.9 build that lacks the `knowledge` capability.
 
 ## Make a marketplace of your own
 

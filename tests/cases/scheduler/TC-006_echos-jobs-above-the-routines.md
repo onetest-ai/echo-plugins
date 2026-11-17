@@ -1,6 +1,6 @@
 ---
 id: TC-006
-title: Echo's jobs above the routines — each job's name, what it does, last run, runs today and its settings with their defaults; hidden and shown again
+title: Routines and System tabs — the user's routines and Echo's jobs drawn by the same row from the one routine contract, with next run, last run, where it sends and 30 days
 priority: critical
 type: functional
 requirements: [F-SCH-06]
@@ -8,26 +8,26 @@ module: scheduler
 run: agent
 platform: any
 data: standard
-tags: [scheduler, jobs]
+tags: [scheduler, jobs, routines]
 ---
 
-# TC-006: Echo's jobs above the routines
+# TC-006: Routines and System tabs
 
 ## Preconditions
-- The environment from `up.sh`: every job on its defaults; Needs you now recorded as run 3 times today, Recall once
+- The environment from `up.sh` (Echo with onetest-ai/echo#674): Echo's jobs on their defaults with a month of made-up
+  runs (Needs you now — one slow pass, a failed run two days ago and one today —, Thread sync, Fetch, Recall) and the timed jobs' next looks
+- `echoctl plugin call scheduler save '{"name":"Plan for the day","schedule":"weekdays 08:30","prompt":"What is on today?","model":"sonnet","deliver":["mail"]}'`; `echoctl plugin call scheduler run_wait '{"id":"plan-for-the-day"}'` (fails: the fake `claude`)
 
 ## Steps
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | Open `{{base_url}}/#today`, then Settings → From plugins → Scheduler | The Scheduler's section, with its part "Echo’s jobs" there (not only after a reload): "What Echo runs by itself. They run on these settings with or without the Scheduler; a change applies at a job’s next run.", the night's two time fields (values `22:30` and `07:00`), "Back to default", "Hide" — then "Your routines" with the facts and the routines' table (Gateway digest); the head reads "What Echo runs by itself, and your prompts run by Claude on a schedule with the answer sent to you." |
-| 2 | Read the jobs, in order | Seven: Needs you now, Thread sync, Threads' mail and meeting chats, Minutes, Meeting prep, Recall, Live notes — each with what it does (Echo's words, e.g. "Keeps a running summary during a call") |
-| 3 | Read Needs you now and Recall, then Minutes | Needs you now: "Last run today <time> · 3 runs today"; Recall: "Last run today <time> · 1 run today"; Minutes: "Not run yet · 0 runs today" |
-| 4 | Read Needs you now's settings | "Every (minutes)" 5, "default: 5"; "Paused at night" on, "default: on"; "Model" "Job’s default" (options Job’s default, Haiku, Sonnet, Opus — no Other…), "default: the profile's live model" |
-| 5 | Read the rest's settings | Thread sync: "Mail and chat wait at most (minutes)" 120, "…or until this many wait" 5, paused at night on, a model; Threads' mail and meeting chats: every 30, paused at night, no model; Minutes: "Automatic: after the call (minutes)" 15, a model, no night; Meeting prep: every 5, paused at night off ("default: off"), a model; Recall: every 5, "Documents a pass" 30, paused at night off, a model; Live notes: "Summary every (seconds)" 90, a model, no night |
-| 6 | Click "Hide"; reload the page | Only the part's head with "Show 7"; still so after the reload |
-| 7 | Click "Show 7" | The seven jobs again |
-| 8 | Go to Today; press ⌘K, type "Echo’s jobs", pick "Scheduler: Echo’s jobs" | The Scheduler's section with the seven jobs shown |
+| 1 | Open `{{base_url}}/#today`, then Settings → From plugins → Scheduler | "Scheduler" ("Your prompts, run by Claude on a schedule; and Echo’s own, as system routines."), tabs "Routines 2" and "System 7" (the one last left, Routines the first time), "+ New routine" on Routines |
+| 2 | Read the Routines table | Columns Routine, Next run, Last run, Sends to, 30 days; "Plan for the day" — "Weekdays at 08:30 · reads only · Sonnet", next "Tomorrow 08:30 AM" (or the next weekday), last "Failed" with its time, "Mail", one bar today, "1 run · $0.00", its switch on; "Gateway digest" "Off", "Not run yet" |
+| 3 | Click "System" | No "+ New routine"; the head "Echo’s own jobs, run by itself — …" with "Night 22:30 → 07:00"; facts "7 system routines, 6 on" (Recall is off in the standard data: Knowledge's automatic reading off), the next one, "108 runs in 30 days · 2 failed", tokens with the cache share (under 100%), the cost; the same columns |
+| 4 | Read the rows | Needs you now: "Every 5 min", next a time today, last "Failed" (1 s), "Today", 15 bars (the last runs; two red), "62 runs · $0.28"; Thread sync: "After a call, or when mail and chat wait 120 min or 5 items", next "On its events", last "Done" with 1 m 1 s and $0.11, "Threads’ work", "15 runs · $1.65"; Threads' mail and meeting chats: last "Done", "Threads’ sources", "30 runs · no model"; Minutes and Live notes: "On its events", "Not run yet", "0 runs"; Meeting prep: next a time, "Not run yet"; Recall: "Every 5 min · 30 a pass", next "Off", "Done" with $0.02, "Recall", "1 run · $0.02" |
+| 5 | Hover "Live notes" | Its tooltip: "Keeps a running summary during a call" |
+| 6 | Reload; then ⌘K "Scheduler: routines" | The System tab still picked after the reload; the ⌘K entry opens Routines |
 
 ## Expected Final State
-Nothing changed; the part open.
+Nothing changed.

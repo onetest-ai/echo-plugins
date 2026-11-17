@@ -1,6 +1,6 @@
 ---
 id: TC-007
-title: A job's setting changes on the user's own change — a number, the night switch, a model — and goes back to its default; Echo's refusal shows and the field keeps Echo's value
+title: A system routine opens into the routine panel with its runs, and its editor changes its timer, night and model at once with Save — back to defaults with ↺, Echo's refusal shown, Cancel changes nothing
 priority: critical
 type: functional
 requirements: [F-SCH-07]
@@ -11,10 +11,10 @@ data: standard
 tags: [scheduler, jobs]
 ---
 
-# TC-007: Change a job and go back
+# TC-007: A system routine's panel and editor
 
 ## Preconditions
-- TC-006 done; `{{base_url}}/#settings/scheduler:main` open, Echo's jobs shown
+- TC-006 done; the System tab open
 
 **Changes:** `<config dir>/jobs.json`
 
@@ -22,17 +22,16 @@ tags: [scheduler, jobs]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | In Needs you now, set "Every (minutes)" to 10 and press Enter; `echoctl jobs` | The field 10, beside it "Back to default: 5" in place of "default: 5"; `needs` → `every` value 10, `"set": true` |
-| 2 | Set it to 0 and press Enter | Under the part's head "needs every: 0 is outside 1–240" (Echo's words); the field back to 10; `echoctl jobs`: still 10 |
-| 3 | In Thread sync, pick "Haiku" in "Model"; `echoctl jobs` | No error line; "Back to default: the thread's, else the profile's minutes model"; `thread_sync` → `model` "haiku", set |
-| 4 | In Meeting prep, click the "Paused at night" switch | The switch on; "Back to default: off"; `echoctl jobs`: `prep` → `night` true, set |
-| 5 | Click Needs you now's "Back to default: 5"; in Thread sync pick "Job’s default"; click Meeting prep's "Back to default: off"; `echoctl jobs`; `cat "$ECHOCTL_CONFIG_DIR/jobs.json"` | Each shows "default: …" again (5; the model's default; off, the switch off); every field `"set": false`; the file holds none of them (no `needs`, `thread_sync`, `prep`) |
-| 6 | Reload the page | As left: every job on its defaults |
-| 7 | Empty Needs you now's "Every (minutes)" and press Tab | The field shows 5 again; nothing sent (`echoctl jobs`: `every` not set) — "Back to default" is the way back |
+| 1 | Click "Needs you now" | The right panel "System routine": "Needs you now", "Every 5 min · next today …", "Edit"; Sends to "Today", When, At night "pauses at night (22:30 → 07:00)", Model "Default model — the profile's live model", What (Echo's words); "Last 30 runs" with three charts: "Cost per run" (bars, the failed ones red), "Errors" "2 of 30 failed" (a cell a run, two red), "Time vs the median" "median 4 s · 1 slow" (bars up and down from a middle line, one amber running off the top; hovering it gives its time and "+41 s vs median" or so); then the runs: the newest "Today … · failed", "1 s · the profile isn't signed in", then "done" runs "… · claude-haiku · 2 items in Needs you now" with their cost |
+| 2 | Click "Edit" | "Scheduler › System › Needs you now › Edit": Name and what it does (not editable); Model (Default — the profile's live model, Haiku, Sonnet, Opus); "Every" [5] min "default · 1–240"; "Pause at night (22:30 → 07:00)" ticked, "default"; Cancel, Save |
+| 3 | Every 0, Save | "needs every: 0 is outside 1–240" (Echo's words); the editor stays; `echoctl jobs`: every 5 |
+| 4 | Every 10, untick the night, Model Sonnet, Save; `echoctl jobs` | Back on the System tab: the row "Every 10 min · Sonnet" (both marked as changed); `needs`: every 10, night false, model sonnet, all set |
+| 5 | Edit; click ↺ beside Every and beside the night; Model "Default …"; Save; `cat "$ECHOCTL_CONFIG_DIR/jobs.json"` | The row "Every 5 min", no model; the file holds no `needs` |
+| 6 | Edit; Every 33; Cancel | The row still "Every 5 min"; `echoctl jobs`: every 5, not set |
 
 ## Expected Final State
 Every job on its defaults.
 
 ## Notes
 - A change without the user's click or key is refused by Echo itself (`ctx.echo.jobs.set` throws before sending):
-  Echo's case plugins/TC-059 covers it; the Scheduler calls it only from the user's change (a number on Enter or Tab, a model picked), click (a switch, "Back to default") or leaving a night field — never from a redraw, a load or the window losing focus.
+  Echo's case plugins/TC-059 covers it. The Scheduler calls it only from Save, ↺ on the night, or leaving a night field.

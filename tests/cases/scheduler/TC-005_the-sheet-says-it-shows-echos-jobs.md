@@ -14,14 +14,14 @@ tags: [scheduler, jobs, permissions]
 # TC-005: The sheet names Echo's jobs
 
 ## Preconditions
-- A fresh environment from `up.sh` (Echo 0.9.13, or main with onetest-ai/echo#672)
+- A fresh environment from `up.sh` (Echo 0.9.14, or a build with onetest-ai/echo#674)
 
 ## Steps
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `cat <dir>/install.log` | "Scheduler 0.6.0"; among its lines "Shows Echo's background jobs and changes how often each runs, when it pauses at night and which model it uses — only when you change them in its screens"; "Installed Scheduler 0.6.0" |
-| 2 | `echoctl plugin list` | The Scheduler (`"id": "scheduler"`) listed with its summary "See and tune what Echo runs by itself — how often, the night pause, the model — and run your own Claude prompts on a schedule, …" |
+| 1 | `cat <dir>/install.log` | "Scheduler 0.7.0"; among its lines "Shows Echo's background jobs and changes how often each runs, when it pauses at night and which model it uses — only when you change them in its screens"; "Installed Scheduler 0.7.0" |
+| 2 | `echoctl plugin list` | The Scheduler (`"id": "scheduler"`) listed with its summary "Your own Claude prompts on a schedule — the answer in Telegram, Teams or mail — and Echo's own jobs as system routines: their runs, costs and settings" |
 
 ## Expected Final State
-Scheduler 0.6.0 installed; Echo's jobs untouched.
+Scheduler 0.7.0 installed; Echo's jobs untouched.

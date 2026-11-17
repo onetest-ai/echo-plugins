@@ -51,6 +51,15 @@ const CSS = `
 .sch-bars { display: flex; align-items: flex-end; gap: 3px; height: 44px; border-bottom: 1px solid var(--line); }
 .sch-bars i { flex: 1 1 0; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 60%, transparent); display: block; min-height: 2px; }
 .sch-bars i.f { background: var(--danger); }
+.sch-cells { display: flex; gap: 2px; height: 12px; }
+.sch-cells i { flex: 1 1 0; border-radius: 2px; background: color-mix(in srgb, var(--me) 55%, transparent); display: block; }
+.sch-cells i.f { background: var(--danger); }
+.sch-cells i.e { background: var(--line-strong); }
+.sch-dev { display: flex; gap: 3px; height: 44px; position: relative; background: linear-gradient(var(--line-strong), var(--line-strong)) 0 50% / 100% 1px no-repeat; }
+.sch-dev span { flex: 1 1 0; position: relative; display: block; }
+.sch-dev i { position: absolute; left: 0; right: 0; display: block; border-radius: 1px; background: color-mix(in srgb, var(--accent) 60%, transparent); }
+.sch-dev i.w { background: var(--warn); }
+.sch-dev i.f { background: var(--danger); }
 .sch-run { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); background: none; width: 100%; text-align: left; font: inherit; color: inherit; cursor: default; }
 .sch-run:last-child { border-bottom: 0; }
 .sch-run:hover .w2 { color: var(--accent-ink); }
@@ -97,21 +106,15 @@ textarea.sch-in { height: 260px; padding: 9px 10px; line-height: 1.55; resize: v
 .sch-menu button:hover { background: var(--accent-soft); }
 .sch-menu b { font-size: 13px; font-weight: 600; }
 .sch-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
-.sch-jobs { border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--surface); }
-.sch-jhead { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 14px; }
-.sch-jhead h3 { margin: 0; font-size: 13.5px; font-weight: 650; }
-.sch-jhead + .sch-job { border-top: 1px solid var(--line); }
-.sch-night { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-2); }
-.sch-night .sch-in { width: 96px; height: 28px; }
-.sch-job { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; padding: 10px 14px; border-bottom: 1px solid var(--line); align-items: start; }
-.sch-job:last-child { border-bottom: 0; }
-.sch-jfields { display: flex; flex-direction: column; gap: 6px; }
-.sch-jf { display: grid; grid-template-columns: minmax(0, 1fr) 150px minmax(0, 0.85fr); gap: 8px; align-items: center; font-size: 12px; color: var(--text-2); }
-.sch-jf .sch-in { height: 28px; width: 100%; }
-.sch-jdef { border: 0; background: none; padding: 0; font: inherit; font-size: 12px; color: var(--accent-ink); text-align: left; cursor: default; }
-.sch-jdef:hover { text-decoration: underline; }
-.sch-jerr { margin: 0; padding: 0 14px 10px; color: var(--danger); font-size: 12px; }
-@media (max-width: 760px) { .sch-job { grid-template-columns: minmax(0, 1fr); } }
+.sch-tabs { border-bottom: 1px solid var(--line); }
+.sch-night { display: flex; gap: 6px; align-items: center; flex: none; font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+.sch-night .sch-in { width: 104px; height: 28px; }
+.sch-night .btn { height: 28px; padding: 0 8px; font-variant-numeric: tabular-nums; }
+.sch-chg { color: var(--text); }
+.sch-chg::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 3px; background: var(--accent); margin-right: 5px; vertical-align: 1px; }
+.sch-jerr { margin: 0; color: var(--danger); font-size: 12px; }
+.sch-jnum { display: flex; gap: 8px; align-items: center; }
+.sch-jnum input { width: 84px; }
 `
 
 export function apply(ctx) {
@@ -160,14 +163,15 @@ export function apply(ctx) {
     await load()
     return true
   }
-  // ── Echo's own background jobs (`uses.echo.jobs`, Echo 0.9.13): listed, and changed only on the user's click or key
+  // ── Echo's own background jobs (`uses.echo.jobs`, Echo 0.9.14: the one routine contract): listed, and changed only on the user's click or key
   // (Echo refuses any other change). They run on their own settings with or without this plugin.
-  let jobs = null, jobsErr = '', jobsOpen = true
+  let jobs = null, jobsErr = '', tab = 'routines', selJob = null, jobEdit = null, nightEdit = false, nightCancel = false
   let jobsAt = 0, seenAt = 0, jobsSeq = 0, held = false // when the list was last asked for; the newest request; a redraw held back
-  try { jobsOpen = localStorage.getItem('sch-jobs-open') !== 'no' } catch { /* no storage: open */ }
-  const canJobs = () => !!(ctx.echo && ctx.echo.jobs)
+  try { if (localStorage.getItem('sch-tab') === 'system') tab = 'system' } catch { /* no storage: Routines */ }
+  const setTab = (t) => { tab = t; try { localStorage.setItem('sch-tab', t) } catch { /* kept for now only */ } }
+  const canJobs = () => !!(ctx.echo && ctx.echo.jobs && ctx.echo.routines)
   // A redraw replaces the section's fields: never while the user is typing in a job's field — held until they leave it.
-  const typing = () => { const a = document.activeElement; return !!(a && a.matches && a.matches('[data-sch-jnum],[data-sch-night]')) }
+  const typing = () => { const a = document.activeElement; return !!(a && a.matches && a.matches('[data-sch-jf],[data-sch-night]')) }
   const redraw = () => { if (typing()) held = true; else { held = false; ctx.render() } }
   // The list each time the section is entered (and at most every 30 s while it stays open, for last run and runs
   // today); an answer older than the newest request (a set, say) is dropped.
@@ -175,14 +179,14 @@ export function apply(ctx) {
     if (!canJobs()) return
     jobsAt = Date.now()
     const n = ++jobsSeq
-    try { const l = await ctx.echo.jobs.list(); if (n !== jobsSeq) return; jobs = l; jobsErr = '' } catch (e) { if (n !== jobsSeq) return; jobsErr = String(e.message || e) }
+    try { const l = await ctx.echo.routines.list(); if (n !== jobsSeq) return; jobs = l; jobsErr = ''; for (const R of l.routines || []) loadJobRuns(R.id) } catch (e) { if (n !== jobsSeq) return; jobsErr = String(e.message || e) }
     redraw()
   }
   const setJob = async (job, settings) => {
     const n = ++jobsSeq
     let err = ''
-    try { const l = await ctx.echo.jobs.set(job, settings); if (n === jobsSeq) jobs = l } catch (e) { err = String(e.message || e) }
-    if (err) await loadJobs() // its fields back to what Echo holds
+    try { await ctx.echo.jobs.set(job, settings) } catch (e) { err = String(e.message || e) }
+    if (n === jobsSeq) await loadJobs() // the routine as Echo holds it now (or still, after a refusal)
     jobsErr = err
     ctx.render()
   }
@@ -253,66 +257,256 @@ export function apply(ctx) {
 
   // ── views ──
   const MODEL_NAMES = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' }
-  const defText = (f) => (f.kind === 'night' ? (f.default ? 'on' : 'off') : String(f.default))
-  const jobField = (j, f) => {
-    const id = `sch-j-${j.id}-${f.key}`
-    const data = `data-sch-job="${esc(j.id)}" data-key="${esc(f.key)}"`
-    const back = f.set ? `<button class="sch-jdef" data-sch-jreset ${data}>Back to default: ${esc(defText(f))}</button>` : `<span class="sch-sub">default: ${esc(defText(f))}</span>`
-    if (f.kind === 'model') {
-      const v = f.set ? String(f.value) : ''
-      return `<div class="sch-jf"><label for="${id}">${esc(f.label)}</label><select class="sch-in" id="${id}" ${data} data-sch-jmodel>
-        <option value=""${!v ? ' selected' : ''}>Job’s default</option>${Object.entries(MODEL_NAMES).map(([m, l]) => `<option value="${m}"${v === m ? ' selected' : ''}>${l}</option>`).join('')}${v && !MODEL_NAMES[v] ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : ''}</select>${back}</div>`
-    }
-    if (f.kind === 'night') return `<div class="sch-jf"><span id="${id}">${esc(f.label)}</span><span><button class="sw${f.value ? ' on' : ''}" role="switch" aria-checked="${!!f.value}" aria-labelledby="${id}" ${data} data-sch-jnight data-on="${!f.value}"></button></span>${back}</div>`
-    const r = f.range || {}
-    return `<div class="sch-jf"><label for="${id}">${esc(f.label)}</label><input class="sch-in sch-num" id="${id}" type="number"${r.min != null ? ` min="${r.min}"` : ''}${r.max != null ? ` max="${r.max}"` : ''} value="${esc(String(f.value))}" ${data} data-sch-jnum title="${r.min != null ? `${r.min}–${r.max}` : ''}">${back}</div>`
+  const UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h11a5 5 0 0 1 0 10h-4"/><path d="M8 5L4 9l4 4"/></svg>'
+  // Echo's own night when the list doesn't say (its `jobs::NIGHT`): to know whether the user changed it.
+  const NIGHT_DEFAULT = { from: '22:30', to: '07:00' }
+  // A label as Echo gives it, "Every (minutes)", split into what it is and its unit.
+  const unitOf = (label) => { const m = /^(.*?)\s*\((minutes|seconds)\)\s*$/.exec(label); return m ? [m[1], m[2] === 'minutes' ? 'min' : 's'] : [label, ''] }
+  const fieldOf = (j, key) => (j.settings || []).find((f) => f.key === key)
+  const part = (set, text) => `<span${set ? ' class="sch-chg"' : ''}>${esc(text)}</span>`
+  const nightWords = (j) => { const f = fieldOf(j, 'night'); return f ? part(f.set, f.value ? 'pauses at night' : 'runs at night') : '' }
+  const modelWords = (j) => { const f = fieldOf(j, 'model'); return f ? part(f.set, f.set ? MODEL_NAMES[f.value] || String(f.value) : 'Default model') : '<span class="sch-sub">No model</span>' }
+  // ── The one routine contract (Echo's plugin API § Routines): every routine — the user's, Echo's own (system), a
+  // plugin's — drawn by the same row and panel. The user's routines are mapped into it here.
+  const jobById = (id) => jobs && jobs.routines.find((j) => j.id === id)
+  const TO = { today: 'Today', thread_work: 'Threads’ work', thread_sources: 'Threads’ sources', minutes: 'Minutes', prep: 'Meeting prep', recall: 'Recall', live_notes: 'Live notes' }
+  const userRun = (x) => x && ({
+    started: x.at, ended: x.finished_at || null, duration_ms: x.usage ? x.usage.duration_ms : x.duration_ms,
+    state: x.state || 'running', ok: x.state !== 'failed', summary: x.state !== 'failed' ? x.message : undefined, error: x.state === 'failed' ? x.message : undefined,
+    model: x.model, cost_usd: x.usage ? x.usage.cost_usd : x.cost, sent: x.sent || [], trial: !!x.trial, run: x.run,
+  })
+  const userRoutine = (r) => ({
+    id: r.id, source: 'user', name: r.name, what: r.prompt, enabled: r.enabled, to: r.deliver || [],
+    schedule: { text: `${r.when} · ${perm(r.tools)}`, kind: 'time' }, next_run: r.next, next: null, paused_until: null,
+    running: r.running, last: r.running ? { state: 'running' } : userRun(r.last), model: { value: r.model || '', default: '' },
+    month: { runs: r.month.runs, cost: r.month.cost }, runs: (r.runs || []).map(userRun), raw: r,
+  })
+  const runLine = (R, x) => !x ? ['', 'Not run yet']
+    : x.state === 'running' ? ['run', 'Running…']
+    : x.state === 'failed' ? ['bad', x.error && x.error.startsWith('Not sent') ? 'Not sent' : 'Failed']
+    : x.state === 'empty' ? ['', 'Nothing to send']
+    : (x.sent || []).length ? ['ok', `Sent to ${x.sent.map((k) => label(k)).join(', ')}`] : ['ok', R.source === 'user' ? 'Answered' : 'Done']
+  const toChips = (R) => (R.source === 'user' ? sends(R.raw) : (R.to || []).map((k) => `<span class="sch-ci">${esc(TO[k] || label(k))}</span>`).join('') || '<span class="sch-sub">—</span>')
+  const modelLabel = (R) => (R.model && R.model.value ? (R.source === 'user' ? modelName(R.model.value) : MODEL_NAMES[R.model.value] || R.model.value) : '')
+  const nextCell = (R) => !R.enabled ? '<span class="sch-sub">Off</span>'
+    : R.running ? '<span class="sch-sub">Running now</span>'
+    : R.paused_until ? `${esc(when(R.paused_until))}<div class="sch-sub">paused at night</div>`
+    : R.next_run ? esc(when(R.next_run))
+    : R.next ? '<span class="sch-sub">On its events</span>' : '<span class="sch-sub">—</span>'
+  // The last 15 runs, oldest first, a bar each: its cost (its duration when no run cost anything), a failed one red.
+  // Not a bar a day: a job that runs every few minutes would draw a comb.
+  const LAST = 15
+  const runsOf = (R) => (R.source === 'user' ? R.runs : jobRuns[R.id] || []).slice(0, LAST)
+  const spark = (R) => {
+    const rs = runsOf(R).slice().reverse()
+    const byCost = rs.some((x) => x.cost_usd > 0), v = (x) => (byCost ? x.cost_usd || 0 : x.duration_ms || 0)
+    const max = Math.max(0.0001, ...rs.map(v))
+    return rs.map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(2, Math.round((v(x) / max) * 16))}px" title="${esc(when(x.started))}${x.cost_usd != null ? ` · ${money(x.cost_usd)}` : ''}"></i>`).join('')
   }
-  const jobsSection = () => {
-    if (!canJobs()) return ''
-    if (!jobs) return jobsErr ? `<div class="sch-jobs"><div class="sch-jhead"><h3>Echo’s jobs</h3></div><p class="sch-jerr">${esc(jobsErr)}</p></div>` : ''
-    const n = jobs.night || {}
-    const head = `<div class="sch-jhead"><div style="flex:1;min-width:220px"><h3>Echo’s jobs</h3><div class="sch-sub">What Echo runs by itself. They run on these settings with or without the Scheduler; a change applies at a job’s next run.</div></div>
-      ${jobsOpen ? `<div class="sch-night"><label for="sch-night-from">Night: from</label><input class="sch-in sch-num" id="sch-night-from" type="time" value="${esc(n.from || '')}" data-sch-night="from"><label for="sch-night-to">to</label><input class="sch-in sch-num" id="sch-night-to" type="time" value="${esc(n.to || '')}" data-sch-night="to"><button class="sch-jdef" data-sch-nightdef title="Echo’s own night">Back to default</button></div>` : ''}
-      <button class="btn ghost" data-sch-jfold aria-expanded="${jobsOpen}">${jobsOpen ? 'Hide' : `Show ${jobs.jobs.length}`}</button></div>`
-    const rows = !jobsOpen ? '' : jobs.jobs.map((j) => `<div class="sch-job" data-sch-jrow="${esc(j.id)}">
-        <div><div class="sch-nm">${esc(j.name)}</div><div class="sch-sub">${esc(j.what)}</div>
-          <div class="sch-sub sch-num" style="margin-top:3px">${j.last_run ? `Last run ${esc(when(j.last_run).replace(/^T/, 't'))}` : 'Not run yet'} · ${j.runs_today} run${j.runs_today === 1 ? '' : 's'} today</div></div>
-        <div class="sch-jfields">${j.fields.map((f) => jobField(j, f)).join('')}</div></div>`).join('')
-    return `<div class="sch-jobs" aria-label="Echo’s jobs">${head}${jobsErr ? `<p class="sch-jerr" role="alert">${esc(jobsErr)}</p>` : ''}${rows}</div>`
+  const monthLine = (R) => { const m = R.month || { runs: 0, cost: 0 }; return `${m.runs} run${m.runs === 1 ? '' : 's'} · ${R.model === null ? 'no model' : money(Math.abs(m.cost || 0))}` }
+  // One routine's row in a routines table (the Routines and System tabs alike).
+  const routineRow = (R, selected, attr) => {
+    const [cls, txt] = runLine(R, R.last)
+    const L = R.last && R.last.state !== 'running' ? R.last : null
+    const lastMeta = L ? `${esc(when(L.started))}${L.duration_ms != null ? ` · ${secs(L.duration_ms)}` : ''}${L.cost_usd != null ? ` · ${money(L.cost_usd)}` : ''}` : ''
+    const changed = R.source !== 'user' && (R.settings || []).some((f) => f.set && f.kind === 'number')
+    const m = modelLabel(R)
+    return `<div class="sch-tr${selected ? ' sel' : ''}" role="row" ${attr}="${esc(R.id)}">
+      <div><div class="sch-nm${R.enabled ? '' : ' off'}"${R.source !== 'user' && R.what ? ` title="${esc(R.what)}"` : ''}>${esc(R.name)}</div><div class="sch-sub">${changed ? part(true, R.schedule.text) : esc(R.schedule.text)}${m ? ` · ${R.source !== 'user' ? part(true, m) : esc(m)}` : ''}</div></div>
+      <div class="sch-num" style="font-size:12px">${nextCell(R)}</div>
+      <div><div class="sch-st"><span class="sch-dot ${cls}"></span>${esc(txt)}</div><div class="sch-sub sch-num">${lastMeta}</div></div>
+      <div>${toChips(R)}</div>
+      <div><div class="sch-spark" aria-label="Last ${runsOf(R).length} runs">${spark(R)}</div><div class="sch-sub sch-num">${monthLine(R)}</div></div>
+      ${R.source === 'user' ? `<button class="sw${R.enabled ? ' on' : ''}" role="switch" aria-checked="${!!R.enabled}" aria-label="${esc(R.name)} on" data-sch-on="${esc(R.id)}" data-on="${!R.enabled}"></button>` : '<span></span>'}</div>`
+  }
+  // The facts above a table, from its routines.
+  const factsOf = (list, noun, T) => {
+    const on = list.filter((R) => R.enabled)
+    const next = on.filter((R) => R.next_run).sort((a, b) => a.next_run.localeCompare(b.next_run))[0]
+    return `<div class="sch-facts" aria-label="Last 30 days">
+      <div class="sch-fact"><b>${list.length}</b><span>${noun}, ${on.length} on</span></div>
+      <div class="sch-fact"><b>${next ? esc(when(next.next_run)) : '—'}</b><span>${next ? `next: ${esc(next.name)}` : 'nothing scheduled'}</span></div>
+      <div class="sch-fact"><b class="sch-num">${T.runs}</b><span>runs in 30 days${T.failed ? ` · ${T.failed} failed` : ''}</span></div>
+      <div class="sch-fact"><b class="sch-num">${big(T.tokens)}</b><span>tokens${T.tokens ? ` · ${Math.round((100 * T.cached) / T.tokens)}% from cache` : ''}</span></div>
+      <div class="sch-fact"><b class="sch-num">${money(Math.abs(T.cost || 0))}</b><span>in 30 days</span></div></div>`
+  }
+  const HEAD = '<div class="sch-th" role="row"><span>Routine</span><span>Next run</span><span>Last run</span><span>Sends to</span><span>30 days</span><span></span></div>'
+  // The System tab: Echo's own jobs as system routines, the night in its head.
+  const systemTab = () => {
+    if (!jobs) return jobsErr ? `<p class="sch-jerr" role="alert">${esc(jobsErr)}</p>` : '<div class="skeleton" style="padding:20px"><i></i><i></i><i></i></div>'
+    const n = jobs.night || {}, dn = n.default || NIGHT_DEFAULT
+    const changed = n.from !== dn.from || n.to !== dn.to
+    const night = nightEdit
+      ? `<label for="sch-night-from">Night</label><input class="sch-in sch-num" id="sch-night-from" type="time" value="${esc(n.from || '')}" data-sch-night="from"><span>→</span><input class="sch-in sch-num" id="sch-night-to" type="time" value="${esc(n.to || '')}" data-sch-night="to" aria-label="Night ends"><button class="btn ghost" data-sch-nightdone>Done</button>`
+      : `<span>Night</span><button class="btn ghost" data-sch-nightedit title="Change the night system routines pause in">${esc(n.from || '')} → ${esc(n.to || '')}</button>${changed ? `<button class="icon-btn" data-sch-nightdef title="Back to default (${esc(dn.from)} → ${esc(dn.to)})" aria-label="Back to default night">${UNDO}</button>` : ''}`
+    const list = jobs.routines
+    const T = list.reduce((a, R) => { const m = R.month || {}; a.runs += m.runs || 0; a.failed += m.failed || 0; a.tokens += (m.tokens || 0) + (m.cached || 0); a.cached += m.cached || 0; a.cost += m.cost || 0; return a }, { runs: 0, failed: 0, tokens: 0, cached: 0, cost: 0 })
+    return `<div class="sch-head" style="align-items:center"><div style="flex:1;min-width:0" class="sch-sub">Echo’s own jobs, run by itself — on these settings with or without the Scheduler; a change applies at the job’s next run.</div><div class="sch-night">${night}</div></div>
+      ${factsOf(list, 'system routines', T)}
+      ${jobsErr ? `<p class="sch-jerr" role="alert">${esc(jobsErr)}</p>` : ''}
+      <div class="sch-tbl" role="table" aria-label="System routines">${HEAD}${list.map((R) => routineRow(R, selJob === R.id, 'data-sch-jsel')).join('')}</div>
+      <div class="sch-sub">Runs and costs as Echo records them; each kept 31 days. A pass that found nothing to do isn’t a run.</div>`
+  }
+  // One routine in the right panel (the user's or a system one): what it is, its settings, its runs.
+  // The panel's three charts of the last 30 runs, oldest first, one column a run: what each cost, which failed, and how
+  // far each one's time strayed from the median (up slower, down faster; over twice the median amber).
+  const CH = (title, foot, body) => `<div style="display:flex;flex-direction:column;gap:4px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">${title}</h4><span class="sch-sub sch-num">${foot}</span></div>${body}</div>`
+  const tip = (x, more) => `${esc(when(x.started))}${x.duration_ms != null ? ` · ${secs(x.duration_ms)}` : ''}${x.cost_usd != null ? ` · ${money(x.cost_usd)}` : ''}${x.state === 'failed' ? ' · failed' : ''}${more || ''}`
+  const charts = (runs) => {
+    const rs = runs.slice(0, 30).reverse()
+    if (!rs.length) return ''
+    const out = []
+    // Cost per run.
+    const costs = rs.filter((x) => x.cost_usd != null)
+    if (costs.length) {
+      const max = Math.max(0.0001, ...rs.map((x) => x.cost_usd || 0))
+      const sum = costs.reduce((a, x) => a + x.cost_usd, 0)
+      out.push(CH('Cost per run', `avg ${money(sum / costs.length)} · max ${money(max)}`, `<div class="sch-bars">${rs.map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(4, Math.round(((x.cost_usd || 0) / max) * 100))}%" title="${tip(x)}"></i>`).join('')}</div>`))
+    }
+    // Errors: a cell a run.
+    const failed = rs.filter((x) => x.state === 'failed').length
+    out.push(CH('Errors', failed ? `<span style="color:var(--danger)">${failed} of ${rs.length} failed</span>` : `none in ${rs.length}`, `<div class="sch-cells">${rs.map((x) => `<i class="${x.state === 'failed' ? 'f' : x.state === 'empty' ? 'e' : ''}" title="${tip(x, x.error ? ` · ${esc(x.error.slice(0, 80))}` : '')}"></i>`).join('')}</div>`))
+    // Time against the median.
+    const timed = rs.filter((x) => x.duration_ms != null)
+    if (timed.length >= 3) {
+      const med = timed.map((x) => x.duration_ms).sort((a, b) => a - b)[Math.floor(timed.length / 2)]
+      const dev = (x) => (x.duration_ms == null ? 0 : x.duration_ms - med)
+      const slow = (x) => x.duration_ms != null && x.duration_ms > 2 * med && x.duration_ms - med > 1000
+      // Scaled to the usual runs, so their spread shows; a slow one runs off the top (its tooltip says by how much).
+      const span = Math.max(1, ...rs.filter((x) => !slow(x)).map((x) => Math.abs(dev(x)))) * 1.25
+      const n = rs.filter(slow).length
+      out.push(CH('Time vs the median', `median ${secs(med)}${n ? ` · <span class="sch-warn">${n} slow</span>` : ''}`, `<div class="sch-dev">${rs.map((x) => {
+        const h = Math.min(50, Math.round((Math.abs(dev(x)) / span) * 50))
+        return `<span title="${tip(x, x.duration_ms != null ? ` · ${dev(x) >= 0 ? '+' : '−'}${secs(Math.abs(dev(x)))} vs median` : '')}"><i class="${slow(x) ? 'w' : x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(1, h)}%;${dev(x) >= 0 ? 'bottom:50%' : 'top:50%'}"></i></span>`
+      }).join('')}</div>`))
+    }
+    return out.join('')
+  }
+  const routinePanel = (R, runs) => {
+    const timed = runs.filter((x) => x.duration_ms != null)
+    const avgT = timed.length ? timed.reduce((a, x) => a + x.duration_ms, 0) / timed.length : null
+    const list = runs.slice(0, 8).map((x) => {
+      const [cls, txt] = runLine(R, x)
+      const line = x.error || x.summary || ''
+      const inner = `<span class="sch-dot ${cls}"></span><div><div class="w2">${esc(when(x.started))} · ${esc(txt.toLowerCase())}</div><div class="meta">${secs(x.duration_ms)}${x.model ? ` · ${esc(x.model)}` : ''}${line ? ` · ${esc(line.slice(0, 80))}` : ''}</div></div><span class="sch-cost">${x.cost_usd != null ? money(x.cost_usd) : ''}</span>`
+      return R.source === 'user' && x.run ? `<button class="sch-run" data-sch-runopen="${esc(R.id)}" data-run="${esc(x.run)}">${inner}</button>` : `<div class="sch-run">${inner}</div>`
+    }).join('')
+    const u = R.raw
+    const kv = R.source === 'user'
+      ? `<span>Sends to</span><div>${(u.deliver || []).map((k) => (k === 'mail' && u.mail_to.length ? `Mail — ${esc(u.mail_to.join(', '))}` : k === 'mail' ? 'Mail — you' : esc(label(k)))).join(', ') || 'Nowhere'}</div>
+        <span>Permissions</span><div>${esc(perm(u.tools).replace(/^./, (c) => c.toUpperCase()))}</div>
+        <span>AI</span><div>${esc(profileName(u.profile))}${u.model ? ` · ${esc(modelName(u.model))}` : ''}</div>
+        <span>Prompt</span><div class="sch-sub" style="color:var(--text-2)">${esc(u.prompt.replace(/\s+/g, ' ').slice(0, 140))}${u.prompt.length > 140 ? '…' : ''}</div>`
+      : `<span>Sends to</span><div>${(R.to || []).map((k) => esc(TO[k] || label(k))).join(', ') || '—'}</div>
+        <span>When</span><div>${esc(R.schedule.text)}</div>
+        ${fieldOf(R, 'night') ? `<span>At night</span><div>${nightWords(R)} (${esc((jobs.night || {}).from || '')} → ${esc((jobs.night || {}).to || '')})</div>` : ''}
+        <span>Model</span><div>${R.model ? `${modelWords(R)}${R.model.value ? '' : ` <span class="sch-sub">— ${esc(String(R.model.default))}</span>`}` : '<span class="sch-sub">None: it calls no model</span>'}</div>
+        <span>What</span><div class="sch-sub" style="color:var(--text-2)">${esc(R.what || '')}</div>`
+    const nextTxt = !R.enabled ? ' · off' : R.paused_until ? ` · paused until ${esc(when(R.paused_until).toLowerCase())}` : R.next_run ? ` · next ${esc(when(R.next_run).toLowerCase())}` : R.next ? ` · ${esc(R.next)}` : ''
+    return `<div class="sch-p">
+      <div><div style="font-size:15px;font-weight:650">${esc(R.name)}</div><div class="sch-sub">${esc(R.schedule.text)}${nextTxt}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${R.source === 'user' ? `${R.running ? '<button class="btn" disabled>Running…</button>' : `<button class="btn primary" data-sch-run="${esc(R.id)}">Run now</button>`}<button class="btn" data-sch-edit="${esc(R.id)}">Edit</button>` : `<button class="btn primary" data-sch-jedit="${esc(R.id)}">Edit</button>`}</div>
+      <div class="sch-kv">${kv}</div>
+      ${runs.length ? `<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">Last ${Math.min(runs.length, 30)} run${runs.length === 1 ? '' : 's'}</h4><span class="sch-sub sch-num">${avgT != null ? `avg ${secs(avgT)}` : ''}</span></div></div>${charts(runs)}<div>${list}</div>` : '<span class="sch-sub">No runs yet.</span>'}
+    </div>`
+  }
+  const jobPanel = () => {
+    const R = jobById(selJob)
+    return R ? routinePanel(R, jobRuns[R.id] || []) : '<div class="sch-p"><span class="sch-sub">Pick a system routine.</span></div>'
+  }
+  // A system routine's editor, as a routine's: its timer, the night and the model; saved at once with Save.
+  const jobEditPage = () => {
+    const j = jobById(jobEdit.id)
+    if (!j) return '<div class="sch"><span class="sch-sub">No such system routine.</span></div>'
+    const e = jobEdit.draft
+    const crumbs = `<div class="sch-crumb"><button data-sch-list>Scheduler</button><span>›</span><button data-sch-list>System</button><span>›</span><span>${esc(j.name)}</span><span>›</span><span>Edit</span></div>`
+    const back = (f, shown) => `<button class="sch-jdefb icon-btn" data-sch-jdef="${esc(f.key)}" title="Back to default (${esc(shown)})" aria-label="Back to default (${esc(shown)})">${UNDO}</button>`
+    const isDefault = (f) => (e[f.key] === undefined ? !f.set : e[f.key] === null)
+    const val = (f) => (e[f.key] === undefined ? f.value : e[f.key] === null ? f.default : e[f.key])
+    const nums = (j.settings || []).filter((f) => f.kind === 'number').map((f) => {
+      const [what, unit] = unitOf(f.label), r = f.range || {}
+      return `<div class="sch-f"><label class="sch-lbl" for="sch-jf-${esc(f.key)}">${esc(what)}</label><div class="sch-jnum"><input class="sch-in sch-num" id="sch-jf-${esc(f.key)}" type="number"${r.min != null ? ` min="${r.min}" max="${r.max}"` : ''} value="${esc(String(val(f)))}" data-sch-jf="${esc(f.key)}">${unit ? `<span class="sch-sub">${unit}</span>` : ''}${isDefault(f) ? `<span class="sch-sub">default${r.min != null ? ` · ${r.min}–${r.max}` : ''}</span>` : back(f, String(f.default))}</div></div>`
+    }).join('')
+    const nf = fieldOf(j, 'night'), mf = fieldOf(j, 'model')
+    const nightOn = nf ? !!val(nf) : false
+    const N = jobs.night || {}
+    const nightRow = nf ? `<div class="sch-f"><span class="sch-lbl">At night</span><div style="display:flex;gap:8px;align-items:center"><button class="sch-dest" data-sch-jnightd style="grid-template-columns:auto minmax(0,1fr);border:0;padding:4px 0;flex:1"><span class="sch-cb${nightOn ? ' on' : ''}" aria-hidden="true">${nightOn ? '✓' : ''}</span><span>Pause at night (${esc(N.from || '')} → ${esc(N.to || '')})</span></button>${isDefault(nf) ? '<span class="sch-sub">default</span>' : back(nf, nf.default ? 'on' : 'off')}</div></div>` : ''
+    const mv = mf ? (e.model === undefined ? (mf.set ? String(mf.value) : '') : e.model === null ? '' : e.model) : ''
+    const modelRow = mf ? `<div class="sch-f"><label class="sch-lbl" for="sch-jf-model">Model</label><select class="sch-in" id="sch-jf-model" data-sch-jf="model" style="max-width:340px"><option value=""${!mv ? ' selected' : ''}>Default — ${esc(String(mf.default))}</option>${Object.entries(MODEL_NAMES).map(([m, l]) => `<option value="${m}"${mv === m ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="sch-sub">Each AI profile runs its own model for Haiku, Sonnet and Opus.</span></div>` : ''
+    return `<div class="sch">${crumbs}
+      <div class="sch-edit">
+        <div class="sch-col">
+          <div class="sch-f"><span class="sch-lbl">Name</span><div style="font-weight:600">${esc(j.name)}</div><span class="sch-sub">${esc(j.what)}</span></div>
+          ${modelRow}
+        </div>
+        <div class="sch-col">
+          <div class="sch-f"><span class="sch-lbl">When</span><span class="sch-sub">Echo’s timer for it; it runs by itself while Echo runs.</span></div>
+          ${nums}
+          ${nightRow}
+        </div>
+      </div>
+      ${jobsErr ? `<p class="error">${esc(jobsErr)}</p>` : ''}
+      <div class="sch-foot"><span style="flex:1"></span><span class="sch-sub">A change applies at its next run</span><button class="btn" data-sch-list>Cancel</button><button class="btn primary" data-sch-jsave>Save</button></div></div>`
+  }
+  // The editor's fields into its draft: a value typed (different from what Echo holds) or reset (null).
+  // A draft value the same as Echo's own (and not a setting the user has set) is no change: dropped, so Save sends
+  // only what changed and an untouched default stays a default.
+  const keep = (f, v) => { if (f.set ? false : String(v) === String(f.value)) delete jobEdit.draft[f.key]; else jobEdit.draft[f.key] = v }
+  const readJobForm = () => {
+    if (!jobEdit) return
+    const j = jobById(jobEdit.id)
+    if (!j) return
+    for (const el of document.querySelectorAll('[data-sch-jf]')) {
+      const f = fieldOf(j, el.dataset.schJf)
+      if (!f) continue
+      const v = String(el.value).trim()
+      if (f.kind === 'model') {
+        const cur = f.set ? String(f.value) : ''
+        if (v === cur) delete jobEdit.draft.model
+        else jobEdit.draft.model = v === '' ? null : v
+        continue
+      }
+      if (v === '') continue
+      const shown = jobEdit.draft[f.key] === undefined ? f.value : jobEdit.draft[f.key] === null ? f.default : jobEdit.draft[f.key]
+      if (String(shown) !== v) keep(f, +v)
+      else if (jobEdit.draft[f.key] !== null && String(v) === String(f.value) && f.set) delete jobEdit.draft[f.key]
+    }
+  }
+  const saveJob = async () => {
+    readJobForm()
+    const j = jobById(jobEdit.id)
+    const sets = Object.entries(jobEdit.draft).filter(([, v]) => v !== undefined).map(([k, v]) => {
+      const f = fieldOf(j, k)
+      return v === null ? `${k}=` : f && f.kind === 'night' ? `${k}=${v ? 'on' : 'off'}` : `${k}=${v}`
+    })
+    if (!sets.length) { page = 'list'; jobEdit = null; return ctx.render() }
+    await setJob(j.id, sets)
+    if (!jobsErr) { page = 'list'; selJob = j.id; jobEdit = null }
+    ctx.render()
+  }
+  // Each system routine's runs, as Echo records them (`ctx.echo.routines.runs`).
+  const jobRuns = {}
+  const loadJobRuns = async (id) => {
+    if (!canJobs()) return
+    try { const r = await ctx.echo.routines.runs(id, { limit: id === selJob ? 30 : LAST }); jobRuns[id] = Array.isArray(r) ? r : (r && r.runs) || [] } catch { jobRuns[id] = [] }
+    redraw()
   }
   const listPage = () => {
     const T = data.totals || { runs: 0, failed: 0, tokens: 0, cached: 0, cost: 0 }
-    const on = data.routines.filter((r) => r.enabled && !r.error)
-    const next = on.filter((r) => r.next).sort((a, b) => a.next.localeCompare(b.next))[0]
-    const facts = `<div class="sch-facts" aria-label="Last 30 days">
-      <div class="sch-fact"><b>${data.routines.length}</b><span>routines, ${on.length} on</span></div>
-      <div class="sch-fact"><b>${next ? esc(when(next.next)) : '—'}</b><span>${next ? `next: ${esc(next.name)}` : 'nothing scheduled'}</span></div>
-      <div class="sch-fact"><b class="sch-num">${T.runs}</b><span>runs in 30 days${T.failed ? ` · ${T.failed} failed` : ''}</span></div>
-      <div class="sch-fact"><b class="sch-num">${big(T.tokens)}</b><span>tokens${T.tokens ? ` · ${Math.round((100 * T.cached) / T.tokens)}% from cache` : ''}</span></div>
-      <div class="sch-fact"><b class="sch-num">${money(T.cost)}</b><span>in 30 days</span></div></div>`
-    const rows = data.routines.map((r) => {
-      if (r.error) return `<div class="sch-tr" role="row"><div><div class="sch-nm">${esc(r.id)}</div><div class="sch-sub" style="color:var(--danger)">${esc(r.error)}</div></div><div></div><div></div><div></div><div></div><div></div></div>`
-      const [cls, txt] = r.running ? ['run', 'Running…'] : lastLine(r.last)
-      const lastMeta = r.last ? `${esc(when(r.last.at))}${r.last.usage ? ` · ${secs(r.last.usage.duration_ms)} · ${money(r.last.usage.cost_usd)}` : ''}` : ''
-      const max = Math.max(0.01, ...r.runs.map((x) => x.cost || 0))
-      const spark = r.runs.slice(0, 12).reverse().map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(2, Math.round(((x.cost || 0) / max) * 16))}px"></i>`).join('')
-      return `<div class="sch-tr${sel === r.id ? ' sel' : ''}" role="row" data-sch-sel="${esc(r.id)}">
-        <div><div class="sch-nm${r.enabled ? '' : ' off'}">${esc(r.name)}</div><div class="sch-sub">${esc(r.when)} · ${perm(r.tools)}${r.model ? ` · ${esc(modelName(r.model))}` : ''}</div></div>
-        <div class="sch-num" style="font-size:12px">${r.enabled ? esc(when(r.next)) : '<span class="sch-sub">Off</span>'}</div>
-        <div><div class="sch-st"><span class="sch-dot ${cls}"></span>${esc(txt)}</div><div class="sch-sub sch-num">${lastMeta}</div></div>
-        <div>${sends(r)}</div>
-        <div><div class="sch-spark" aria-hidden="true">${spark}</div><div class="sch-sub sch-num">${r.month.runs} run${r.month.runs === 1 ? '' : 's'} · ${money(r.month.cost)}</div></div>
-        <button class="sw${r.enabled ? ' on' : ''}" role="switch" aria-checked="${!!r.enabled}" aria-label="${esc(r.name)} on" data-sch-on="${esc(r.id)}" data-on="${!r.enabled}"></button></div>`
-    }).join('')
+    const mine = data.routines.filter((r) => !r.error).map(userRoutine)
+    const facts = factsOf(mine, 'routines', T)
+    const rows = data.routines.map((r) => r.error
+      ? `<div class="sch-tr" role="row"><div><div class="sch-nm">${esc(r.id)}</div><div class="sch-sub" style="color:var(--danger)">${esc(r.error)}</div></div><div></div><div></div><div></div><div></div><div></div></div>`
+      : routineRow(userRoutine(r), sel === r.id, 'data-sch-sel')).join('')
     const empty = !data.routines.length ? `<div class="sch-tr"><div style="grid-column:1/-1;padding:14px 0"><b>No routines yet.</b> <span class="sch-sub">Start from a template — a plan for your day, Monday asks, a Friday wrap-up, meeting prep — or write your own.</span></div></div>` : ''
     return `<div class="sch">
-      <div class="sch-head"><div style="flex:1"><h2>Scheduler</h2><div class="sch-sub">${canJobs() ? 'What Echo runs by itself, and your prompts run by Claude on a schedule with the answer sent to you.' : 'Your prompts, run by Claude on a schedule; the answer sent to you.'}</div></div>${newButton()}</div>
-      ${jobsSection()}
-      ${canJobs() ? '<div class="sch-jhead" style="padding:4px 0 0"><h3>Your routines</h3></div>' : ''}
+      <div class="sch-head"><div style="flex:1"><h2>Scheduler</h2><div class="sch-sub">${canJobs() ? 'Your prompts, run by Claude on a schedule; and Echo’s own, as system routines.' : 'Your prompts, run by Claude on a schedule; the answer sent to you.'}</div></div>${!canJobs() || tab === 'routines' ? newButton() : ''}</div>
+      ${canJobs() ? `<div class="tabs sch-tabs" role="tablist"><button class="tab" role="tab" data-sch-tab="routines" aria-selected="${tab === 'routines'}">Routines<span class="n">${data.routines.filter((r) => !r.error).length}</span></button><button class="tab" role="tab" data-sch-tab="system" aria-selected="${tab === 'system'}">System${jobs ? `<span class="n">${jobs.routines.length}</span>` : ''}</button></div>` : ''}
+      ${canJobs() && tab === 'system' ? `${systemTab()}</div>` : ''}${canJobs() && tab === 'system' ? '' : `
       ${facts}
-      <div class="sch-tbl" role="table" aria-label="Routines"><div class="sch-th" role="row"><span>Routine</span><span>Next run</span><span>Last run</span><span>Sends to</span><span>30 days</span><span></span></div>${rows}${empty}</div>
+      <div class="sch-tbl" role="table" aria-label="Routines">${HEAD}${rows}${empty}</div>
       ${error ? `<p class="error">${esc(error)}</p>` : ''}
-      <div class="sch-sub">Costs as Claude Code reports them for each run, on the routine’s AI profile. Each routine keeps its last 20 runs: prompt, answer and log.</div></div>`
+      <div class="sch-sub">Costs as Claude Code reports them for each run, on the routine’s AI profile. Each routine keeps its last 20 runs: prompt, answer and log.</div></div>`}`
   }
   const newButton = () => `<div class="sch-pick"><button class="btn primary" data-sch-new aria-haspopup="menu" aria-expanded="${picker}">+ New routine</button>${picker ? `<div class="sch-menu" role="menu">
       ${(data.templates || []).map((t) => `<button role="menuitem" data-sch-tpl="${esc(t.template)}"><b>${esc(t.name)}</b><span class="sch-sub">${esc(t.description)}</span></button>`).join('')}
@@ -320,26 +514,9 @@ export function apply(ctx) {
 
   const panel = () => {
     const r = data && data.routines.find((x) => x.id === sel)
-    if (!r) return '<div class="sch-p"><span class="sch-sub">Pick a routine.</span></div>'
-    const runs = r.runs || []
-    const max = Math.max(0.01, ...runs.map((x) => x.cost || 0))
-    const done = runs.filter((x) => x.cost != null)
-    const avg = done.length ? done.reduce((a, x) => a + x.cost, 0) / done.length : null
-    const avgT = done.length ? done.reduce((a, x) => a + (x.duration_ms || 0), 0) / done.length : null
-    const bars = runs.slice().reverse().map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(4, Math.round(((x.cost || 0) / max) * 100))}%" title="${esc(when(x.at))} · ${money(x.cost)}"></i>`).join('')
-    const list = runs.slice(0, 6).map((x) => {
-      const [cls, txt] = lastLine(x)
-      return `<button class="sch-run" data-sch-runopen="${esc(r.id)}" data-run="${esc(x.run)}"><span class="sch-dot ${cls}"></span><div><div class="w2">${esc(when(x.at))} · ${esc(txt.toLowerCase())}</div><div class="meta">${secs(x.duration_ms)}${x.state === 'failed' && x.message ? ` · ${esc(x.message.slice(0, 80))}` : ''}</div></div><span class="sch-cost">${money(x.cost)}</span></button>`
-    }).join('')
-    return `<div class="sch-p">
-      <div><div style="font-size:15px;font-weight:650">${esc(r.name)}</div><div class="sch-sub">${esc(r.when)}${r.enabled && r.next ? ` · next ${esc(when(r.next).toLowerCase())}` : r.enabled ? '' : ' · off'}</div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${r.running ? '<button class="btn" disabled>Running…</button>' : `<button class="btn primary" data-sch-run="${esc(r.id)}">Run now</button>`}<button class="btn" data-sch-edit="${esc(r.id)}">Edit</button></div>
-      <div class="sch-kv"><span>Sends to</span><div>${(r.deliver || []).map((k) => (k === 'mail' && r.mail_to.length ? `Mail — ${esc(r.mail_to.join(', '))}` : k === 'mail' ? 'Mail — you' : esc(label(k)))).join(', ') || 'Nowhere'}</div>
-        <span>Permissions</span><div>${esc(perm(r.tools).replace(/^./, (c) => c.toUpperCase()))}</div>
-        <span>AI</span><div>${esc(profileName(r.profile))}${r.model ? ` · ${esc(modelName(r.model))}` : ''}</div>
-        <span>Prompt</span><div class="sch-sub" style="color:var(--text-2)">${esc(r.prompt.replace(/\s+/g, ' ').slice(0, 140))}${r.prompt.length > 140 ? '…' : ''}</div></div>
-      ${runs.length ? `<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">Last ${runs.length} run${runs.length === 1 ? '' : 's'}</h4><span class="sch-sub sch-num">${avg != null ? `avg ${money(avg)} · ${secs(avgT)}` : ''}</span></div><div class="sch-bars" aria-label="Cost of each run, oldest first">${bars}</div></div><div>${list}</div>` : '<span class="sch-sub">No runs yet.</span>'}
-    </div>`
+    if (!r || r.error) return '<div class="sch-p"><span class="sch-sub">Pick a routine.</span></div>'
+    const R = userRoutine(r)
+    return routinePanel(R, R.runs)
   }
   const profileName = (id) => {
     const P = data.profiles || { profiles: [] }
@@ -444,25 +621,32 @@ export function apply(ctx) {
       if (canJobs() && (now - seenAt > 5000 || now - jobsAt > 30000)) loadJobs()
       seenAt = now
       if (!data) { if (!error) load(); return error ? `<p class="error">${esc(error)}</p>` : '<div class="skeleton" style="padding:20px"><i></i><i></i><i></i></div>' }
-      return page === 'run' && runView ? runPage() : page === 'edit' && edit ? editPage() : listPage()
+      return page === 'run' && runView ? runPage() : page === 'edit' && edit ? editPage() : page === 'jobedit' && jobEdit && jobs ? jobEditPage() : listPage()
     },
   })
-  ctx.panels.add({ id: 'routine', label: 'Routine', icon: CLOCK, area: 'right', when: () => here() && page === 'list' && !!sel, render: panel })
+  ctx.panels.add({ id: 'routine', label: 'Routine', icon: CLOCK, area: 'right', when: () => here() && page === 'list' && (tab === 'routines' || !canJobs()) && !!sel, render: panel })
+  ctx.panels.add({ id: 'system', label: 'System routine', icon: CLOCK, area: 'right', when: () => here() && page === 'list' && tab === 'system' && canJobs() && !!selJob, render: jobPanel })
   // Its card in Settings → Plugins points to its section.
   ctx.settings.add({ render: () => ctx.ui.setCard('', [ctx.ui.setRow('Routines and Echo’s jobs', `${data ? data.routines.length : '…'} routine${data && data.routines.length === 1 ? '' : 's'}, and what Echo runs by itself — see and change them in its own section.`, `<button class="btn" data-sch-open>Open Scheduler</button>`)]) })
-  ctx.palette.add({ label: 'Scheduler: Echo’s jobs', keywords: 'background jobs night pause model interval sync recall prep minutes', run: () => { page = 'list'; jobsOpen = true; jobsAt = 0; try { localStorage.setItem('sch-jobs-open', 'yes') } catch { /* kept for now only */ } ctx.go(`settings/${SECTION}`) } })
-  ctx.palette.add({ label: 'Scheduler: routines', keywords: 'routine schedule cron digest', run: () => ctx.go(`settings/${SECTION}`) })
-  ctx.palette.add({ label: 'Scheduler: new routine from a template', keywords: 'routine plan monday friday prep', run: () => { page = 'list'; picker = true; ctx.go(`settings/${SECTION}`) } })
+  ctx.palette.add({ label: 'Scheduler: system routines (Echo’s jobs)', keywords: 'system echo jobs background night pause model interval sync recall prep minutes', run: () => { page = 'list'; setTab('system'); jobsAt = 0; ctx.go(`settings/${SECTION}`) } })
+  ctx.palette.add({ label: 'Scheduler: routines', keywords: 'routine schedule cron digest', run: () => { page = 'list'; setTab('routines'); ctx.go(`settings/${SECTION}`) } })
+  ctx.palette.add({ label: 'Scheduler: new routine from a template', keywords: 'routine plan monday friday prep', run: () => { page = 'list'; setTab('routines'); picker = true; ctx.go(`settings/${SECTION}`) } })
 
   listen('click', async (ev) => {
-    const t = ev.target.closest && ev.target.closest('[data-sch-sel],[data-sch-on],[data-sch-new],[data-sch-tpl],[data-sch-blank],[data-sch-run],[data-sch-edit],[data-sch-runopen],[data-sch-list],[data-sch-back],[data-sch-prompt],[data-sch-mode],[data-sch-day],[data-sch-to],[data-sch-others],[data-sch-skip],[data-sch-perm],[data-sch-save],[data-sch-del],[data-sch-try],[data-sch-trialclose],[data-sch-open],[data-sch-connect],[data-sch-jreset],[data-sch-jnight],[data-sch-nightdef],[data-sch-jfold]')
+    const t = ev.target.closest && ev.target.closest('[data-sch-sel],[data-sch-on],[data-sch-new],[data-sch-tpl],[data-sch-blank],[data-sch-run],[data-sch-edit],[data-sch-runopen],[data-sch-list],[data-sch-back],[data-sch-prompt],[data-sch-mode],[data-sch-day],[data-sch-to],[data-sch-others],[data-sch-skip],[data-sch-perm],[data-sch-save],[data-sch-del],[data-sch-try],[data-sch-trialclose],[data-sch-open],[data-sch-connect],[data-sch-nightdef],[data-sch-tab],[data-sch-jedit],[data-sch-nightedit],[data-sch-nightdone],[data-sch-jsel],[data-sch-jsave],[data-sch-jdef],[data-sch-jnightd]')
     if (!t) { if (picker && !(ev.target.closest && ev.target.closest('.sch-pick'))) { picker = false; ctx.render() } return }
     const d = t.dataset
     if (page === 'edit') readForm()
-    if ('schJreset' in d) return setJob(d.schJob, [`${d.key}=`])
-    if ('schJnight' in d) return setJob(d.schJob, [`night=${d.on === 'true' ? 'on' : 'off'}`])
+    if (page === 'jobedit') readJobForm()
     if ('schNightdef' in d) return setJob('night', ['from=', 'to='])
-    if ('schJfold' in d) { jobsOpen = !jobsOpen; try { localStorage.setItem('sch-jobs-open', jobsOpen ? 'yes' : 'no') } catch { /* kept for now only */ } return ctx.render() }
+    if (d.schTab) { setTab(d.schTab); picker = false; if (d.schTab === 'system') jobsAt = 0; ctx.render(); if (d.schTab === 'system') loadJobs(); return }
+    if (d.schJsel) { selJob = d.schJsel; ctx.showPanel('system'); ctx.render(); return loadJobRuns(selJob) }
+    if (d.schJedit) { jobEdit = { id: d.schJedit, draft: {} }; jobsErr = ''; page = 'jobedit'; return ctx.render() }
+    if ('schJsave' in d) return saveJob()
+    if (d.schJdef) { jobEdit.draft[d.schJdef] = null; return ctx.render() }
+    if ('schJnightd' in d) { const j = jobById(jobEdit.id), f = j && fieldOf(j, 'night'); if (f) { const cur = jobEdit.draft.night === undefined ? f.value : jobEdit.draft.night === null ? f.default : jobEdit.draft.night; const v = !cur; if (!f.set && v === f.value) delete jobEdit.draft.night; else if (f.set && v === f.value) delete jobEdit.draft.night; else jobEdit.draft.night = v } return ctx.render() }
+    if ('schNightedit' in d) { nightEdit = true; ctx.render(); const f = document.getElementById('sch-night-from'); if (f) f.focus(); return }
+    if ('schNightdone' in d) { nightEdit = false; return ctx.render() }
     if ('schOn' in d) { ev.stopPropagation(); return op('enable', { id: d.schOn, on: d.on === 'true' }) }
     if (d.schSel) { sel = d.schSel; ctx.showPanel('routine'); return ctx.render() }
     if ('schNew' in d) { picker = !picker; return ctx.render() }
@@ -471,7 +655,7 @@ export function apply(ctx) {
     if (d.schEdit) { const r = data.routines.find((x) => x.id === d.schEdit); trial = null; edit = draftOf(r); page = 'edit'; return ctx.render() }
     if (d.schRun) { await op('run', { id: d.schRun }); sel = d.schRun; page = 'list'; return ctx.render() }
     if (d.schRunopen) return openRun(d.schRunopen, t.dataset.run)
-    if ('schList' in d) { page = 'list'; edit = null; error = ''; return ctx.render() }
+    if ('schList' in d) { page = 'list'; edit = null; jobEdit = null; error = ''; jobsErr = ''; return ctx.render() }
     if (d.schBack) { page = 'list'; sel = d.schBack; ctx.showPanel('routine'); return ctx.render() }
     if ('schPrompt' in d) { runView.prompt = !runView.prompt; return ctx.render() }
     if (d.schMode) { edit.mode = d.schMode; if (edit.mode === 'days' && !edit.days.some(Boolean)) edit.days = [true, false, false, false, false, false, false]; return ctx.render() }
@@ -506,28 +690,22 @@ export function apply(ctx) {
   // each part typed, and saving then would redraw it under the typing.
   listen('focusout', (ev) => {
     const t = ev.target
-    if (!t || !t.dataset || !t.matches || !t.matches('[data-sch-jnum],[data-sch-night]')) return
+    if (!t || !t.dataset || !t.matches || !t.matches('[data-sch-jf],[data-sch-night]')) return
     // Only a field the user left in this window: not one a redraw took away, nor the window losing focus.
-    if (!t.isConnected || !document.hasFocus()) return
+    if (!t.isConnected || !document.hasFocus() || nightCancel) return
     const k = t.dataset.schNight
     if (k && jobs && t.value && t.value !== (jobs.night || {})[k]) return setJob('night', [`${k}=${t.value}`])
     if (k && !t.value) { if (jobs && jobs.night) t.value = jobs.night[k] || ''; return } // emptied: back to Echo's time
     if (held) setTimeout(redraw, 0)
   })
-  listen('keydown', (ev) => { if (ev.key === 'Enter' && ev.target && ev.target.dataset && ev.target.dataset.schNight) ev.target.blur() })
+  listen('keydown', (ev) => {
+    const k = ev.target && ev.target.dataset && ev.target.dataset.schNight
+    if (k && ev.key === 'Enter') { ev.target.blur(); setTimeout(() => { nightEdit = false; ctx.render() }, 0) }
+    if (k && ev.key === 'Escape') { nightCancel = true; nightEdit = false; ctx.render(); nightCancel = false }
+  })
   listen('input', (ev) => { if (page === 'edit' && ev.target && ev.target.id === 'sch-hours') readForm() })
   listen('change', (ev) => {
     const j = ev.target && ev.target.dataset
-    if (j && 'schJnum' in j) {
-      const v = String(ev.target.value).trim()
-      if (v) return setJob(j.schJob, [`${j.key}=${v}`])
-      // Emptied: Echo's value again ("Back to default" is the way back), put in the field itself — a redraw of the same
-      // HTML wouldn't touch it.
-      const f = jobs && ((jobs.jobs.find((x) => x.id === j.schJob) || {}).fields || []).find((x) => x.key === j.key)
-      if (f) ev.target.value = String(f.value)
-      return
-    }
-    if (j && 'schJmodel' in j) return setJob(j.schJob, [`model=${ev.target.value}`])
     if (page === 'edit' && ev.target && ['sch-time', 'sch-hours', 'sch-model-pick'].includes(ev.target.id)) {
       readForm(); ctx.render()
       if (ev.target.id === 'sch-model-pick' && edit.modelPick === 'other') { const o = document.getElementById('sch-model'); if (o) o.focus() }

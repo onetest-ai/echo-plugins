@@ -1,0 +1,54 @@
+{
+ "plugin": "scheduler",
+ "prefix": "F-SCH",
+ "features": [
+  {
+   "id": "F-SCH-01",
+   "title": "A routine's model is picked from a list in its editor: Profile’s default (empty: the profile's minutes model), Haiku, Sonnet, Opus, or Other… with a field for any name; saved as the routine's one `model` value (haiku, sonnet, opus, the name typed, or empty) and reopened with the same choice",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-SCH-02",
+   "title": "A run asks Claude Code for the routine's model: its log's first line names it (\"…, model haiku\"), as does the run's What it did; Profile’s default names none but the profile's own",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-SCH-03",
+   "title": "A routine whose stored model isn't haiku, sonnet or opus (written by hand or before the list) opens with Other… picked and its name in the field, kept as it is when saved",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-SCH-04",
+   "title": "The routine's row in the list, and its panel's AI line, show its model when one is set (Haiku, Sonnet, Opus, or the name typed), nothing when it's the profile's default",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-SCH-05",
+   "title": "Its install sheet says it shows Echo's background jobs and changes them only in its screens (`uses.echo.jobs`); it needs Echo 0.9.13",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-SCH-06",
+   "title": "An \"Echo’s jobs\" part above the routines: each of Echo's jobs with its name, what it does, last run and runs today, and its settings (how often, paused at night, model) with \"default: …\" when not set; it can be hidden and shown again, and stays as left",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-SCH-07",
+   "title": "A job's setting changes on the user's own change (a number, the night switch, Haiku/Sonnet/Opus) and \"Back to default\" (or Job’s default) undoes it; Echo's refusal (out of range) is shown and the field goes back to what Echo holds",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-SCH-08",
+   "title": "The shared night (from–to) is shown and changed there, and back to Echo's own; Echo's jobs keep their settings when the Scheduler is removed",
+   "priority": "high",
+   "check": "agent"
+  }
+ ]
+}

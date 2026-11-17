@@ -1,14 +1,17 @@
 {
   "id": "scheduler",
   "name": "Scheduler",
-  "version": "0.4.0",
-  "echo": ">=0.9.9",
-  "summary": "Run your own Claude prompts on a schedule — a Monday digest, the day's plan — and get the answer in Telegram, Teams or mail",
+  "version": "0.6.0",
+  "echo": ">=0.9.13",
+  "summary": "See and tune what Echo runs by itself — how often, the night pause, the model — and run your own Claude prompts on a schedule, the answer in Telegram, Teams or mail",
   "agent": {
-    "summary": "The user's scheduled Claude prompts (routines): what runs when and where its answer goes, each run's answer, cost or failure",
+    "summary": "Echo's background jobs as the user tuned them, and the user's scheduled Claude prompts (routines): what runs when and where its answer goes, each run's answer, cost or failure",
     "prefix": "schd"
   },
   "uses": {
+    "echo": {
+      "jobs": true
+    },
     "claude": {
       "skip": true
     },

@@ -289,6 +289,12 @@ test('unsaved text is kept for the same page and base, gone after a save', () =>
   const broken = { getItem: () => { throw new Error('off') }, setItem: () => { throw new Error('off') }, removeItem: () => {} }
   assert.equal(knRestoreDraft(broken, 'v', 'p', 'b'), null, 'storage off: nothing, no error')
   knKeepDraft(broken, 'v', 'p', 'b', 't')
+  // Kept under the plugin's own key; #17's draft is carried over once.
+  knKeepDraft(s, 'my-twin', 'b.md', 'b1', 'mine')
+  assert.ok(store.has('obsidian.kn.draft:my-twin:b.md'))
+  store.set('echo.kn.draft:my-twin:c.md', JSON.stringify({ base: 'c1', text: 'from #17' }))
+  assert.equal(knRestoreDraft(s, 'my-twin', 'c.md', 'c1'), 'from #17')
+  assert.ok(!store.has('echo.kn.draft:my-twin:c.md') && store.has('obsidian.kn.draft:my-twin:c.md'), 'moved to the plugin\'s key')
 })
 
 test('Knowledge registers owned listeners and keeps the app globals behind ctx', () => {
@@ -298,7 +304,11 @@ test('Knowledge registers owned listeners and keeps the app globals behind ctx',
   // #677's native seams are gone: the host half's commands (`ctx.call`, through seam.js) and Echo's generic slots.
   assert.doesNotMatch(src, /ctx\.knowledge\b|api\/kn\/jobs|api\/kn\/pick|api\/kn-resume|\bsend\(\{|navigator\.clipboard|\bfetch\(/)
   assert.match(src, /ctx\.call\(/)
+  // Echo's internals stay Echo's: no history of its own, storage under the plugin's own keys (#17's read once).
+  assert.doesNotMatch(src, /history\.(replaceState|pushState)/)
+  assert.doesNotMatch(src, /setItem\('echo\./)
   assert.match(src, /ctx\.claude\.session\(/)
+  assert.match(src, /ctx\.system\.reveal\(v\.root, rel\)/, 'Show in Finder through Echo')
   // Ask the vault: the vault's root is the project (its CLAUDE.md, AGENTS.md, .claude/skills), never a subfolder.
   const sessions = [...src.matchAll(/ctx\.claude\.session\(\{([^)]*)\}\)/g)].map((m) => m[1])
   assert.equal(sessions.length, 1, 'one place opens it')
@@ -1059,7 +1069,7 @@ test('a run\'s three or more read-only calls in a row fold into one line', () =>
 })
 
 // ── the seam (seam.js): #17's reads and actions as this plugin's host commands ──
-const { knReadOf, knActionOf, knRead, knAct, knDiffText } = await import('../../plugins/obsidian/seam.js')
+const { knReadOf, knActionOf, knRead, knAct, knDiffText, knConnectArgs, knUnpickOf } = await import('../../plugins/obsidian/seam.js')
 
 test('the seam: each read #17 made is one of the host half\'s commands, its query decoded', () => {
   assert.deepEqual(knReadOf('api/kn'), { command: 'kn', args: {} })
@@ -1086,13 +1096,12 @@ test('the seam: each kn_* action is one command, its arguments as the host takes
   for (const gone of ['kn_chat_send', 'kn_chat_permit', 'kn_chat_terminal', 'kn_import_plugin', 'kn_pick', 'kn_drops', 'kn_reveal']) assert.equal(knActionOf(gone), null, gone)
 })
 
-test('the seam: answers in the shape the view takes — a conflict throws, a version\'s diff is text, the top level is \'\'', async () => {
+test('the seam: answers in the shape the view takes — a conflict throws, a version\'s diff is text', async () => {
   const calls = []
   const call = async (command, args) => {
     calls.push([command, args])
     if (command === 'save_page') return { conflict: true, base: 'b2', text: 'theirs' }
     if (command === 'version') return { rev: 'abc', diff: [[['=', 'a'], ['-', 'b'], ['+', 'c']], [['+', 'z']]], html: null }
-    if (command === 'graph') return { nodes: [{ id: 'CATALOG.md', folder: '(top level)' }, { id: 'clients/a.md', folder: 'clients' }], edges: [], hubs: [] }
     if (command === 'page') return { path: 'big.md', html: null, editable: false, mtime: 1794950746 }
     if (command === 'set') return { id: 'v', name: 'V' }
     if (command === 'kn') return { vaults: [{ id: 'v', name: 'V', available: true, paths: { pages: 'knowledge' } }] }
@@ -1101,10 +1110,33 @@ test('the seam: answers in the shape the view takes — a conflict throws, a ver
   }
   await assert.rejects(knAct(call, 'kn_save_page', { id: 'v', path: 'a.md', text: 'x', base: 'b' }), /changed_on_disk/)
   assert.equal((await knRead(call, 'api/kn/v/version?path=a.md&rev=abc')).diff, '@@\n a\n-b\n+c\n@@\n+z')
-  assert.deepEqual((await knRead(call, 'api/kn/v/graph?mode=links')).nodes.map((n) => n.folder), ['', 'clients'])
   assert.match((await knRead(call, 'api/kn/v/page?path=big.md')).html, /too large/)
   assert.equal((await knRead(call, 'api/kn/v/page?path=big.md')).mtime, 1794950746000, 'the host\'s seconds as the view\'s milliseconds')
   assert.equal((await knRead(call, 'api/kn/v/tree')).root, '', 'page paths are relative to the pages folder')
   assert.deepEqual((await knAct(call, 'kn_set', { id: 'v', key: 'commit', value: 'true' })).vault.paths, { pages: 'knowledge' }, 'a setting answers with the vault as kn lists it')
   assert.equal(knDiffText([]), '')
+})
+
+test('Connect: what the sheet sends reaches add as the root it picked — the folder picker isn\'t asked again', async () => {
+  // The Connect sheet as connectGo has it: the host's `pick` answer (a path, no seq), the user's choices.
+  const sheet = { kind: 'connect', step: 3, picked: { path: '/notes/acme', name: 'acme', detected: { md_files: 3 } }, minutes: 'ask', commit: true, profile: 'p1' }
+  const args = knConnectArgs(sheet, 'Acme notes')
+  const calls = []
+  const call = async (command, a) => { calls.push([command, a]); return command === 'add' ? { id: 'acme-notes' } : { vaults: [{ id: 'acme-notes', name: 'Acme notes' }] } }
+  const r = await knAct(call, 'kn_add', args)
+  assert.deepEqual(calls[0], ['add', { root: '/notes/acme', name: 'Acme notes', minutes: 'ask', commit: true, profile: 'p1', anyway: true }])
+  assert.equal(r.vault.name, 'Acme notes')
+})
+
+test('a folder picked and not connected is given back: the sheet closed, another picked, an empty one', () => {
+  const a = { path: '/notes/a', name: 'a', detected: {} }, b = { path: '/notes/b', name: 'b', detected: {} }
+  const sheet = (picked, o = {}) => ({ kind: 'connect', picked, ...o })
+  assert.deepEqual(knUnpickOf(sheet(a), null), ['/notes/a'], 'Cancel, Esc, a click beside it')
+  assert.deepEqual(knUnpickOf(sheet(a), b), ['/notes/a'], 'Choose another…')
+  assert.deepEqual(knUnpickOf(sheet(a), a), [], 'the same folder again')
+  assert.deepEqual(knUnpickOf(sheet(null), { path: '/notes/e', empty: true }), ['/notes/e'], 'an empty folder: nothing to connect')
+  assert.deepEqual(knUnpickOf(sheet(a, { connected: true }), null), [], 'connected: it is the vault\'s')
+  assert.deepEqual(knUnpickOf(sheet({ path: '/notes/r', refused: 'inside a vault' }), null), [], 'refused: the host gave it back')
+  assert.deepEqual(knUnpickOf({ kind: 'newpage' }, null), [], 'another sheet')
+  assert.deepEqual(knUnpickOf(null, null), [])
 })

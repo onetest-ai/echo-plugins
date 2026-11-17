@@ -2109,6 +2109,7 @@ export function apply(ctx) {
   // From the Connect sheet also its name, its minutes (`auto` | `ask` | `off`), whether Echo commits what it writes and
   // its AI profile — each checked as `set` checks it.
   ctx.command('add', async ({ wait, root: picked, anyway, name: named, minutes, commit, profile } = {}) => {
+    if (!picked) ctx.log('add: the folder picker asked')
     const root = picked ? String(picked) : await ctx.system.pickFolder('A folder of notes for Knowledge')
     if (!root) return { cancelled: true }
     // Only a folder the picker gave this plugin (a `check` answered later); never a path the window made up.
@@ -2330,7 +2331,7 @@ export function apply(ctx) {
   }
   const triples = (a, k = 3) => { const out = []; for (let i = 0; i + k <= (a || NONE).length; i += k) out.push(a.slice(i, i + k)); return out }
   const propsOf = (r) => triples(r.fp).map(([k, t, v]) => [k, { t: KINDS3[t], v }])
-  // 0.8's view of a record (Claude's commands, the 0.8 browser): made when asked, each part when first read.
+  // 0.8's view of a record (Claude's commands): made when asked, each part when first read.
   class Note08 {
     constructor(r) { this.r = r; this.p = r.p; this.s = r.s; this.m = r.m }
     get props() { return this._props || (this._props = this.r.op || props08Of(this.r.fp)) }
@@ -2608,59 +2609,8 @@ export function apply(ctx) {
     }
     return out
   }
-  const asText = (line) => line.replace(/!?\[\[([^\]]+)\]\]/g, (_, raw) => { const w = parseWiki(raw); return w.a || w.t || w.h }).trim().slice(0, 240)
 
-  // ── the window's commands (the Obsidian activity) ──
-  ctx.command('browse', async ({ id }) => {
-    const v = vaultOf(id)
-    const ix = await index(v)
-    const sk = skipped(v)
-    const tags = {}
-    for (const n of ix.notes.values()) for (const t of n.tg) tags[t] = (tags[t] || 0) + 1
-    return {
-      vault: { id: v.id, name: v.name, root: v.root, belongs: v.belongs || [] },
-      notes: [...ix.notes.values()].map((n) => ({ path: n.p, title: n.t, folder: dirOf(n.p), skip: sk.has(n.p.split('/')[0]), tags: n.tg })).sort((a, b) => a.path.localeCompare(b.path)),
-      tags: Object.entries(tags).sort((a, b) => b[1] - a[1]).map(([tag, n]) => ({ tag, n })),
-    }
-  })
-  ctx.command('note', async ({ id, path }) => {
-    const v = vaultOf(id)
-    const ix = await index(v)
-    const n = ix.notes.get(path)
-    if (!n) throw new Error('no such note')
-    const text = readText(v, path) || ''
-    const { body } = parseFrontmatter(text)
-    // Wikilinks become markers the window turns into links (Echo's Markdown writer keeps only https links).
-    const wl = []
-    // A marker of this call only: a note's own text can't make one (the window replaces them in text, not code).
-    const marker = Math.random().toString(36).slice(2, 10)
-    // Code (fenced blocks, inline spans) is shown as written: its [[…]] isn't a link.
-    const md = body.split(/(```[\s\S]*?```|`[^`\n]*`)/).map((part, i) => i % 2 ? part : part.replace(/(!?)\[\[([^\]]+)\]\]/g, (_, bang, raw) => {
-      const w = parseWiki(raw)
-      wl.push({ target: w.t, path: resolveIn(ix, w.t, path, false), shown: w.a || w.t || w.h, embed: !!bang })
-      return `⟦${marker}:${wl.length - 1}⟧`
-    })).join('')
-    // Backlinks with their line (the first one in each note).
-    const back = [...backFrom(ix, path, 200).first]
-    const wanted = new Map(back.map((b) => [b[0], [b[1]]]))
-    const lines = await linesAt(v, wanted)
-    const backlinks = back.map(([p, l]) => ({ path: p, title: ix.notes.get(p).t, line: asText(lines.get(`${p}:${l}`) || '') }))
-    const out = [...new Set(outOf(ix, path).filter((p) => p && p !== path && ix.notes.has(p)))]
-    const nodes = [{ id: path, title: n.t, folder: dirOf(path), me: true }]
-    for (const p of [...out, ...backlinks.map((b) => b.path)]) if (!nodes.some((x) => x.id === p)) nodes.push({ id: p, title: ix.notes.get(p).t, folder: dirOf(p) })
-    const edges = [...out.map((p) => [path, p]), ...backlinks.map((b) => [b.path, path])]
-    // The same person, client or thread in Echo, by name.
-    const clients = ctx.echo.read('clients'), threads = ctx.echo.read('threads')
-    const inEcho = [
-      ...clients.filter((c) => lc(c.name) === lc(n.t) || (c.aliases || []).some((a) => lc(a) === lc(n.t))).map((c) => ({ kind: 'client', id: c.id, name: c.name })),
-      ...threads.filter((t) => lc(t.name) === lc(n.t)).map((t) => ({ kind: 'thread', id: t.id, name: t.name })),
-    ]
-    // Properties that link (`company: "[[Acme]]"`): where each link leads.
-    const propLinks = {}
-    for (const val of Object.values(n.props)) for (const x of [].concat(val)) for (const mm of String(x).matchAll(WIKI)) { const t = parseWiki(mm[2]).t; propLinks[t] = resolveIn(ix, t, path, false) }
-    return { path, title: n.t, folder: dirOf(path), props: n.props, prop_links: propLinks, tags: n.tg, html: ctx.markdown(md), marker, wikilinks: wl, backlinks, local: { nodes, edges }, in_echo: inEcho, root: pagesRoot(v) }
-  })
-  // ── a vault's pages (page.rs, scan.rs, checks.rs, activity.rs): the Knowledge tab's commands ──
+  // ── a vault's pages (page.rs, scan.rs, checks.rs, activity.rs): the Knowledge activity's commands ──
   // Paths are page paths, relative to the vault's pages folder (`pages` in the answers when it isn't the root), as
   // Obsidian resolves links within it; every one is checked as a path inside the vault (`pathProblem`) and on the disk
   // (`ctx.fs.stat`: no link, nothing leading out) before it is read or written. Writes go only through `save_page`,
@@ -3175,14 +3125,13 @@ export function apply(ctx) {
   })
 
   // The vault's graph (links.rs `graph`): pages as nodes with their top folder, tags and degree, links as edges, tags as
-  // nodes (`mode` tags or both), and the hubs — the index page and pages linking to most others. The 0.8 browser draws
-  // it too: a page at the top level is in the folder "(top level)", and folders a 0.8 analysis left alone are left out.
+  // nodes (`mode` tags or both), and the hubs — the index page and pages linking to most others; a page at the top level
+  // is in the folder ''; folders a 0.8 analysis left alone are left out.
   ctx.command('graph', async ({ id, mode }) => {
     const v = vaultOf(id)
     const ix = await index(v)
     const sk = skipped(v)
     const g = graphOf(ix, (p) => !sk.has(p.split('/')[0]), indexPageOf(v), mode === 'tags' || mode === 'both' ? mode : 'links')
-    for (const n of g.nodes) if (!n.tag && n.folder === '') n.folder = '(top level)'
     return { ...g, ...pg(v) }
   })
 
@@ -3212,14 +3161,16 @@ export function apply(ctx) {
     paths: Object.fromEntries(PATHS.map((k) => [k, k === 'naming' ? vaultPath(v, k) || DATE_SLUG : vaultPath(v, k)])),
     description: description(v.id), proposed: proposedOf(v.id),
   })
-  ctx.command('kn', async () => {
+  // `id`: the vault shown — git is asked about it alone (its branch, what isn't committed); the others say whether
+  // they are in git (`in_git`) as Echo found it.
+  ctx.command('kn', async ({ id } = {}) => {
     recover()
     const p = profilesNow()
     let installed = true
     const vaults = []
     for (const v of load()) {
       const there = folderThere(v)
-      const g = there ? await gitNow(v) : { git: null, installed: true }
+      const g = there && v.id === id ? await gitNow(v) : { git: null, installed: true }
       if (!g.installed) installed = false
       vaults.push(vaultValue(v, there, g.git, p.default))
     }
@@ -3228,6 +3179,7 @@ export function apply(ctx) {
   // The folder picker of the Connect sheet: the folder and what Echo finds in it, nothing written and nothing connected
   // yet — `add {root}` connects it; `unpick` gives it back.
   ctx.command('pick', async () => {
+    ctx.log('pick: the folder picker asked')
     const root = await ctx.system.pickFolder('A folder of notes for Knowledge')
     if (!root) return null
     const name = root.split(/[\\/]/).filter(Boolean).pop() || 'Vault'
@@ -3400,10 +3352,17 @@ export function apply(ctx) {
     }
     return { total: Math.min(100, weights ? Math.floor((100 * points) / weights + 0.5 + 1e-9) : 100), categories, code_only: true }
   }
+  // Once per state of the vault (its pages' rev, its record, what is ignored) and day: Home's and the tab's polls ask
+  // often, the checks run and today's point is written only when something changed.
+  const healthHeld = new Map()
   const healthNow = async (v) => {
     const ix = await index(v)
+    const stText = ctx.store.read(healthPath(v.id)) || ''
+    const key = `${ix.rev}\n${JSON.stringify(v)}\n${ctx.crypto.sha256(stText)}\n${ymd(new Date())}`
+    const held = healthHeld.get(v.id)
+    if (held && held.key === key) return held.out
     const all = await findingsOf(v, ix)
-    const st = healthState(ctx.store.read(healthPath(v.id)))
+    const st = healthState(stText)
     const off = new Set(st.ignored)
     const findings = all.filter((f) => !off.has(f.key)), ignored = all.filter((f) => off.has(f.key))
     const score = healthScore(findings, pagesOf(ix).filter((p) => inScopeOf(v)(p.path)).length)
@@ -3420,7 +3379,10 @@ export function apply(ctx) {
       })
       history = healthState(kept).history
     } catch (e) { ctx.log(`health of ${v.id}: ${(e && e.message) || e}`) }
-    return { findings, ignored, score, history, ai: null, lint: null, rev: ix.rev, ...pg(v) }
+    const out = { findings, ignored, score, history, ai: null, lint: null, rev: ix.rev, ...pg(v) }
+    // Kept with the state as it is after today's point (its own write isn't a change).
+    healthHeld.set(v.id, { key: `${ix.rev}\n${JSON.stringify(v)}\n${ctx.crypto.sha256(ctx.store.read(healthPath(v.id)) || '')}\n${ymd(new Date())}`, out })
+    return out
   }
   ctx.command('health', async ({ id }) => healthNow(vaultOf(id)))
   // One finding as Health opens it: no fix yet (they come with the AI checks), whether it is ignored.
@@ -3469,7 +3431,7 @@ export function apply(ctx) {
         }
       } catch { gitWord = 'failed' }
     }
-    rows.sort((a, b) => cmpStr(String(b.at), String(a.at)))
+    rows.sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0))
     const h = await healthNow(v)
     const needs = h.findings.filter((f) => f.group === 'needs')
     const fixable = h.findings.filter((f) => f.fixable)
@@ -3497,9 +3459,16 @@ export function apply(ctx) {
   })
 
   // A call's Knowledge (the chip on its page, its ⋯ items, the minutes' line): the vaults it may go to, those its minutes
-  // go to by themselves — the vaults for its threads, else its client, else the default, each on the call's AI profile
-  // and taking minutes automatically — and the user's choice for this call (`calls.json`: {<call>: vault id | "none"}).
-  const choicesOf = () => { try { const j = JSON.parse(ctx.store.read('calls.json') || '{}'); return j && typeof j === 'object' && !Array.isArray(j) ? j : {} } catch { return {} } }
+  // would go to by themselves — the vaults for its threads, else its client, else the default, each on the call's AI
+  // profile and taking minutes automatically — and the user's choice for this call (`calls.json`). Minutes aren't saved
+  // into a vault in this version (step 4): `later` says so, and the window promises nothing.
+  // A call is known by its stamp (its folder's `YYYY-MM-DD_HHMMSS`, which a retitle keeps — Echo opens a retitled
+  // call by it): Echo gives a plugin no other id that survives a rename. Choices of calls over 180 days old are dropped.
+  const callKey = (name) => { const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(String(name || '')); return m ? m[1] : String(name || '') }
+  const CHOICE_DAYS = 180
+  const choicesFrom = (text) => { try { const j = JSON.parse(text || '{}'); return j && typeof j === 'object' && !Array.isArray(j) ? j : {} } catch { return {} } }
+  const choiceOf = (j, name) => { const x = j[callKey(name)]; return x && typeof x === 'object' ? x.vault : typeof x === 'string' ? x : null }
+  const choiceFresh = (key, now) => { const d = Date.parse(`${key.slice(0, 10)}T00:00:00Z`); return isNaN(d) || now - d <= CHOICE_DAYS * 864e5 }
   ctx.command('call_knowledge', ({ call }) => {
     const c = call && typeof call === 'object' ? call : {}
     const name = String(c.name || '')
@@ -3513,22 +3482,25 @@ export function apply(ctx) {
     let routed = mine((b) => b.thread && threads.includes(b.thread))
     if (!routed.length && c.client) routed = mine((b) => b.client === c.client)
     if (!routed.length && prefs().default) routed = vs.filter((v) => v.id === prefs().default)
-    const choice = choicesOf()[name] || null
+    const choice = choiceOf(choicesFrom(ctx.store.read('calls.json')), name)
     const targets = routed.filter((v) => v.minutes.mode === 'auto' && (v.profile || prof.default) === callProfile).map((v) => ({ id: v.id, name: v.name }))
-    return { vaults, targets: choice && choice !== 'none' ? vaults.filter((v) => v.id === choice).map((v) => ({ id: v.id, name: v.name })) : targets, record: { saved: [], choice }, stale: [], failure: null, profile: c.profile || null }
+    return { vaults, targets: choice && choice !== 'none' ? vaults.filter((v) => v.id === choice).map((v) => ({ id: v.id, name: v.name })) : targets, record: { saved: [], choice }, stale: [], failure: null, profile: c.profile || null, later: MINUTES_LATER }
   })
   ctx.command('call_choice', ({ call, vault }) => {
     const name = String(call || '')
     if (!name) throw new Error('call: the call\'s name')
     if (vault != null && vault !== '' && vault !== 'none') find(load(), vault)
+    const now = Date.now()
     ctx.store.update('calls.json', (text) => {
-      let j = {}
-      try { j = JSON.parse(text || '{}') || {} } catch { /* started again */ }
-      if (vault == null || vault === '') delete j[name]; else j[name] = String(vault)
+      const j = choicesFrom(text)
+      for (const k of Object.keys(j)) if (!choiceFresh(k, now)) delete j[k]
+      const k = callKey(name)
+      if (vault == null || vault === '') delete j[k]; else j[k] = { vault: String(vault), at: new Date(now).toISOString() }
       return JSON.stringify(j, null, 2)
     })
     return true
   })
+
 
   // What the activity draws now and the later steps of Knowledge 1.0 answer: Ingest and its sources (step 5), minutes
   // into a vault and a new vault from the twin starter (step 4), Health's fixes and AI checks (step 5). Each says so;

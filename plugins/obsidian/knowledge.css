@@ -36,7 +36,7 @@
 .kn-mi.on { color: var(--accent-ink); font-weight: 600; }
 .kn-mi-r { color: var(--text-3); font-size: 11.5px; font-weight: 400; }
 .kn-sp { display: inline-block; width: 14px; flex: none; }
-.menu-item svg { width: 14px; height: 14px; flex: none; }
+:is(.kn, .kn-sheet, .kn-rel) .menu-item svg { width: 14px; height: 14px; flex: none; }
 .kn-tabs { padding: 4px 14px 0; border-bottom: 1px solid var(--line); flex: none; }
 .kn-tabs .tabs { overflow-x: auto; scrollbar-width: none; }
 .kn-tabs .tabs::-webkit-scrollbar { display: none; }
@@ -119,7 +119,7 @@
 .kn-pk { color: var(--text-3); }
 .kn-tags { display: flex; gap: 5px; flex-wrap: wrap; }
 .kn-tag, .tag.acc { background: var(--accent-soft); color: var(--accent-ink); }
-.tag.ok { background: color-mix(in srgb, var(--me) 14%, transparent); color: var(--me); }
+:is(.kn, .kn-sheet) .tag.ok { background: color-mix(in srgb, var(--me) 14%, transparent); color: var(--me); }
 .kn-src { display: inline-flex; gap: 5px; align-items: center; }
 .kn-src svg { width: 12px; height: 12px; }
 .kn-wl { color: var(--accent-ink); }
@@ -280,8 +280,8 @@ button.kn-leg:hover { background: var(--line); color: var(--text); }
 .kn-rowp { border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
 .kn-rowp-h { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 12px; }
 .kn-rowpre { font: 11px/1.5 var(--mono); color: var(--text-2); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
-.note-line { font-size: 12px; color: var(--text-3); display: flex; gap: 6px; align-items: flex-start; margin: 0; }
-.note-line svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+:is(.kn, .kn-sheet) .note-line { font-size: 12px; color: var(--text-3); display: flex; gap: 6px; align-items: flex-start; margin: 0; }
+:is(.kn, .kn-sheet) .note-line svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
 
 /* the call page: its Knowledge chip, menu, notices */
 .kn-chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); background: none; font: inherit; font-size: 12px; color: var(--accent-ink); white-space: nowrap; cursor: default; }
@@ -750,9 +750,11 @@ button.kn-h-chg:hover .tt b { color: var(--accent-ink); }
 }
 
 /* ── this plugin's own (the port): a sheet in Echo's frame over a call's page, the Ask card, What Claude knows ── */
-/* The save sheet opened from a call's page sits in Echo's sheet (`ctx.ui.sheet`): Echo's frame, the sheet's own parts. */
-.td-dialog.plug-sheet:has(> .kn-framed) { width: min(640px, calc(100vw - 32px)); padding: 0; overflow: hidden; }
-.kn-sheet.kn-framed { width: auto; max-width: none; max-height: calc(100vh - 48px); border: 0; border-radius: 0; box-shadow: none; }
+/* The save sheet opened from a call's page sits in Echo's sheet (`ctx.ui.sheet`): Echo's frame as it is, the sheet's
+   own parts inside it without a frame of their own. */
+.kn-sheet.kn-framed { width: auto; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: none; }
+.kn-framed .kn-sheet-h, .kn-framed .kn-sheet-b, .kn-framed .kn-sheet-f { padding-left: 0; padding-right: 0; }
+.kn-framed .kn-sheet-f { background: none; }
 :is(.kn-framed) .btn.primary { display: inline-flex; flex-direction: row; grid-area: auto; min-width: auto; min-height: auto; }
 /* Obsidian's links are anchors Echo opens (`data-ext`): drawn as the buttons and menu items they were. */
 .kn a.btn, .kn a.menu-item { text-decoration: none; color: inherit; }
@@ -760,8 +762,11 @@ button.kn-h-chg:hover .tt b { color: var(--accent-ink); }
 /* A vault from 0.8 whose shape isn't confirmed yet: said above its Structure. */
 .kn-structure-b { margin: 0 0 10px; align-items: center; }
 .kn-structure-b code { font-family: var(--mono); font-size: 11.5px; }
-/* On a call's header (Echo's `call.header` box sits at its right end) the chip's menu opens towards the page. */
-.plug-head .kn-chip-menu, .plug-head .kn-pop { left: auto; right: 0; }
+/* On a call's header (its right end) the chip's menu opens towards the page. */
+.kn-rel.kn-end > .kn-chip-menu, .kn-rel.kn-end > .kn-pop { left: auto; right: 0; }
+/* Until minutes are saved into vaults, the chip only says so. */
+.kn-chip-later { cursor: default; }
+.kn-chip-later:hover { background: none; }
 /* Home's Ask card: Ask the vault opens Claude Code in Echo's panel. */
 .kn-h-asklead { margin: 0 0 10px; line-height: 1.5; }
 .kn-h-asklead code { font-family: var(--mono); font-size: 11.5px; }

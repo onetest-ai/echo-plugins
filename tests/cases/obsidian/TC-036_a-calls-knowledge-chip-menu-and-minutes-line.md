@@ -26,10 +26,10 @@ tags: [obsidian, knowledge, window, call]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `#call/<a call with minutes and no thread, e.g. today's "Acme weekly sync">/notes` | On its header, before My notes and ⋯: the chip "Minutes → acme-twin ▾" (the default vault, minutes automatic, the call's AI profile) |
-| 2 | Click the chip | "Save this call's minutes to": acme-twin ✓ "automatically", acme-wiki "when I ask", *Don't save this call*, the foot about what is saved |
-| 3 | *Don't save this call* | The chip "Not saved to Knowledge ▾"; `$ECHOCTL_HOME/.echo/plugins/obsidian/calls.json` has the call with "none"; the chip's menu → *Back to the vaults' rules* → "Minutes → acme-twin ▾" again, the entry gone |
-| 4 | ⋯ of the call | Knowledge's group after a separator, above Delete: *Save to Knowledge…* |
-| 5 | *Save to Knowledge…* | Echo's sheet over the call: "Save the minutes to Knowledge", the vault acme-twin, "Saving minutes into a vault isn't in this version of Knowledge yet"; Esc closes it; nothing in `$T` |
-| 6 | A call whose minutes are coming (queued or due: today's "Globex standup" in the standard data) | In the box saying so: "Then saved to acme-twin, with a row in the index." |
+| 1 | `#call/<a call with minutes, e.g. today's "Acme weekly sync">/notes` | On its header, before My notes and ⋯: "Knowledge: saving minutes comes in a later version" — not a button, no menu; its tooltip "Saving minutes into a vault isn't in this version of Knowledge yet" |
+| 2 | `obs call_knowledge '{"call":{"name":"<the call>","threads":[],"client":null,"profile":null}}'` | `later` "Saving minutes into a vault isn't in this version of Knowledge yet"; `vaults` acme-twin and acme-wiki; `targets` acme-twin (where they would go: the default vault, automatic, the call's profile) |
+| 3 | ⋯ of the call | Knowledge's group after a separator, above Delete: *Save to Knowledge…* |
+| 4 | *Save to Knowledge…* | Echo's sheet over the call: "Save the minutes to Knowledge", the vault acme-twin, "Saving minutes into a vault isn't in this version of Knowledge yet"; Esc closes it; nothing in `$T` |
+| 5 | A call whose minutes are coming (today's "Globex standup" in the standard data) | Echo's box says they are coming; no Knowledge line in it |
+| 6 | `obs call_choice '{"call":"<the call>","vault":"none"}'`, then the same call renamed (its folder's stamp kept): `obs call_knowledge` with the new name | `record.choice` "none" for both — a call is known by its stamp; `$ECHOCTL_HOME/.echo/plugins/obsidian/calls.json` keyed by the stamp |
 | 7 | `obs call_knowledge '{"call":{"name":"<the call>","threads":[],"client":null,"profile":"<another profile>"}}'` | `targets` [] — a call on another AI profile never goes by itself |

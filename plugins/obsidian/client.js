@@ -58,12 +58,18 @@ export async function apply(ctx) {
     syncSheet()
     ctx.render()
   }
-  // The save sheet opened from a call's page: Echo's sheet over the window, the view's sheet inside it.
+  // Outside the activity only the save sheet (opened from a call's page) and a question asked from it are drawn — in
+  // Echo's sheet over the window, the view's sheet inside it; any other sheet the activity had open is closed (a
+  // folder picked for it given back).
   function syncSheet() {
-    const kind = view && view.sheetKind()
-    if (kind && !shown()) {
+    if (!view) return
+    const kind = view.sheetKind(), asking = view.asking()
+    if (!shown() && kind && kind !== 'save') view.closeSheet()
+    if (!shown() && (view.sheetKind() === 'save' || asking)) {
       const html = view.overlay(true)
-      if (!sheetBox || !sheetBox.isConnected) sheetBox = ctx.ui.sheet(html, { label: 'Save the minutes to Knowledge', onClose: () => { sheetBox = null; view.closeSheet(); ctx.render() } })
+      const label = asking ? 'Knowledge asks first' : 'Save the minutes to Knowledge'
+      const close = () => { sheetBox = null; if (view.asking()) view.closeAsking(); else view.closeSheet(); ctx.render() }
+      if (!sheetBox || !sheetBox.isConnected) sheetBox = ctx.ui.sheet(html, { label, onClose: close })
       else ctx.ui.patch(sheetBox, html)
     } else if (sheetBox) { sheetBox = null; ctx.ui.closeSheet() }
   }
@@ -119,7 +125,6 @@ export async function apply(ctx) {
   let lastHash = null
   const view = await createKnowledge(ctx, {
     render: redraw,
-    routed: (hash) => { lastHash = hash },
     call: () => (ctx.where().view === 'calls' ? withK(callNow) : null),
     refreshCall: () => refreshCall(),
     about: aboutHtml,

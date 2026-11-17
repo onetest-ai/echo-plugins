@@ -246,7 +246,8 @@ test('Claude\'s index commands keep their arguments and answers; their paths are
   const plain = await vault(root)
   const s2 = await plain.run('search', { vault: 'twin', q: 'b' })
   assert.ok(!('pages' in s2))
-  assert.deepEqual((await plain.run('note', { id: 'twin', path: 'b.md' })).backlinks.map((x) => x.path), ['a.md'], 'the 0.8 browser\'s note still answers')
+  assert.deepEqual((await plain.run('backlinks', { vault: 'twin', note: 'b.md' })).links.map((x) => x.path), ['a.md'], 'Claude\'s backlinks still answer')
+  assert.ok(!('note' in plain.commands) && !('browse' in plain.commands), 'the 0.8 browser\'s commands are gone with it')
 })
 
 // ── pages (page.rs, page_tests.rs) ──
@@ -629,7 +630,7 @@ test('graph: pages with their folder, tags and degree; the index a hub; tags as 
   assert.deepEqual(g.hubs, ['CATALOG.md'])
   const acme = g.nodes.find((n) => n.id === 'clients/acme.md')
   assert.deepEqual([acme.folder, acme.deg, acme.tags], ['clients', 3, ['client']])
-  assert.equal(g.nodes.find((n) => n.id === 'CATALOG.md').folder, '(top level)', 'the 0.8 browser\'s word for the top level')
+  assert.equal(g.nodes.find((n) => n.id === 'CATALOG.md').folder, '', 'a page at the top level: no folder')
   assert.ok(g.edges.some(([a, b]) => a === 'clients/acme.md' && b === 'notes/2026-01-01-a.md'))
   assert.ok(!g.nodes.some((n) => n.tag))
   const both = await ctx.run('graph', { id: 'twin', mode: 'both' })
@@ -787,7 +788,6 @@ test('graph: the compact graph is links.rs `graph` exactly', async () => {
   const pages = files.map((p) => scanPage(p, read(root, `knowledge/${p}`)))
   for (const mode of ['links', 'tags', 'both']) {
     const want = linkGraph(pages, 'CATALOG.md', mode)
-    for (const n of want.nodes) if (!n.tag && n.folder === '') n.folder = '(top level)'
     const got = await ctx.run('graph', { id: 'twin', mode })
     assert.deepEqual({ nodes: got.nodes, edges: got.edges, hubs: got.hubs }, JSON.parse(JSON.stringify(want)), mode)
   }

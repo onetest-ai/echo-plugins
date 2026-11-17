@@ -324,12 +324,20 @@ function knShortLabel(text, max = 30) {
 // end of the kn-force block
 
 // ── kn-draft: unsaved text kept per page across a reload (dropped when the file changed meanwhile) ──
-function knDraftKey(vault, path) { return `echo.kn.draft:${vault}:${path}` }
+function knDraftKey(vault, path) { return `obsidian.kn.draft:${vault}:${path}` }
+/** #17's key for the same draft (`echo.kn.draft:…`): read once and carried over to the plugin's own. */
+function knOldDraftKey(vault, path) { return `echo.kn.draft:${vault}:${path}` }
 function knKeepDraft(store, vault, path, base, text) {
   try { store.setItem(knDraftKey(vault, path), JSON.stringify({ base, text })) } catch { /* storage off */ }
 }
 function knRestoreDraft(store, vault, path, base) {
-  try { const d = JSON.parse(store.getItem(knDraftKey(vault, path)) || 'null'); return d && d.base === base ? d.text : null } catch { return null }
+  try {
+    let raw = store.getItem(knDraftKey(vault, path))
+    const old = store.getItem(knOldDraftKey(vault, path))
+    if (old != null) { if (raw == null) { raw = old; store.setItem(knDraftKey(vault, path), old) } store.removeItem(knOldDraftKey(vault, path)) }
+    const d = JSON.parse(raw || 'null')
+    return d && d.base === base ? d.text : null
+  } catch { return null }
 }
 function knDropDraft(store, vault, path) {
   try { store.removeItem(knDraftKey(vault, path)) } catch { /* storage off */ }

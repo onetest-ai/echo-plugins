@@ -25,7 +25,7 @@ export function knDiffText(hunks) {
 export function knReadOf(path) {
   const [route, qs] = String(path || '').split('?')
   const q = query(qs)
-  if (route === 'api/kn') return { command: 'kn', args: {} }
+  if (route === 'api/kn') return { command: 'kn', args: q.id ? { id: q.id } : {} }
   const m = /^api\/kn\/([^/]+)\/([^/]+)(?:\/(.*))?$/.exec(route)
   if (!m) return null
   const id = dec(m[1]), what = m[2], more = m[3] === undefined ? null : m[3]
@@ -57,6 +57,24 @@ export function knReadOf(path) {
   return null
 }
 
+/** What the Connect sheet sends to connect the folder it picked (the host's `pick` answers its `path`; `add` takes it
+ *  as the root, so the folder picker isn't asked again). */
+export function knConnectArgs(x, name) {
+  return { pick: x.picked.path, name, minutes: x.minutes, commit: !!x.commit, profile: x.profile || '' }
+}
+
+/** The folders to give back (`unpick`) when the Connect or New vault sheet `x` takes `next` in place of the folder it
+ *  had (null: the sheet closes): the one it had and didn't connect, unless picked again; an empty one picked to
+ *  connect (there is nothing to connect). A folder refused was given back by the host already. */
+export function knUnpickOf(x, next) {
+  if (!x || (x.kind !== 'connect' && x.kind !== 'new') || x.connected) return []
+  const had = x.picked && !x.picked.refused && x.picked.path ? x.picked.path : null
+  const out = []
+  if (had && (!next || next.path !== had)) out.push(had)
+  if (next && next.empty && !next.refused && x.kind === 'connect' && next.path) out.push(next.path)
+  return out
+}
+
 /** Each `kn_*` action #17 sent → the host command and its arguments. */
 const ACTIONS = {
   kn_preview: ['preview'], kn_save_page: ['save_page'], kn_restore: ['restore'], kn_index_add: ['index_add'],
@@ -77,7 +95,7 @@ export function knActionOf(cmd, args = {}) {
 
 /** A read, answered as #17's route answered: the pages' paths are the host's (relative to the vault's pages folder,
  *  `root` ''), times in milliseconds (the host's are seconds), a page too large to show has no HTML, a version's diff
- *  is text, the graph's top-level folder is ''. */
+ *  is text. */
 export async function knRead(call, path) {
   const r = knReadOf(path)
   if (!r) throw new Error(`Knowledge has no ${String(path).split('?')[0]}`)
@@ -86,7 +104,6 @@ export async function knRead(call, path) {
   if (r.command === 'tree') return { ...v, root: '', pages: (v.pages || []).map((p) => ({ ...p, mtime: ms(p.mtime) })) }
   if (r.command === 'page') return { ...v, mtime: ms(v.mtime), html: v.html == null ? '<p class="set-sub">This page is too large to show here.</p>' : v.html }
   if (r.command === 'version') return { ...v, diff: knDiffText(v.diff), html: v.html == null ? '' : v.html }
-  if (r.command === 'graph') return { ...v, nodes: (v.nodes || []).map((n) => (n.folder === '(top level)' ? { ...n, folder: '' } : n)) }
   return v
 }
 
@@ -99,7 +116,7 @@ export async function knAct(call, cmd, args = {}) {
   if (a.command === 'save_page' && r && r.conflict) throw new Error('changed_on_disk')
   if (a.command === 'add' || a.command === 'set' || a.command === 'confirm_structure') {
     const id = a.command === 'add' ? r && r.id : a.args.id
-    const all = await call('kn', {})
+    const all = await call('kn', id ? { id } : {})
     const vault = ((all && all.vaults) || []).find((v) => v.id === id) || { id, name: a.args.name || id }
     return { ...(a.command === 'add' ? r : {}), vault }
   }

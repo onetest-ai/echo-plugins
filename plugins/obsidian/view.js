@@ -7,8 +7,8 @@
 
 export async function createKnowledge(ctx, hooks = {}) {
   const v1 = new URL(import.meta.url).search
-  const { KN_BASE, KN_TABS, knDecode, knParseRoute, knRouteOf, KN_CALLS_RULE, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knRepel, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knDraftKey, knKeepDraft, knRestoreDraft, knDropDraft, knEditText, knLineDiff, KN_FOLD, knToolRow, knFoldLabel, knToolRows, KN_HEALTH_GROUPS, knS, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, KN_INGEST_GROUPS, KN_CHANGE_KINDS, knUsd, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, KN_HOME_ROWS, KN_DAYS, KN_MONTHS, knWhen, knHomeCards, knHomeNews, knHomeRecord } = await import(`./model.js${v1}`)
-  const { knRead, knAct } = await import(`./seam.js${v1}`)
+  const { KN_BASE, knDecode, knParseRoute, knRouteOf, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knKeepDraft, knRestoreDraft, knDropDraft, knLineDiff, knToolRows, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, knWhen, knHomeCards, knHomeNews, knHomeRecord } = await import(`./model.js${v1}`)
+  const { knRead, knAct, knConnectArgs, knUnpickOf } = await import(`./seam.js${v1}`)
 
   const timing = {}
   let alive = true
@@ -53,7 +53,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   })
 
   const st = () => {
-    if (!S.kn) S.kn = { data: null, vault: '', tab: 'home', path: '', tree: null, page: null, filter: 'all', q: '', hits: null, open: new Set(), rail: 'links', hist: null, ver: null, edit: null, graph: null, gopt: { hideIndex: true, isolated: true, tags: false, color: 'folder', depth: 0, sel: null, hidden: [] }, gq: '', settings: null, sheet: null, switcher: false, menu: null, busy: {}, error: null, chip: null, lastVault: null, ovr: {}, hl: null, hlKey: '', ing: null, ingRun: '', home: null, homeChat: null, tabs: {} }
+    if (!S.kn) S.kn = { data: null, vault: '', tab: 'home', path: '', tree: null, page: null, filter: 'all', q: '', hits: null, open: new Set(), rail: 'links', hist: null, ver: null, edit: null, graph: null, gopt: { hideIndex: true, isolated: true, tags: false, color: 'folder', depth: 0, sel: null, hidden: [] }, gq: '', settings: null, sheet: null, switcher: false, menu: null, busy: {}, error: null, chip: null, lastVault: null, ovr: {}, hl: null, hlKey: '', ing: null, ingRun: '', home: null, tabs: {} }
     return S.kn
   }
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms))
@@ -76,30 +76,16 @@ export async function createKnowledge(ctx, hooks = {}) {
     link: I('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', 12),
     close: I('<path d="M6 6l12 12M18 6L6 18"/>', 16),
     recall: I('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5M8.5 11h5M11 8.5v5"/>'),
-    plug: I('<path d="M9 3.5v4M15 3.5v4M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/>'),
     graph: I('<circle cx="6" cy="7" r="2.3"/><circle cx="17.5" cy="6" r="2.3"/><circle cx="12" cy="17" r="2.3"/><path d="M8 8l2.8 7M15.8 7.6L13 15M8.3 7l7-.8"/>'),
-    // Ask
-    at: I('<circle cx="12" cy="12" r="3.6"/><path d="M15.6 12v1.6a2.6 2.6 0 0 0 5.2 0V12a8.8 8.8 0 1 0-3.4 6.9"/>'),
-    clip: I('<path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.4 3.4 0 0 1 4.8 4.8l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.5-7.5"/>'),
-    stop: I('<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/>'),
-    up: I('<path d="M12 19V5M6 11l6-6 6 6"/>'),
     globe: I('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.6 5.3 3.6 8.5s-1.1 5.9-3.6 8.5c-2.5-2.6-3.6-5.3-3.6-8.5S9.5 6.1 12 3.5z"/>'),
     edit: I('<path d="M4.5 19.5h4l10-10a2.8 2.8 0 0 0-4-4l-10 10z"/><path d="M13.5 6.5l4 4"/>'),
     search: I('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
     bolt: I('<path d="M13 3.5L5.5 13.5H12l-1 7 7.5-10H12z"/>'),
-    sync: I('<path d="M20 11a8 8 0 0 0-14-5L3.5 8.5M3.5 4.5v4h4M4 13a8 8 0 0 0 14 5l2.5-2.5M20.5 19.5v-4h-4"/>'),
     files: I('<path d="M8.5 3.5h6l4 4V17a.5.5 0 0 1-.5.5H8.5A.5.5 0 0 1 8 17V4a.5.5 0 0 1 .5-.5z"/><path d="M14.5 3.5V8h4M5 7v13a.5.5 0 0 0 .5.5H14"/>'),
     agent: I('<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/>'),
-    term: I('<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7.5 10l3 2.5-3 2.5M12.5 15.5h4"/>'),
-    copy: I('<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>'),
     clock: I('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', 12),
     call: I('<path d="M6.5 4.5h3l1.5 4-2 1.5a10 10 0 0 0 5 5l1.5-2 4 1.5v3a1.5 1.5 0 0 1-1.6 1.5A15.5 15.5 0 0 1 5 6.1a1.5 1.5 0 0 1 1.5-1.6z"/>'),
-    asks: I('<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2-2.4 3.5M12 17v.1"/>'),
-    no: I('<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>'),
-    side: I('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/>', 15),
-    save: I('<path d="M5 4.5h11l3.5 3.5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1z"/><path d="M8 4.5v5h7v-5M8 20v-6h8v6"/>'),
     lock: I('<rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>'),
-    // Ingest
     tray: I('<path d="M3.5 13.5l2.6-7.2a1.5 1.5 0 0 1 1.4-1h9a1.5 1.5 0 0 1 1.4 1l2.6 7.2V19a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 19z"/><path d="M3.5 13.5h5l1.5 2.5h4l1.5-2.5h5"/>'),
     mail: I('<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7.5l8 6 8-6"/>'),
     chat: I('<path d="M4.5 5.5h15v10h-9l-4 3.5v-3.5h-2z"/>'),
@@ -114,6 +100,18 @@ export async function createKnowledge(ctx, hooks = {}) {
   const vault = () => vaults().find((v) => v.id === st().vault) || null
   const enc = (p) => encodeURIComponent(p)
   const store = () => { try { return window.localStorage } catch { return null } }
+  /** `kn` with the vault shown, the only one whose git the host reads. */
+  const knState = () => `api/kn${st().vault ? `?id=${enc(st().vault)}` : ''}`
+  /** The vault last open, under the plugin's own key; #17's (`echo.kn.vault`) is read once and carried over. */
+  const VAULT_KEY = 'obsidian.kn.vault'
+  const lastVaultStored = () => {
+    try {
+      let id = localStorage.getItem(VAULT_KEY)
+      const old = localStorage.getItem('echo.kn.vault')
+      if (old != null) { if (id == null) { id = old; localStorage.setItem(VAULT_KEY, old) } localStorage.removeItem('echo.kn.vault') }
+      return id
+    } catch { return null }
+  }
   /** A message that waits for OK (something didn't happen, or did only in part). */
   const say = (text) => { S.notice = text; render() }
   /** A done thing, said for a moment. */
@@ -137,7 +135,7 @@ export async function createKnowledge(ctx, hooks = {}) {
 
   async function load() {
     const s = st()
-    try { s.data = await get('api/kn') } catch { return }
+    try { s.data = await get(knState()) } catch { return }
     if (!s.vault && s.lastVault && vaults().some((v) => v.id === s.lastVault)) s.vault = s.lastVault
     if (s.vault && !vault()) s.vault = ''
     if (s.vault) await loadVault()
@@ -146,7 +144,9 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st(), v = vault()
     if (!v) return
     s.lastVault = v.id
-    try { localStorage.setItem('echo.kn.vault', v.id) } catch { /* off */ }
+    try { localStorage.setItem(VAULT_KEY, v.id) } catch { /* off */ }
+    // Another vault shown: its git (the host reads git for the vault shown only).
+    if (s.gitFor !== v.id) { s.gitFor = v.id; try { s.data = await get(knState()) } catch { /* app restarting */ } }
     if (v.available === false) return
     // Health's number on its tab (Needs you), wherever the vault opens; the Health tab loads it with its view.
     const h = hl(), want = knHealthLoad(h, { vault: v.id, tab: s.tab, picked: h.picked })
@@ -245,7 +245,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   async function tick() {
     const s = st(), v = vault()
     ticks++
-    if (ticks % 15 === 0) { try { s.data = await get('api/kn') } catch { /* app restarting */ } }
+    if (ticks % 15 === 0) { try { s.data = await get(knState()) } catch { /* app restarting */ } }
     if (!v || v.available === false || !shown() || !s.vault) return
     // Ingest's sources and runs (an add or a run from the command line, a run ending while another tab shows): every 30 s.
     const gi = s.ing && s.ing.vault === v.id && s.ing.data ? s.ing : null
@@ -284,7 +284,6 @@ export async function createKnowledge(ctx, hooks = {}) {
     else if (r.tab === 'ingest') s.ingRun = r.path || ''
     else if (r.tab === 'home') { /* the page Pages has open stays */ }
     else if (r.path !== undefined && r.path !== s.path) { s.path = r.path; s.ver = null }
-    s.source = 'vault'
   }
   /** The route's last part for the tab open now. */
   const here = () => (st().tab === 'home' ? '' : st().tab === 'health' ? st().hlKey || '' : st().tab === 'ingest' ? st().ingRun || '' : st().path || '')
@@ -292,7 +291,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   /** Opening the Knowledge activity: where the user left it. */
   function home() {
     const s = st()
-    const id = s.vault || s.lastVault || (() => { try { return localStorage.getItem('echo.kn.vault') } catch { return null } })() || ((s.data && s.data.vaults[0]) || {}).id
+    const id = s.vault || s.lastVault || lastVaultStored() || ((s.data && s.data.vaults[0]) || {}).id
     return id ? knRouteOf({ vault: id, tab: s.tab || 'home', path: here() }) : KN_BASE
   }
   /** A path Echo found in the vault (vault-relative) as a page's path (relative to its pages folder), or '' when it
@@ -340,10 +339,10 @@ export async function createKnowledge(ctx, hooks = {}) {
       switch (x.kind) {
         case 'head': return `<div class="kn-menu-h">${esc(x.label)}</div>`
         case 'sep': return '<div class="menu-sep" role="separator"></div>'
-        case 'vault': return `<button class="menu-item kn-mi${x.id === s.vault && s.source === 'vault' ? ' on' : ''}" role="menuitem" data-kn="vault" data-id="${esc(x.id)}"><span class="kn-gem sm">${IC.gem}</span><span class="grow">${esc(x.name)}</span><span class="kn-mi-r">${x.available ? `${x.pages == null ? '' : `${nf(x.pages)} pages`}${x.star ? ' · ★ minutes' : ''}` : 'folder not found'}</span></button>`
+        case 'vault': return `<button class="menu-item kn-mi${x.id === s.vault ? ' on' : ''}" role="menuitem" data-kn="vault" data-id="${esc(x.id)}"><span class="kn-gem sm">${IC.gem}</span><span class="grow">${esc(x.name)}</span><span class="kn-mi-r">${x.available ? `${x.pages == null ? '' : `${nf(x.pages)} pages`}${x.star ? ' · ★ minutes' : ''}` : 'folder not found'}</span></button>`
         case 'connect': return `<button class="menu-item kn-mi" role="menuitem" data-kn="connect">${IC.folder}<span class="grow">${esc(x.label)}</span></button>`
         case 'new': return `<button class="menu-item kn-mi" role="menuitem" data-kn="new">${IC.plus}<span class="grow">${esc(x.label)}</span></button>`
-        case 'recall': return `<button class="menu-item kn-mi${s.source === 'recall' ? ' on' : ''}" role="menuitem" data-kn="recall">${IC.recall}<span class="grow">Recall</span><span class="kn-mi-r">what was said</span></button>`
+        case 'recall': return `<button class="menu-item kn-mi" role="menuitem" data-kn="recall">${IC.recall}<span class="grow">Recall</span><span class="kn-mi-r">what was said</span></button>`
       }
       return ''
     }
@@ -362,7 +361,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const g = v.git
     const where = v.available === false ? '<span class="kn-meta warn">The folder isn\'t there</span>'
       : `<span class="kn-meta"><code title="${esc(v.root)}">${esc(short(v.root))}</code>${g ? ` · ${IC.git} ${esc(g.branch || 'detached')}` : ''}${v.pages != null ? ` · ${nf(v.pages)} pages` : ''}</span>`
-    const menu = s.menu === 'vault' ? `<div class="menu kn-head-menu" role="menu"><a class="menu-item" role="menuitem" data-ext href="${esc(obsidianHref((s.tree || {}).index || toPage((v.paths || {}).index)))}" data-kn="obsidian">Open in Obsidian</a><button class="menu-item" role="menuitem" data-kn="reread">Read the folder again</button><div class="menu-sep" role="separator"></div><button class="menu-item" role="menuitem" data-kn="tab" data-kn-tab="settings">Vault settings</button></div>` : ''
+    const menu = s.menu === 'vault' ? `<div class="menu kn-head-menu" role="menu"><button class="menu-item" role="menuitem" data-kn="reveal" data-path="">${/Windows/.test(navigator.userAgent) ? 'Show in Explorer' : 'Show in Finder'}</button><a class="menu-item" role="menuitem" data-ext href="${esc(obsidianHref((s.tree || {}).index || toPage((v.paths || {}).index)))}" data-kn="obsidian">Open in Obsidian</a><button class="menu-item" role="menuitem" data-kn="reread">Read the folder again</button><div class="menu-sep" role="separator"></div><button class="menu-item" role="menuitem" data-kn="tab" data-kn-tab="settings">Vault settings</button></div>` : ''
     const acts = v.available === false ? '' : `<button class="btn sm" data-kn="ask" title="Claude Code in this vault, in Echo's panel">${IC.ask} Ask the vault</button><button class="btn sm" data-kn="ing-add">${IC.tray} Add a source</button><button class="btn sm" data-kn="newpage">${IC.plus} New page</button><span class="kn-rel"><button class="icon-btn" data-kn="menu" data-menu="vault" aria-haspopup="menu" aria-expanded="${s.menu === 'vault'}" aria-label="More">${IC.more}</button>${menu}</span>`
     return `<header class="kn-head">${title()}${where}<span class="grow"></span>${acts}</header>`
   }
@@ -443,7 +442,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     if (p.error) return `<div class="kn-reader"><div class="kn-none"><p class="error">${esc(p.error)}</p></div></div>`
     const parts = p.path.split('/'), file = parts.pop()
     const crumbs = `<span class="kn-crumbs" title="${esc(p.path)}">${parts.length ? `<b>${esc(parts.slice(-1)[0])}</b> / ` : ''}${esc(file)}${p.is_index ? ' · the index' : p.source ? ' · a source, read-only' : ''}</span>`
-    const menu = s.menu === 'page' ? `<div class="menu kn-page-menu" role="menu"><button class="menu-item" role="menuitem" data-kn="copy" data-text="${esc(pagePathAbs(p.path))}">Copy path</button><button class="menu-item" role="menuitem" data-kn="ask-about" data-path="${esc(p.path)}">Ask about it</button><button class="menu-item" role="menuitem" data-kn="rail" data-rail="history">History</button></div>` : ''
+    const menu = s.menu === 'page' ? `<div class="menu kn-page-menu" role="menu"><button class="menu-item" role="menuitem" data-kn="reveal" data-path="${esc(p.path)}">${/Windows/.test(navigator.userAgent) ? 'Show in Explorer' : 'Show in Finder'}</button><button class="menu-item" role="menuitem" data-kn="copy" data-text="${esc(pagePathAbs(p.path))}">Copy path</button><button class="menu-item" role="menuitem" data-kn="ask-about" data-path="${esc(p.path)}">Ask about it</button><button class="menu-item" role="menuitem" data-kn="rail" data-rail="history">History</button></div>` : ''
     const editBtn = p.source ? '<button disabled title="Sources are never edited">Edit</button>' : p.editable ? '<button data-kn="edit">Edit</button>' : '<button disabled title="Too large to edit in Echo">Edit</button>'
     const bar = `<div class="kn-bar">${crumbs}<div class="seg" role="group" aria-label="Read or edit"><button aria-pressed="true">Read</button>${editBtn}</div><a class="btn ghost sm" data-ext href="${esc(obsidianHref(p.path))}" data-kn="obsidian" title="Open this page in Obsidian">${IC.ext} Obsidian</a><span class="kn-rel"><button class="icon-btn" data-kn="menu" data-menu="page" aria-haspopup="menu" aria-expanded="${s.menu === 'page'}" aria-label="Page actions">${IC.more}</button>${menu}</span></div>`
     const src = p.source ? `<div class="kn-info kn-src-note">${IC.lock}<span>A source in the vault's inbox, shown as it came. Echo never edits a source.</span><button class="btn ghost sm" data-kn="tab" data-kn-tab="ingest">Open Ingest</button></div>` : ''
@@ -874,7 +873,7 @@ export async function createKnowledge(ctx, hooks = {}) {
       </div></section>
       <section class="set-sec" id="vs-checks"><h3>Checks</h3><div class="kn-info">${IC.info}<span>Checks are in <button class="kn-lnk" data-kn="tab" data-kn-tab="health">Health</button>.</span></div></section>
       <section class="set-sec" id="vs-git"><h3>Git & AI</h3><div class="set-card">
-        ${row('Git', g ? `${(g.remotes || []).length ? `<code>${esc(g.remotes.join(', '))}</code> · ` : ''}${IC.git} ${esc(g.branch || 'detached HEAD')}${g.changed ? ` · ${g.changed} file${g.changed === 1 ? '' : 's'} changed and not committed — yours; Echo never commits them` : ' · clean'}${g.busy ? ` · <span class="warn">${esc(g.busy)}</span>` : ''}` : (st().data || {}).git ? 'Not a git repository — pages have no history in Echo.' : 'git isn\'t installed — pages have no history in Echo.', '')}
+        ${row('Git', g ? `${(g.remotes || []).length ? `<code>${esc(g.remotes.join(', '))}</code> · ` : ''}${IC.git} ${esc(g.branch || 'detached HEAD')}${g.changed ? ` · ${g.changed} file${g.changed === 1 ? '' : 's'} changed and not committed — yours; Echo never commits them` : ' · clean'}${g.busy ? ` · <span class="warn">${esc(g.busy)}</span>` : ''}` : (st().data || {}).git ? 'Not a git repository — pages have no history in Echo.' : 'git isn\'t installed — pages have no history in Echo.', `<button class="btn ghost sm" data-kn="reveal" data-path="">Reveal</button>`)}
         ${g ? row('Commit what Echo writes', v.commit ? 'One commit per change, only Echo\'s files; never a push, pull or branch switch.' : 'Off: Echo writes the files and leaves committing to you.', `<button class="sw${v.commit ? ' on' : ''}" role="switch" aria-checked="${!!v.commit}" data-kn="set-bool" data-key="commit" data-val="${!v.commit}" aria-label="Commit what Echo writes"></button>`) : ''}
         ${row('AI for this vault', 'Ask the vault opens Claude Code on this profile. Only calls recorded on it are saved here by themselves.', `<select class="set-in" data-kn-set="profile" aria-label="AI profile">${profiles.map((p) => `<option value="${esc(p.id)}"${p.id === v.profile ? ' selected' : ''}>${esc(p.name)}</option>`).join('') || `<option>${esc(v.profile)}</option>`}</select>`)}
         ${x.in_home && v.profile !== (st().data || {}).default_profile ? row('Inside Echo\'s data folder', 'Claude · Echo (the folder session) can read every file of the data folder, this vault too, whatever its profile.', '') : ''}
@@ -1350,7 +1349,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st(), g = ing(), m = src.meta || {}
     const state = knSourceState(src, d.runs), chip = knSourceChip(state, m)
     const run = (d.runs || []).find((r) => r.id === m.run)
-    const reveal = `<button class="icon-btn" id="kn-src-reveal" data-kn="reveal" data-path="${esc(src.path)}" title="${/Windows/.test(navigator.userAgent) ? 'Show in Explorer' : 'Show in Finder'}" aria-label="${/Windows/.test(navigator.userAgent) ? 'Show in Explorer' : 'Show in Finder'}">${IC.folder}</button>`
+    const reveal = `<button class="icon-btn" id="kn-src-reveal" data-kn="reveal" data-kn-in-vault="1" data-path="${esc(src.path)}" title="${/Windows/.test(navigator.userAgent) ? 'Show in Explorer' : 'Show in Finder'}" aria-label="${/Windows/.test(navigator.userAgent) ? 'Show in Explorer' : 'Show in Finder'}">${IC.folder}</button>`
     const open = m.markdown ? `<button class="btn sm ghost" id="kn-src-open" data-kn="open" data-path="${esc(src.path)}">Open</button>` : ''
     const off = d.running || !d.skill || s.busy.ingprep ? ' disabled' : ''
     const acts = state === 'new' ? `<button class="btn sm primary" id="kn-src-prep" data-kn="ing-prepare-one" data-path="${esc(src.path)}"${off}>Prepare changes</button><button class="btn sm" id="kn-src-skip" data-kn="ing-skip" data-path="${esc(src.path)}">Skip</button>`
@@ -1579,7 +1578,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     try {
       await run('kn_ingest_skill', { id: v.id }, 'ingskill')
       s.sheet = null
-      try { s.data = await get('api/kn') } catch { /* the app restarting */ }
+      try { s.data = await get(knState()) } catch { /* the app restarting */ }
       s.settings = null
       await loadIngest()
       render()
@@ -1790,7 +1789,17 @@ export async function createKnowledge(ctx, hooks = {}) {
   function askFirst(title, text, yes, run, danger = false) { st().asking = { title, text, yes, run, danger }; render() }
   function askSheet() {
     const a = st().asking
-    return `<div class="kn-sheet-back kn-ask-back" data-kn="ask-back"><div class="kn-sheet kn-ask" role="alertdialog" aria-modal="true" aria-label="${esc(a.title)}"><div class="kn-sheet-h"><h2>${esc(a.title)}</h2></div><div class="kn-sheet-b"><p>${esc(a.text)}</p></div><div class="kn-sheet-f"><span class="grow"></span><button class="btn ghost" data-kn="ask-no">Cancel</button><button class="btn ${a.danger ? 'danger' : 'primary'}" data-kn="ask-yes">${esc(a.yes)}</button></div></div></div>`
+    const inner = `<div class="kn-sheet-h"><h2>${esc(a.title)}</h2></div><div class="kn-sheet-b"><p>${esc(a.text)}</p></div><div class="kn-sheet-f"><span class="grow"></span><button class="btn ghost" data-kn="ask-no">Cancel</button><button class="btn ${a.danger ? 'danger' : 'primary'}" data-kn="ask-yes">${esc(a.yes)}</button></div>`
+    // Over a call's page: inside Echo's sheet, as the save sheet is.
+    if (framed) return `<div class="kn-sheet kn-ask kn-framed">${inner}</div>`
+    return `<div class="kn-sheet-back kn-ask-back" data-kn="ask-back"><div class="kn-sheet kn-ask" role="alertdialog" aria-modal="true" aria-label="${esc(a.title)}">${inner}</div></div>`
+  }
+  /** The sheet closed (Cancel, Esc, a click beside it, leaving the activity): a folder picked for it and not
+   *  connected is given back (`unpick`). */
+  function dropSheet() {
+    const s = st(), x = s.sheet
+    s.sheet = null
+    for (const root of knUnpickOf(x, null)) call('unpick', { root }).catch(() => {})
   }
   /** A sheet: over the activity, or (`framed`) inside Echo's own sheet over a call's page (`ctx.ui.sheet`). */
   let framed = false
@@ -1949,7 +1958,8 @@ export async function createKnowledge(ctx, hooks = {}) {
   function overlay(inFrame = false) {
     const s = st()
     framed = !!inFrame
-    try { return sheetView() + (s.asking && !inFrame ? askSheet() : '') } finally { framed = false }
+    // In Echo's frame one sheet at a time: a question asked first stands over the sheet it came from.
+    try { return inFrame && s.asking ? askSheet() : sheetView() + (s.asking ? askSheet() : '') } finally { framed = false }
   }
   function sheetView() {
     const s = st()
@@ -1992,7 +2002,7 @@ export async function createKnowledge(ctx, hooks = {}) {
       setTimeout(() => { if (homeSt() === g && homeShown()) loadHome().then(render) }, 700)
     } else g.polls = 0
   }
-  const HOME_WHO = { minutes: 'echo', starter: 'echo', ingest: 'ingest', ask: 'ask', health: 'health', outside: 'out' }
+  const HOME_WHO = { minutes: 'echo', starter: 'echo', editor: 'echo', 'new-page': 'echo', ingest: 'ingest', ask: 'ask', health: 'health', outside: 'out' }
   const HOME_SUG = { meeting: IC.cal, note: IC.file, actions: IC.tasks, contradiction: IC.warn }
   const HOME_KIND = { echo: 'Echo', mail: 'mail', teams: 'Teams', web: 'web', file: 'files' }
   /** A path as the vault's pages see it (the pages root left off). */
@@ -2078,12 +2088,11 @@ export async function createKnowledge(ctx, hooks = {}) {
     // No vault named in the route (Knowledge just opened): the one last open, else the first.
     if (!v && vaults().length) {
       let last = null
-      try { last = localStorage.getItem('echo.kn.vault') } catch { /* off */ }
+      last = lastVaultStored()
       const id = (vaults().find((x) => x.id === (s.lastVault || last)) || vaults()[0]).id
       s.vault = id
-      s.source = 'vault'
-      history.replaceState(null, '', `#${knRouteOf({ vault: id, tab: s.tab || 'home', path: here() })}`)
-      if (hooks.routed) hooks.routed(location.hash)
+      // The address names it (Echo's `ctx.go`, which adds a step to the window's history: it has no way to replace one).
+      setTimeout(() => go(knRouteOf({ vault: id, tab: s.tab || 'home', path: here() })))
       loadVault().then(render)
       return `<div class="kn">${head()}${tabs()}<div class="kn-body"><div class="skeleton" style="padding:20px"><i></i><i></i><i></i></div></div></div>`
     }
@@ -2133,7 +2142,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     previewTimer = setTimeout(async () => {
       const e = st().edit
       if (!e) return
-      try { const r = await run('kn_preview', { id: v.id, path: e.path, text: e.text }); if (st().edit === e) { e.preview = r.html; const pane = document.querySelector('.kn-preview'); if (pane) pane.innerHTML = r.html } } catch { /* the preview waits */ }
+      try { const r = await run('kn_preview', { id: v.id, path: e.path, text: e.text }); if (st().edit === e) { e.preview = withExt(r.html); const pane = document.querySelector('.kn-preview'); if (pane) pane.innerHTML = e.preview } } catch { /* the preview waits */ }
     }, 600)
     const crumbs = document.querySelector('.kn-editing .kn-crumbs')
     if (crumbs && !crumbs.textContent.includes('not saved')) crumbs.insertAdjacentText('beforeend', ' · not saved')
@@ -2167,7 +2176,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st()
     if (!shown()) go(home())
     s.switcher = false
-    s.sheet = { kind: 'connect', step: 1, picked: null, minutes: 'auto', commit: false, name: '' }
+    s.sheet = { kind: 'connect', step: 1, picked: null, minutes: 'ask', commit: false, name: '' }
     render()
   }
   async function doPick(forNew) {
@@ -2177,14 +2186,21 @@ export async function createKnowledge(ctx, hooks = {}) {
     render()
     const p = await pick(forNew ? 'new' : 'connect')
     x.picking = false
-    if (p) { x.picked = p; if (!forNew) { x.name = p.name || ''; x.error = null } }
+    if (p) {
+      // A folder picked before and not connected is given back, and an empty one to connect (nothing to connect).
+      const back = knUnpickOf(x, p)
+      x.picked = p
+      if (!forNew) { x.name = p.name || ''; x.error = null }
+      for (const root of back) call('unpick', { root }).catch(() => {})
+    }
     render()
   }
   async function connectGo() {
     const s = st(), x = s.sheet
     const name = (document.getElementById('kn-name') || {}).value || x.name
     try {
-      const r = await run('kn_add', { pick: x.picked.seq, name, minutes: x.minutes, commit: !!x.commit, profile: x.profile || '' }, 'connect')
+      const r = await run('kn_add', knConnectArgs(x, name), 'connect')
+      x.connected = true
       s.sheet = null
       await refreshAll()
       goVault(r.vault.id, 'home')
@@ -2196,7 +2212,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const name = ((document.getElementById('kn-name') || {}).value || '').trim()
     if (!name) { x.error = 'A vault needs a name.'; s.focus = 'kn-name'; return render() }
     try {
-      const r = await run('kn_new', { name, pick: x.picked ? x.picked.seq : undefined, git: !!x.git, minutes: x.auto ? 'auto' : 'ask' }, 'new')
+      const r = await run('kn_new', { name, pick: x.picked ? x.picked.path : undefined, git: !!x.git, minutes: x.auto ? 'auto' : 'ask' }, 'new')
       s.sheet = null
       await refreshAll()
       goVault(r.vault.id, 'home')
@@ -2315,6 +2331,8 @@ export async function createKnowledge(ctx, hooks = {}) {
   // menu's items, the minutes' line, the save sheet ──
   function callChip(c) {
     const k = c && c.knowledge
+    // Until minutes are saved into vaults (a later version), the chip says so and promises nothing.
+    if (k && k.later) return (k.vaults || []).length ? `<span class="kn-chip off kn-chip-later" title="${esc(k.later)}">${IC.gem} Knowledge: saving minutes comes in a later version</span>` : ''
     const x = knChipState(k)
     if (x.state === 'none' && !(k && k.vaults && k.vaults.length && st().chip === c.name)) return ''
     const s = st()
@@ -2322,7 +2340,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const cls = { will: 'will', saved: 'done', kept: 'kept', failed: 'kept', stale: 'will', off: 'off', removed: 'off' }[x.state] || 'will'
     const arrow = x.state === 'saved' ? ' ↗' : x.state === 'will' || x.state === 'off' ? ' ▾' : ''
     const menu = open ? chipMenu(c, x) : ''
-    return `<span class="kn-rel"><button class="kn-chip ${cls}" data-kn="chip" data-kn-call="${esc(c.name)}" aria-haspopup="menu" aria-expanded="${open}" title="${esc(x.error || x.label || '')}">${x.state === 'kept' || x.state === 'failed' ? IC.warn : IC.gem} ${esc(x.label)}${arrow}</button>${menu}</span>`
+    return `<span class="kn-rel kn-end"><button class="kn-chip ${cls}" data-kn="chip" data-kn-call="${esc(c.name)}" aria-haspopup="menu" aria-expanded="${open}" title="${esc(x.error || x.label || '')}">${x.state === 'kept' || x.state === 'failed' ? IC.warn : IC.gem} ${esc(x.label)}${arrow}</button>${menu}</span>`
   }
   function chipMenu(c, x) {
     const k = c.knowledge || {}
@@ -2358,6 +2376,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     return out
   }
   function countdownLine(c) {
+    if (c && c.knowledge && c.knowledge.later) return ''
     const x = knChipState(c && c.knowledge)
     if (x.state !== 'will') return ''
     const names = x.label.replace('Minutes → ', '')
@@ -2402,7 +2421,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   function settingsVaults() {
     const d = st().data
     if (!d) { load().then(render); return '' }
-    const rows = d.vaults.map((v) => `<div class="set-row"><div class="kn-vrow"><span class="kn-gem">${IC.gem}</span><div><b>${esc(v.name)}${v.minutes && v.minutes.mode === 'auto' ? ' <span class="tag acc">★ minutes</span>' : ''}${v.available === false ? ' <span class="tag warn">folder not found</span>' : ''}</b><div class="set-sub kn-path-line" title="${esc(v.root)}"><code><bdi>${esc(short(v.root))}</bdi></code></div><div class="set-sub">${[v.pages != null ? many(v.pages, 'page') : '', v.git ? 'git' : '', v.minutes.mode === 'ask' ? 'minutes when I ask' : v.minutes.mode === 'off' ? 'no minutes' : '', esc(profName(v.profile))].filter(Boolean).join(' · ')}</div></div></div><div class="set-ctl"><button class="btn sm" data-kn="settings-open" data-id="${esc(v.id)}">Open</button></div></div>`).join('')
+    const rows = d.vaults.map((v) => `<div class="set-row"><div class="kn-vrow"><span class="kn-gem">${IC.gem}</span><div><b>${esc(v.name)}${v.minutes && v.minutes.mode === 'auto' ? ' <span class="tag acc">★ minutes</span>' : ''}${v.available === false ? ' <span class="tag warn">folder not found</span>' : ''}</b><div class="set-sub kn-path-line" title="${esc(v.root)}"><code><bdi>${esc(short(v.root))}</bdi></code></div><div class="set-sub">${[v.pages != null ? many(v.pages, 'page') : '', v.git || v.in_git ? 'git' : '', v.minutes.mode === 'ask' ? 'minutes when I ask' : v.minutes.mode === 'off' ? 'no minutes' : '', esc(profName(v.profile))].filter(Boolean).join(' · ')}</div></div></div><div class="set-ctl"><button class="btn sm" data-kn="settings-open" data-id="${esc(v.id)}">Open</button></div></div>`).join('')
     const add = `<div class="set-row"><div><b>Add a vault</b><div class="set-sub">Connect a folder you already have, or start a new one from Echo's twin starter.</div></div><div class="set-ctl"><button class="btn sm" data-kn="connect">Connect a folder…</button><button class="btn sm" data-kn="new">Start a new vault…</button></div></div>`
     return `<div class="set-sec"><h3>Vaults</h3><div class="set-card">${rows}${add}</div><p class="set-foot">Each vault's structure, meeting minutes and skills are in Knowledge → the vault → Settings, and its checks in the vault's Health.</p></div>`
   }
@@ -2469,12 +2488,23 @@ export async function createKnowledge(ctx, hooks = {}) {
     const v = vault()
     switch (d.kn) {
       case 'switcher': s.switcher = !s.switcher; return render()
-      case 'vault': s.switcher = false; s.source = 'vault'; return goVault(d.id, s.tabs[d.id] || 'home')
+      case 'vault': s.switcher = false; return goVault(d.id, s.tabs[d.id] || 'home')
       case 'recall': s.switcher = false; return go('brain/sources')
       case 'connect': return openConnect()
       case 'new': return openNew()
       case 'tab': e.preventDefault(); s.menu = null; return goVault(s.vault, d.knTab, d.knTab === 'pages' ? s.path : d.knTab === 'health' ? s.hlKey : d.knTab === 'ingest' ? s.ingRun : '')
       case 'menu': s.menu = s.menu === d.menu ? null : d.menu; return render()
+      // Show in Finder / Explorer (Echo's `ctx.system.reveal`, on this click): the vault, or a page by its place in it.
+      case 'reveal': {
+        s.menu = null
+        render()
+        if (!v) return
+        const pf = (v.paths || {}).pages || ''
+        // A source's path is the vault's own; a page's is under the pages folder.
+        const rel = !d.path ? '' : d.knInVault ? d.path : pf ? `${pf}/${d.path}` : d.path
+        try { await ctx.system.reveal(v.root, rel) } catch (err) { say(String((err && err.message) || err)) }
+        return
+      }
       // Obsidian's link: Echo opens it (`data-ext`); the menu closes after.
       case 'obsidian': s.menu = null; setTimeout(render); return
       case 'copy': s.menu = null; try { ctx.ui.copy(d.text) } catch (err) { return say(String(err.message || err)) } return done('Copied.')
@@ -2488,9 +2518,10 @@ export async function createKnowledge(ctx, hooks = {}) {
         return say(`Ask Claude in the panel about ${title} (${d.path}).`)
       }
       case 'run-skill': {
-        try { ctx.ui.copy(`/${d.name} `) } catch { /* said below without it */ }
+        let copied = false
+        try { ctx.ui.copy(`/${d.name} `); copied = true } catch { /* said below */ }
         askVault()
-        return done(`/${d.name} is copied: paste it in Claude.`)
+        return done(copied ? `/${d.name} is copied: paste it in Claude.` : `Type /${d.name} in Claude.`)
       }
       // Home (K11)
       case 'home-f': homeSt().filter = d.knF; return render()
@@ -2620,17 +2651,17 @@ export async function createKnowledge(ctx, hooks = {}) {
       case 'twin-global': try { const r = await run('kn_twin', { id: v.id, op: 'global', name: (s.sheet && s.sheet.name) || '' }, 'twin'); s.sheet = null; await loadSettings(); render(); done(`Installed: ${short(r.installed)}`) } catch (err) { if (s.sheet) { s.sheet.error = String(err.message || err); render() } else say(String(err.message || err)) } return
       case 'twin-remove': try { await run('kn_twin', { id: v.id, op: 'global_remove' }, 'twin'); await loadSettings(); render(); done('Echo\'s copy is out of ~/.claude/skills.') } catch (err) { say(String(err.message || err)) } return
       case 'remove-ask': s.sheet = { kind: 'remove' }; return render()
-      case 'remove-go': try { const name = v.name; await run('kn_remove', { id: v.id }, 'remove'); s.sheet = null; s.vault = ''; s.lastVault = null; try { localStorage.removeItem('echo.kn.vault') } catch { /* off */ } await refreshAll(); go(KN_BASE); done(`${name} is no longer in Echo. Its folder is as it was.`) } catch (err) { say(String(err.message || err)) } return
+      case 'remove-go': try { const name = v.name; await run('kn_remove', { id: v.id }, 'remove'); s.sheet = null; s.vault = ''; s.lastVault = null; try { localStorage.removeItem(VAULT_KEY) } catch { /* off */ } await refreshAll(); go(KN_BASE); done(`${name} is no longer in Echo. Its folder is as it was.`) } catch (err) { say(String(err.message || err)) } return
       case 'settings-open': return goVault(d.id, 'settings')
       // sheets
-      case 'sheet-close': s.sheet = null; return render()
-      case 'sheet-back': if (e.target === t) { s.sheet = null; render() } return
+      case 'sheet-close': dropSheet(); return render()
+      case 'sheet-back': if (e.target === t) { dropSheet(); render() } return
       case 'ask-back': if (e.target === t) { s.asking = null; render() } return
       case 'ask-no': s.asking = null; return render()
       case 'ask-yes': { const a = s.asking; s.asking = null; render(); return a && a.run() }
       case 'pick': return doPick(false)
       case 'pick-new': return doPick(true)
-      case 'pick-default': s.sheet.picked = null; return render()
+      case 'pick-default': { const back = knUnpickOf(s.sheet, null); s.sheet.picked = null; for (const root of back) call('unpick', { root }).catch(() => {}); return render() }
       case 'new-here': { const p = s.sheet.picked; s.sheet = { kind: 'new', name: p.name || '', picked: p, git: !!(s.data || {}).git, auto: true }; s.focus = 'kn-name'; return render() }
       case 'step': { const x = s.sheet; if (d.step === '3') x.name = x.name || (x.picked && x.picked.name) || ''; x.step = Number(d.step); return render() }
       case 'connect-go': return connectGo()
@@ -2655,7 +2686,6 @@ export async function createKnowledge(ctx, hooks = {}) {
     }
   })
   function openSavedNote(vaultId, path) {
-    st().source = 'vault'
     goVault(vaultId, 'pages', path)
   }
   ctx.listen('input', (e) => {
@@ -2732,7 +2762,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   ctx.listen('keydown', (e) => {
     const s = st()
     if (e.key === 'Escape' && s.asking) { s.asking = null; e.stopPropagation(); return render() }
-    if (e.key === 'Escape' && (s.sheet || s.switcher || s.menu || s.chip)) { s.sheet = null; s.switcher = false; s.menu = null; s.chip = null; e.stopPropagation(); return render() }
+    if (e.key === 'Escape' && (s.sheet || s.switcher || s.menu || s.chip)) { if (s.sheet) dropSheet(); s.switcher = false; s.menu = null; s.chip = null; e.stopPropagation(); return render() }
     // A missing page in a page (Echo's writer gives it no href): Enter makes it, as a click does.
     if (e.key === 'Enter' && e.target.matches && e.target.matches('.kn-doc [data-md-missing]')) { e.preventDefault(); return openNewPage(String(e.target.getAttribute('data-md-missing')).split('#')[0]) }
     if (e.target.id === 'kn-edit' && (e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); return save(false) }
@@ -2751,7 +2781,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   return {
     view, after, tick, load, loadVault, route: routeTo, home, overlay, data: () => st().data, vault: () => vault(), callChip, callMenu, countdownLine,
     settingsVaults, paletteActions, dropped, askVault, sheetKind: () => (st().sheet ? st().sheet.kind : null),
-    closeSheet: () => { st().sheet = null }, editing: () => !!(S.kn && S.kn.edit),
+    closeSheet: () => dropSheet(), asking: () => !!st().asking, closeAsking: () => { st().asking = null }, editing: () => !!(S.kn && S.kn.edit),
     badge: () => {
       const s = st(), h = s.hl && s.hl.vault === s.vault && s.hl.data, gi = s.ing && s.ing.vault === s.vault && s.ing.data
       return (gi ? knIngestWaiting(gi.runs) : 0) + (h ? knHealthList(h.findings).needs : 0)

@@ -100,7 +100,7 @@
   },
   {
    "id": "F-OB-18",
-   "title": "The vault's graph: pages with their top folder, tags and number of links, links as edges, tags as nodes when asked, the index a hub; the 0.8 browser still draws it",
+   "title": "The vault's graph: pages with their top folder, tags and number of links, links as edges, tags as nodes when asked, the index a hub; the Knowledge activity draws it",
    "priority": "medium",
    "check": "agent"
   },
@@ -196,7 +196,7 @@
   },
   {
    "id": "F-OB-39",
-   "title": "A call's page shows Knowledge in Echo's generic slots: the chip (call.header) says where its minutes go by themselves (the thread's vault, else the client's, else the default; automatic; the call's AI profile) and its menu chooses one or none; the ⋯ menu's Save to Knowledge… opens the save sheet over the call (call.menu, ctx.ui.sheet); the line while the minutes come (call.minutes)",
+   "title": "A call's page shows Knowledge in Echo's generic slots and promises nothing this version doesn't do: the chip (call.header) says saving minutes comes in a later version; the ⋯ menu's Save to Knowledge… opens the save sheet over the call saying so (call.menu, ctx.ui.sheet); no line while the minutes come (call.minutes); the host keeps where they would go (thread's vault, else client's, else the default; automatic; the call's profile) and the user's choice per call by its stamp",
    "priority": "high",
    "check": "agent"
   },

@@ -31,7 +31,8 @@ tags: [obsidian, knowledge, window, pages]
 | 3 | Click *the rollout* | The address `…/pages/topics%2Frollout.md`, "topics / rollout.md"; Back returns to acme.md |
 | 4 | Click "Pricing model" | The *New page* sheet with "Pricing model" as its name; *Cancel* |
 | 5 | The Links rail | *Linked from* 3 (Knowledge Catalog, Kickoff, Rollout by region, each with its line), *Links from this page* 3 (Pricing model "no such page — make it"), *Local graph* drawn |
-| 6 | ⋯ of the page | *Copy path*, *Ask about it*, *History* |
+| 6 | ⋯ of the page | *Show in Finder*, *Copy path*, *Ask about it*, *History* |
+| 6a | *Show in Finder* | `<dir>/open.log` gains `reveal <$T>/knowledge/clients/acme.md` |
 | 7 | Outline, then History | Outline: "Acme Corp"; History: "The twin, made up" by Sam Rivera, current |
 | 8 | Find: type "rollout" | The tree lists the hits (title, path); Enter opens the first |
 | 9 | `topics/hostile.md` | Its `<script>` and `<img onerror>` shown as text; *web* is a link with `data-ext` (Echo opens it; logged only); no `javascript:` or `file:` link |

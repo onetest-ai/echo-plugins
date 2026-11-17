@@ -92,6 +92,157 @@ export function agentPart(vaults, knowledge) {
   return { summary: line(`The user's notes: ${[echos, theirs].filter(Boolean).join('; and ')}`), entries }
 }
 
+// ── the registry: one record a vault (`vaults.json`) ──
+// The vault the user connected, as Obsidian 0.8 kept it (its id, name, folder, what Claude is told and for whom it is)
+// and as Knowledge keeps it (onetest-ai/echo#677's Vault: the AI profile that reads it, what Echo found of its shape and
+// the user's corrections, when it takes a call's minutes, whether Echo commits what it writes, how it ingests, the
+// starter it was made from). Echo's own facts vault of 0.8 is gone (see `apply`).
+//
+// {schema, id, name ≤ 80, root (as ctx.fs.folders() names it), added_at,
+//  state: analysing | review | ready | failed | empty, confirmed, error, started_at, analysed_at, model, kind, notes,
+//  latest, in_git, is_vault, inside: [{name, n, skip}], belongs: [{client} | {thread}],
+//  profile: AI profile id | null (the default), detected: {…} | null (found by `detect`),
+//  overrides: {pages, index, notes, naming, templates, sources},
+//  minutes: {mode: auto | ask | off, tag, transcript, chat}, commit, ingest: {skill, calls: off | add | prepare},
+//  template: "twin@1" | null}
+
+export const SCHEMA = 1
+export const MINUTES = ['auto', 'ask', 'off']
+export const CALLS = ['off', 'add', 'prepare']
+export const OVERRIDES = ['pages', 'index', 'notes', 'naming', 'templates', 'sources']
+export const NAMINGS = ['{date}-{slug}.md', '{date} {title}.md']
+const STATES = ['analysing', 'review', 'ready', 'failed', 'empty']
+
+const str = (x, max = 4000) => (typeof x === 'string' ? x.slice(0, max) : '')
+const bool = (x) => x === true
+
+/** A record as this version keeps it, from any earlier one: what it lacks gets its default, what isn't of its shape is
+ *  dropped. Obsidian 0.8's `git` (the folder is a git repository) is `in_git` now. A record of 0.8 (no `schema`) takes a
+ *  call's minutes only when the user asks (`ask`): an update never starts writing notes into a vault by itself. */
+export function normalizeVault(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {}
+  const old = r.schema == null
+  const m = r.minutes && typeof r.minutes === 'object' ? r.minutes : {}
+  const ing = r.ingest && typeof r.ingest === 'object' ? r.ingest : {}
+  const ov = {}
+  for (const k of OVERRIDES) if (r.overrides && typeof r.overrides[k] === 'string' && r.overrides[k] !== '') ov[k] = r.overrides[k]
+  const v = {
+    schema: SCHEMA,
+    id: str(r.id, 60), name: str(r.name, 80) || str(r.id, 80) || 'Vault', root: str(r.root), added_at: str(r.added_at, 40),
+    state: STATES.includes(r.state) ? r.state : (r.confirmed ? 'ready' : 'review'),
+    confirmed: r.confirmed === undefined ? r.state === 'ready' : bool(r.confirmed),
+    error: str(r.error, 300),
+    belongs: (Array.isArray(r.belongs) ? r.belongs : []).filter((b) => b && (typeof b.client === 'string' || typeof b.thread === 'string'))
+      .map((b) => (typeof b.client === 'string' ? { client: b.client } : { thread: b.thread })),
+    in_git: old ? bool(r.git) : bool(r.in_git),
+    profile: typeof r.profile === 'string' && r.profile ? r.profile : null,
+    detected: r.detected && typeof r.detected === 'object' ? r.detected : null,
+    overrides: ov,
+    minutes: {
+      mode: old ? 'ask' : (MINUTES.includes(m.mode) ? m.mode : 'ask'),
+      tag: typeof m.tag === 'string' && m.tag ? m.tag : null,
+      transcript: bool(m.transcript), chat: bool(m.chat),
+    },
+    commit: bool(r.commit),
+    ingest: { skill: typeof ing.skill === 'string' && ing.skill ? ing.skill : null, calls: CALLS.includes(ing.calls) ? ing.calls : 'off' },
+    template: typeof r.template === 'string' && r.template ? r.template : null,
+  }
+  // What the description's reading found (kept as 0.8 had it).
+  for (const k of ['started_at', 'notes', 'latest']) if (typeof r[k] === 'number') v[k] = r[k]
+  for (const k of ['analysed_at', 'model', 'kind']) if (typeof r[k] === 'string') v[k] = r[k]
+  if (typeof r.is_vault === 'boolean') v.is_vault = r.is_vault
+  if (Array.isArray(r.inside)) v.inside = r.inside.filter((f) => f && typeof f.name === 'string').map((f) => ({ name: f.name, n: Number(f.n) || 0, skip: bool(f.skip) }))
+  return v
+}
+
+/** The registry as this version keeps it; `changed` when anything had to change (an earlier version's records). */
+export function migrateVaults(list) {
+  const before = Array.isArray(list) ? list : []
+  const vaults = before.filter((r) => r && typeof r.id === 'string' && r.id && typeof r.root === 'string' && r.root).map(normalizeVault)
+  return { vaults, changed: JSON.stringify(vaults) !== JSON.stringify(before) }
+}
+
+/** A vault's id: its name in lowercase words with dashes, `-2`, `-3`… past the ones taken. */
+export function uniqueId(name, taken) {
+  const base = String(name || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'vault'
+  const used = new Set(taken)
+  if (!used.has(base)) return base
+  for (let n = 2; ; n++) if (!used.has(`${base}-${n}`)) return `${base}-${n}`
+}
+
+/** Why a folder can't be connected beside these vaults (roots as ctx.fs.folders() names them: canonical), or null:
+ *  the same folder again, one inside a vault, one holding a vault, a whole disk, or one holding Echo's data folder. */
+export function folderProblem(root, vaults, dataDir) {
+  const r = String(root || '').replace(/[\\/]+$/, '')
+  const parts = r.split(/[\\/]/).filter(Boolean)
+  if (!parts.length || /^[A-Za-z]:$/.test(r)) return 'Choose a folder of notes, not a whole disk'
+  const within = (a, b) => a === b || a.startsWith(b + '/') || a.startsWith(b + '\\')
+  if (dataDir && within(String(dataDir).replace(/[\\/]+$/, ''), r)) return 'Echo\'s data folder can\'t be in a vault — choose a folder of notes'
+  for (const v of vaults || []) {
+    const o = String(v.root || '').replace(/[\\/]+$/, '')
+    if (o === r) return `“${v.name}” is this folder — it's connected already`
+    if (within(r, o)) return `This folder is inside “${v.name}”, which is connected already`
+    if (within(o, r)) return `This folder holds “${v.name}”, which is connected already`
+  }
+  return null
+}
+
+const onOff = (value) => {
+  const s = String(value).trim().toLowerCase()
+  if (['true', 'on', 'yes', '1'].includes(s)) return true
+  if (['false', 'off', 'no', '0'].includes(s)) return false
+  throw new Error(`“${value}”: on or off`)
+}
+
+/** One of a vault's settings changed, as the user set it — the record after, or why not. `known`: what the change is
+ *  checked against — {profiles: [ids], skills: [names]}; a path's place in the vault is checked by the caller. */
+export function setVaultKey(v, key, value, known = {}) {
+  const out = JSON.parse(JSON.stringify(v))
+  const text = value == null ? '' : String(value)
+  switch (key) {
+    case 'name': {
+      const n = text.trim().slice(0, 80)
+      if (!n) throw new Error('a vault needs a name')
+      out.name = n
+      break
+    }
+    case 'profile':
+      if (text && known.profiles && !known.profiles.includes(text)) throw new Error(`no AI profile “${text}”`)
+      out.profile = text || null
+      break
+    case 'minutes':
+      if (!MINUTES.includes(text)) throw new Error('minutes: auto, ask or off')
+      out.minutes.mode = text
+      break
+    case 'tag': out.minutes.tag = text.trim().replace(/^#/, '').slice(0, 80) || null; break
+    case 'transcript': out.minutes.transcript = onOff(text); break
+    case 'chat': out.minutes.chat = onOff(text); break
+    case 'commit': out.commit = onOff(text); break
+    case 'ingest.skill': {
+      const n = text.trim()
+      if (n && known.skills && !known.skills.includes(n)) throw new Error(`this vault has no skill “${n}”`)
+      out.ingest.skill = n || null
+      break
+    }
+    case 'ingest.calls':
+      if (!CALLS.includes(text)) throw new Error('new calls: off, add or prepare')
+      out.ingest.calls = text
+      break
+    default: {
+      if (!OVERRIDES.includes(key)) throw new Error(`no setting “${key}”`)
+      const p = text.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+      if (!p) { delete out.overrides[key]; break }
+      if (key === 'naming') {
+        if (!NAMINGS.includes(p)) throw new Error(`naming: ${NAMINGS.join(' or ')}`)
+      } else if (p.split('/').some((c) => c === '..' || c === '.') || /^[A-Za-z]:/.test(p) || p.includes(':')) {
+        throw new Error(`“${text}” must be a path inside the vault`)
+      }
+      out.overrides[key] = p
+    }
+  }
+  return out
+}
+
 export function apply(ctx) {
   const running = new Set() // vaults being read now (one analysis per vault at a time)
   const load = () => {

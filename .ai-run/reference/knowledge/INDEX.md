@@ -29,3 +29,16 @@ Everything about the Knowledge plugin lives in this repository; Echo's core keep
   auto/ask/off per vault (migrated vaults `ask`); Echo's dictionary normalises tags; the twin preset kept, its skills
   in the vault or global (a plugin setting); a vault is a nested Claude Code project; no ledger ids, made-up data
   only; the first commit of the port authored by Vadim Vlasenko.
+
+## Rule: nothing Echo already did is done again; any reprocessing is justified and batched (the user, 2026-11-17)
+Knowledge takes Echo's results as they are — through its events and `ctx.echo.read` (a call's facts, resolved
+participants, threads and client, AI profile, the minutes by section, transcript and chat, a mail as Recall stored it
+without quotes, sender trust, dedup, the calendar with Echo's threads). It never fetches, parses or routes them again.
+Whatever it does on top of them is listed here with its reason; anything new needs a row before it is built.
+
+| What Knowledge does after Echo | Why Echo's result isn't enough | Model? | How it is batched |
+|---|---|---|---|
+| An event (`minutes_written`, `sources_changed`) puts the source in its vault's queue | Echo doesn't know vaults; routing thread → client → default vault is the plugin's | no | per event: queue only, no write into the vault |
+| A call's minutes become a vault note (its folder, file name, properties, index row, `log.md` line) | The vault keeps notes in its own shape; the content stays Echo's minutes | no | notes written as they come; one commit per quiet window (or one for "save past minutes") |
+| Ingest: the vault's own skill turns queued sources into its pages | Echo doesn't know the vault's structure, taxonomy and rules — the vault's skill does | yes | one run per vault over everything queued, on a copy: on Prepare, or by the vault's rule at most every N sources / N hours, never during a recording; all changes in one review |
+| Health's AI check | Contradictions and stale pages are about the vault's own text | yes | on the user's click only |

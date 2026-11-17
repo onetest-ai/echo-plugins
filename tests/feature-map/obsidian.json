@@ -211,6 +211,66 @@
    "title": "What later versions bring says so where #17 showed it, never made up: Ingest and its sources, Health's fixes and AI checks, minutes saved into a vault, a new vault from the twin starter, the twin skill",
    "priority": "high",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-42",
+   "title": "A call's minutes go to the vault set on any of its threads, else its client's (each of its threads' clients), else the default vault; \"none\" on a thread or client stops them; a call in two threads with two vaults goes into both; a vault since removed counts as not set",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-43",
+   "title": "A vault's minutes mode: auto writes the note when Echo tells minutes_written, ask and off write nothing by themselves (the user's command saves); the rule's notes are committed once per quiet window (two minutes after the last), only Echo's files still as it wrote them",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-44",
+   "title": "The profile guard: a call whose AI profile isn't the vault's (none = the default profile) is never saved into it by itself; by hand only with \"anyway\", which the call's record keeps",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-45",
+   "title": "A note of Echo's the user changed is never written over: minutes written again leave it (kept), the user's command too; replaced or a new note beside it only on the user's word",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-46",
+   "title": "Past minutes: the calls routed to a vault since a day, on its profile, not saved there yet and not opted out, saved in one go with one commit",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-47",
+   "title": "An event only queues its source: minutes_written and sources_changed put a call or a mail (Recall's facts, no text) in the queue of each routed vault whose rule (ingest.calls / ingest.mail: add or prepare) asks, on its profile, each once; nothing written into the vault, no model run",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-48",
+   "title": "Preparing a batch writes the queued sources into the vault's sources folder: a call as Echo's minutes, a mail's own text read from Microsoft 365 only then; what can't be read stays queued with why; a skipped one isn't prepared; the ledger remembers a call once its file is deleted",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-49",
+   "title": "The twin preset: a new vault in a new or empty folder from #677's 23 files (shipped in the plugin), name, owner and day filled in, git init and one first commit when asked, registered as twin@1 with commits on; what Echo can't write for a plugin (hidden files, ~/.claude/skills) is said, never worked around",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-50",
+   "title": "A thread's and a client's Profile have a \"Knowledge vault\" row: what it inherits (its client's vault, the default), a vault of its own or none picked in place, and that vault's minutes Auto / Ask / Off",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-51",
+   "title": "Sources the user adds: files handed over (picked or dropped) copied as they are under a safe name, never over a file, (2) for a taken one or one the ledger or log.md knows; the folder made with the preset's README; a call (another profile only \"anyway\"); a web page only by Echo's own reader; the first open's question; a skip with a note",
+   "priority": "medium",
+   "check": "agent"
   }
  ]
 }

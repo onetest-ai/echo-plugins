@@ -33,3 +33,17 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   a native dialog — *Choose…* in the Connect and New vault sheets is the system's folder picker: not pressed), light and
   dark at 1440×900. Their screens are compared with #17's (onetest-ai/echo-plugins#17 on #677's Echo), side by side,
   in `tests/reports/obsidian-knowledge-ui/`. "Ask the vault" opens the fake Claude in Echo's panel: never typed into.
+
+### Minutes into vaults, sources and the twin preset (TC-038 on)
+- Run in order on one environment of their own (`DATA_NOW=<today>T20:00` late in the day). The standard data's calls
+  with minutes are the calls; its threads (`acme-rollout`, `acme-renewal`, `globex-pilot`) and clients (`acme`) route
+  them. Its default AI profile is `work`.
+- An event is told to the served window (the app: its plugins hear events there) with `echoctl plugin emit
+  minutes_written --from <call>` (Echo builds the payload from the call, as it does when minutes are written) or
+  `echoctl plugin emit sources_changed '<json>'` (a mail as Recall would tell it); the window takes it within a second.
+  The served window must be the environment's own (`lsof -nP -iTCP:<port> -sTCP:LISTEN` shows the pid in `<dir>/pid`).
+- A step may also make an empty folder in `$VAULTS` (`mkdir`, the user's own new folder for a vault), hand a made-up
+  file to a command (`--file`), and read the plugin's store (`$S="$ECHOCTL_HOME/.echo/plugins/obsidian"`, `cat`).
+- There is no fake Microsoft 365 in Echo's test data: a mail's own text can't be read here, so TC-045 shows that it is
+  read only when a batch is prepared — and that without a sign-in it fails there, saying why. Mail's format is in the
+  unit tests (`tests/obsidian/sources.test.mjs`).

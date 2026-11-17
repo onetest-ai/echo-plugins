@@ -48,7 +48,7 @@ dir="$(cd "$dir" && pwd)"
   mkdir -p "$R"
   printf -- '---\nname: Gateway digest\nschedule: weekdays 08:30\nprofile:\nmodel: acme-gw/sonnet-large\ntools: read\ndeliver:\nmail_to:\nskip_empty: true\nenabled: false\n---\nWhat changed in the Acme thread since yesterday?\n' > "$R/gateway-digest.md"
   # Echo's jobs as if they had run (Echo's own records of them, made up, in its words and counts only): a month of
-  # Needs you now (one failed run today) and Thread sync with model costs, Fetch with none, Recall today; the timed
+  # Needs you now (one slow pass, failed runs two days ago and today) and Thread sync with model costs, Fetch with none, Recall today; the timed
   # jobs' next looks.
   python3 -I - "$ECHOCTL_CONFIG_DIR" <<'PY'
 import datetime as dt, json, os, sys
@@ -65,10 +65,12 @@ jobs = {"needs": [], "thread_sync": [], "fetch": [], "brain_reader": []}
 for d in range(29, -1, -1):
     day = now - dt.timedelta(days=d, hours=3)  # every run of a day before the failed one of today (now − 12 min)
     for k in range(d % 3 + 1):
-        jobs["needs"].append(run(day + dt.timedelta(minutes=20 * k), 4200, True, "2 items in Needs you now", "claude-haiku", 1, 0.004 + 0.001 * k))
+        ms = 45000 if (d, k) == (3, 0) else 3000 + (d * 577 + k * 911) % 3000  # one slow pass three days ago
+        jobs["needs"].append(run(day + dt.timedelta(minutes=20 * k), ms, True, "2 items in Needs you now", "claude-haiku", 1, 0.004 + 0.001 * k))
     if d % 2 == 0:
         jobs["thread_sync"].append(run(day + dt.timedelta(hours=2), 61000, True, "4 items read into a thread", "claude-sonnet", 3, 0.11))
     jobs["fetch"].append(run(day + dt.timedelta(hours=1), 1800, True, "6 messages fetched"))
+jobs["needs"].append(run(now - dt.timedelta(days=2, hours=1), 1200, False, "the profile isn't signed in"))
 jobs["needs"].append(run(now - dt.timedelta(minutes=12), 900, False, "the profile isn't signed in"))
 jobs["brain_reader"].append(run(now - dt.timedelta(minutes=30), 15000, True, "12 documents read into Recall", "claude-haiku", 2, 0.02))
 for j, rs in jobs.items():

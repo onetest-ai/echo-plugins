@@ -44,8 +44,6 @@ const CSS = `
 .sch-spark { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
 .sch-spark i { width: 4px; border-radius: 1px; background: color-mix(in srgb, var(--accent) 60%, transparent); display: block; }
 .sch-spark i.f { background: var(--danger); }
-.sch-spark30 { gap: 1px; }
-.sch-spark30 i { width: 3px; }
 .sch-p { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
 .sch-kv { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 6px 10px; font-size: 12px; }
 .sch-kv span { color: var(--text-3); }
@@ -53,6 +51,15 @@ const CSS = `
 .sch-bars { display: flex; align-items: flex-end; gap: 3px; height: 44px; border-bottom: 1px solid var(--line); }
 .sch-bars i { flex: 1 1 0; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 60%, transparent); display: block; min-height: 2px; }
 .sch-bars i.f { background: var(--danger); }
+.sch-cells { display: flex; gap: 2px; height: 12px; }
+.sch-cells i { flex: 1 1 0; border-radius: 2px; background: color-mix(in srgb, var(--me) 55%, transparent); display: block; }
+.sch-cells i.f { background: var(--danger); }
+.sch-cells i.e { background: var(--line-strong); }
+.sch-dev { display: flex; gap: 3px; height: 44px; position: relative; background: linear-gradient(var(--line-strong), var(--line-strong)) 0 50% / 100% 1px no-repeat; }
+.sch-dev span { flex: 1 1 0; position: relative; display: block; }
+.sch-dev i { position: absolute; left: 0; right: 0; display: block; border-radius: 1px; background: color-mix(in srgb, var(--accent) 60%, transparent); }
+.sch-dev i.w { background: var(--warn); }
+.sch-dev i.f { background: var(--danger); }
 .sch-run { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); background: none; width: 100%; text-align: left; font: inherit; color: inherit; cursor: default; }
 .sch-run:last-child { border-bottom: 0; }
 .sch-run:hover .w2 { color: var(--accent-ink); }
@@ -172,7 +179,7 @@ export function apply(ctx) {
     if (!canJobs()) return
     jobsAt = Date.now()
     const n = ++jobsSeq
-    try { const l = await ctx.echo.routines.list(); if (n !== jobsSeq) return; jobs = l; jobsErr = ''; if (selJob) loadJobRuns(selJob) } catch (e) { if (n !== jobsSeq) return; jobsErr = String(e.message || e) }
+    try { const l = await ctx.echo.routines.list(); if (n !== jobsSeq) return; jobs = l; jobsErr = ''; for (const R of l.routines || []) loadJobRuns(R.id) } catch (e) { if (n !== jobsSeq) return; jobsErr = String(e.message || e) }
     redraw()
   }
   const setJob = async (job, settings) => {
@@ -268,17 +275,11 @@ export function apply(ctx) {
     state: x.state || 'running', ok: x.state !== 'failed', summary: x.state !== 'failed' ? x.message : undefined, error: x.state === 'failed' ? x.message : undefined,
     model: x.model, cost_usd: x.usage ? x.usage.cost_usd : x.cost, sent: x.sent || [], trial: !!x.trial, run: x.run,
   })
-  const dailyOf = (runs) => {
-    const days = []
-    for (let i = 29; i >= 0; i--) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); days.push({ day: d.toDateString(), runs: 0, failed: 0, cost: 0 }) }
-    for (const x of runs) { const e = days.find((d) => d.day === new Date(x.at).toDateString()); if (e) { e.runs++; if (x.state === 'failed') e.failed++; e.cost += x.cost || 0 } }
-    return days
-  }
   const userRoutine = (r) => ({
     id: r.id, source: 'user', name: r.name, what: r.prompt, enabled: r.enabled, to: r.deliver || [],
     schedule: { text: `${r.when} · ${perm(r.tools)}`, kind: 'time' }, next_run: r.next, next: null, paused_until: null,
     running: r.running, last: r.running ? { state: 'running' } : userRun(r.last), model: { value: r.model || '', default: '' },
-    month: { runs: r.month.runs, cost: r.month.cost, daily: dailyOf(r.runs || []) }, runs: (r.runs || []).map(userRun), raw: r,
+    month: { runs: r.month.runs, cost: r.month.cost }, runs: (r.runs || []).map(userRun), raw: r,
   })
   const runLine = (R, x) => !x ? ['', 'Not run yet']
     : x.state === 'running' ? ['run', 'Running…']
@@ -292,10 +293,15 @@ export function apply(ctx) {
     : R.paused_until ? `${esc(when(R.paused_until))}<div class="sch-sub">paused at night</div>`
     : R.next_run ? esc(when(R.next_run))
     : R.next ? '<span class="sch-sub">On its events</span>' : '<span class="sch-sub">—</span>'
+  // The last 15 runs, oldest first, a bar each: its cost (its duration when no run cost anything), a failed one red.
+  // Not a bar a day: a job that runs every few minutes would draw a comb.
+  const LAST = 15
+  const runsOf = (R) => (R.source === 'user' ? R.runs : jobRuns[R.id] || []).slice(0, LAST)
   const spark = (R) => {
-    const d = (R.month && R.month.daily) || []
-    const byCost = d.some((x) => x.cost > 0), max = Math.max(byCost ? 0.0001 : 1, ...d.map((x) => (byCost ? x.cost : x.runs)))
-    return d.map((x) => `<i class="${x.failed ? 'f' : ''}" style="height:${x.runs ? Math.max(2, Math.round(((byCost ? x.cost : x.runs) / max) * 16)) : 0}px"></i>`).join('')
+    const rs = runsOf(R).slice().reverse()
+    const byCost = rs.some((x) => x.cost_usd > 0), v = (x) => (byCost ? x.cost_usd || 0 : x.duration_ms || 0)
+    const max = Math.max(0.0001, ...rs.map(v))
+    return rs.map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(2, Math.round((v(x) / max) * 16))}px" title="${esc(when(x.started))}${x.cost_usd != null ? ` · ${money(x.cost_usd)}` : ''}"></i>`).join('')
   }
   const monthLine = (R) => { const m = R.month || { runs: 0, cost: 0 }; return `${m.runs} run${m.runs === 1 ? '' : 's'} · ${R.model === null ? 'no model' : money(Math.abs(m.cost || 0))}` }
   // One routine's row in a routines table (the Routines and System tabs alike).
@@ -310,7 +316,7 @@ export function apply(ctx) {
       <div class="sch-num" style="font-size:12px">${nextCell(R)}</div>
       <div><div class="sch-st"><span class="sch-dot ${cls}"></span>${esc(txt)}</div><div class="sch-sub sch-num">${lastMeta}</div></div>
       <div>${toChips(R)}</div>
-      <div><div class="sch-spark sch-spark30" aria-hidden="true">${spark(R)}</div><div class="sch-sub sch-num">${monthLine(R)}</div></div>
+      <div><div class="sch-spark" aria-label="Last ${runsOf(R).length} runs">${spark(R)}</div><div class="sch-sub sch-num">${monthLine(R)}</div></div>
       ${R.source === 'user' ? `<button class="sw${R.enabled ? ' on' : ''}" role="switch" aria-checked="${!!R.enabled}" aria-label="${esc(R.name)} on" data-sch-on="${esc(R.id)}" data-on="${!R.enabled}"></button>` : '<span></span>'}</div>`
   }
   // The facts above a table, from its routines.
@@ -342,13 +348,43 @@ export function apply(ctx) {
       <div class="sch-sub">Runs and costs as Echo records them; each kept 31 days. A pass that found nothing to do isn’t a run.</div>`
   }
   // One routine in the right panel (the user's or a system one): what it is, its settings, its runs.
+  // The panel's three charts of the last 30 runs, oldest first, one column a run: what each cost, which failed, and how
+  // far each one's time strayed from the median (up slower, down faster; over twice the median amber).
+  const CH = (title, foot, body) => `<div style="display:flex;flex-direction:column;gap:4px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">${title}</h4><span class="sch-sub sch-num">${foot}</span></div>${body}</div>`
+  const tip = (x, more) => `${esc(when(x.started))}${x.duration_ms != null ? ` · ${secs(x.duration_ms)}` : ''}${x.cost_usd != null ? ` · ${money(x.cost_usd)}` : ''}${x.state === 'failed' ? ' · failed' : ''}${more || ''}`
+  const charts = (runs) => {
+    const rs = runs.slice(0, 30).reverse()
+    if (!rs.length) return ''
+    const out = []
+    // Cost per run.
+    const costs = rs.filter((x) => x.cost_usd != null)
+    if (costs.length) {
+      const max = Math.max(0.0001, ...rs.map((x) => x.cost_usd || 0))
+      const sum = costs.reduce((a, x) => a + x.cost_usd, 0)
+      out.push(CH('Cost per run', `avg ${money(sum / costs.length)} · max ${money(max)}`, `<div class="sch-bars">${rs.map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(4, Math.round(((x.cost_usd || 0) / max) * 100))}%" title="${tip(x)}"></i>`).join('')}</div>`))
+    }
+    // Errors: a cell a run.
+    const failed = rs.filter((x) => x.state === 'failed').length
+    out.push(CH('Errors', failed ? `<span style="color:var(--danger)">${failed} of ${rs.length} failed</span>` : `none in ${rs.length}`, `<div class="sch-cells">${rs.map((x) => `<i class="${x.state === 'failed' ? 'f' : x.state === 'empty' ? 'e' : ''}" title="${tip(x, x.error ? ` · ${esc(x.error.slice(0, 80))}` : '')}"></i>`).join('')}</div>`))
+    // Time against the median.
+    const timed = rs.filter((x) => x.duration_ms != null)
+    if (timed.length >= 3) {
+      const med = timed.map((x) => x.duration_ms).sort((a, b) => a - b)[Math.floor(timed.length / 2)]
+      const dev = (x) => (x.duration_ms == null ? 0 : x.duration_ms - med)
+      const slow = (x) => x.duration_ms != null && x.duration_ms > 2 * med && x.duration_ms - med > 1000
+      // Scaled to the usual runs, so their spread shows; a slow one runs off the top (its tooltip says by how much).
+      const span = Math.max(1, ...rs.filter((x) => !slow(x)).map((x) => Math.abs(dev(x)))) * 1.25
+      const n = rs.filter(slow).length
+      out.push(CH('Time vs the median', `median ${secs(med)}${n ? ` · <span class="sch-warn">${n} slow</span>` : ''}`, `<div class="sch-dev">${rs.map((x) => {
+        const h = Math.min(50, Math.round((Math.abs(dev(x)) / span) * 50))
+        return `<span title="${tip(x, x.duration_ms != null ? ` · ${dev(x) >= 0 ? '+' : '−'}${secs(Math.abs(dev(x)))} vs median` : '')}"><i class="${slow(x) ? 'w' : x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(1, h)}%;${dev(x) >= 0 ? 'bottom:50%' : 'top:50%'}"></i></span>`
+      }).join('')}</div>`))
+    }
+    return out.join('')
+  }
   const routinePanel = (R, runs) => {
-    const done = runs.filter((x) => x.cost_usd != null)
-    const avg = done.length ? done.reduce((a, x) => a + x.cost_usd, 0) / done.length : null
     const timed = runs.filter((x) => x.duration_ms != null)
     const avgT = timed.length ? timed.reduce((a, x) => a + x.duration_ms, 0) / timed.length : null
-    const max = Math.max(0.0001, ...runs.map((x) => x.cost_usd || 0))
-    const bars = runs.slice(0, 20).reverse().map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(4, Math.round(((x.cost_usd || 0) / max) * 100))}%" title="${esc(when(x.started))}${x.cost_usd != null ? ` · ${money(x.cost_usd)}` : ''}"></i>`).join('')
     const list = runs.slice(0, 8).map((x) => {
       const [cls, txt] = runLine(R, x)
       const line = x.error || x.summary || ''
@@ -371,7 +407,7 @@ export function apply(ctx) {
       <div><div style="font-size:15px;font-weight:650">${esc(R.name)}</div><div class="sch-sub">${esc(R.schedule.text)}${nextTxt}</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${R.source === 'user' ? `${R.running ? '<button class="btn" disabled>Running…</button>' : `<button class="btn primary" data-sch-run="${esc(R.id)}">Run now</button>`}<button class="btn" data-sch-edit="${esc(R.id)}">Edit</button>` : `<button class="btn primary" data-sch-jedit="${esc(R.id)}">Edit</button>`}</div>
       <div class="sch-kv">${kv}</div>
-      ${runs.length ? `<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">Last ${Math.min(runs.length, 20)} run${runs.length === 1 ? '' : 's'}</h4><span class="sch-sub sch-num">${[avg != null ? `avg ${money(avg)}` : '', avgT != null ? secs(avgT) : ''].filter(Boolean).join(' · ')}</span></div><div class="sch-bars" aria-label="Each run, oldest first">${bars}</div></div><div>${list}</div>` : '<span class="sch-sub">No runs yet.</span>'}
+      ${runs.length ? `<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">Last ${Math.min(runs.length, 30)} run${runs.length === 1 ? '' : 's'}</h4><span class="sch-sub sch-num">${avgT != null ? `avg ${secs(avgT)}` : ''}</span></div></div>${charts(runs)}<div>${list}</div>` : '<span class="sch-sub">No runs yet.</span>'}
     </div>`
   }
   const jobPanel = () => {
@@ -452,7 +488,7 @@ export function apply(ctx) {
   const jobRuns = {}
   const loadJobRuns = async (id) => {
     if (!canJobs()) return
-    try { const r = await ctx.echo.routines.runs(id, { limit: 20 }); jobRuns[id] = Array.isArray(r) ? r : (r && r.runs) || [] } catch { jobRuns[id] = [] }
+    try { const r = await ctx.echo.routines.runs(id, { limit: id === selJob ? 30 : LAST }); jobRuns[id] = Array.isArray(r) ? r : (r && r.runs) || [] } catch { jobRuns[id] = [] }
     redraw()
   }
   const listPage = () => {

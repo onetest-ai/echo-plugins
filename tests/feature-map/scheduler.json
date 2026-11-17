@@ -34,13 +34,13 @@
   },
   {
    "id": "F-SCH-06",
-   "title": "Two tabs, Routines and System (kept as left; ⌘K opens either): every routine — the user's or Echo's own job — drawn by the same row from the one routine contract: name and schedule (model), next run (a time, \"paused at night\", or \"On its events\"), last run (state, when, how long, cost), where it sends, 30 days (a bar a day, runs and cost, or \"no model\"); facts above each table",
+   "title": "Two tabs, Routines and System (kept as left; ⌘K opens either): every routine — the user's or Echo's own job — drawn by the same row from the one routine contract: name and schedule (model), next run (a time, \"paused at night\", or \"On its events\"), last run (state, when, how long, cost), where it sends, its last 15 runs as bars (cost, else time; a failed one red) with its 30 days' runs and cost (or \"no model\"); facts above each table",
    "priority": "critical",
    "check": "agent"
   },
   {
    "id": "F-SCH-07",
-   "title": "A system routine opens into the routine panel (sends to, when, at night, model, what; its last runs with bars, each run's state, time, model, Echo's one line and cost) and its editor (Edit): its timer fields with units, the night and the model (Default, Haiku, Sonnet, Opus) saved at once with Save; ↺ back to a default; Echo's refusal shown, the editor kept; Cancel changes nothing",
+   "title": "A system routine opens into the routine panel (sends to, when, at night, model, what; its last 30 runs in three charts — cost per run, errors (a cell a run), time against the median (slow ones amber) — then each run's state, time, model, Echo's one line and cost) and its editor (Edit): its timer fields with units, the night and the model (Default, Haiku, Sonnet, Opus) saved at once with Save; ↺ back to a default; Echo's refusal shown, the editor kept; Cancel changes nothing",
    "priority": "critical",
    "check": "agent"
   },

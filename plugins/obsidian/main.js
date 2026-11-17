@@ -235,6 +235,1153 @@ export function setVaultKey(v, key, value, known = {}) {
   return out
 }
 
+// ── the vault engine's pure parts (ported from onetest-ai/echo#677: fm, evidence, diff, catalog, links, checks) ──
+// Rule for rule as the Rust in `crates/echoctl/src/knowledge/`, and not yet used by `apply`. Where JS and Rust differ,
+// the helpers here make the JS do what the Rust does:
+// - Rust's `trim`, `split_whitespace` and `is_whitespace` are Unicode White_Space (with U+0085, without U+FEFF); JS's
+//   `trim` and `\s` are not: `rsTrim`, `rsWords` and `WS` below use `\p{White_Space}`;
+// - `str::lines` splits on `\n`, takes one `\r` off a line a `\n` ends, and gives no last empty line: `textLines`;
+// - Rust strings are UTF-8 and sort by bytes (= by code point); JS strings are UTF-16: `cmpStr` sorts by code point and
+//   `utf8Len` counts bytes where a length is compared. Byte offsets used only within one string are UTF-16 offsets here
+//   (same answers: what they find is ASCII);
+// - `char::is_alphanumeric` is Alphabetic or a number (Nd, Nl, No): `\p{Alphabetic}` or `\p{N}`;
+// - `str::to_lowercase` is JS's `toLowerCase` (both with the final sigma); `ledger::norm` lowercases one char at a time
+//   (`char::to_lowercase`, no final sigma), so `normWords` does too; `eq_ignore_ascii_case`/`to_ascii_lowercase`: `asciiLower`.
+
+const WS = /^\p{White_Space}$/u
+const ALNUM = /^[\p{Alphabetic}\p{N}]$/u
+// Trims by index, never by a pattern anchored at the end: `/\s+$/` on a long run of spaces mid-text is quadratic in
+// QuickJS (Echo's host gives a plugin 5 s a slice), where Rust's `trim` is linear. Every White_Space char is in the BMP.
+const isWs = (c) => WS.test(c)
+const rsTrimStart = (s) => { let a = 0; while (a < s.length && isWs(s[a])) a++; return s.slice(a) }
+const rsTrimEnd = (s) => { let b = s.length; while (b > 0 && isWs(s[b - 1])) b--; return s.slice(0, b) }
+const rsTrim = (s) => rsTrimEnd(rsTrimStart(s))
+/** `s` without the run of `chars` (a string of single units) at its end — `trim_end_matches`, linear. */
+const trimEndOf = (s, chars) => { let b = s.length; while (b > 0 && chars.includes(s[b - 1])) b--; return s.slice(0, b) }
+const rsWords = (s) => s.split(/\p{White_Space}+/u).filter((w) => w !== '')
+const asciiLower = (s) => s.replace(/[A-Z]/g, (c) => c.toLowerCase())
+const isSurrogate = (u) => u >= 0xd800 && u <= 0xdfff
+
+/** Rust's `str::lines`: split on `\n`, a `\r` before it dropped, no last empty line after a final `\n` (a `\r` ending
+ *  the text without a `\n` stays, as in Rust ≥ 1.77). */
+export function textLines(s) {
+  if (s === '') return []
+  const out = s.split('\n')
+  if (out[out.length - 1] === '') out.pop()
+  for (let i = 0; i < out.length; i++) {
+    const endedByNl = i < out.length - 1 || s.endsWith('\n')
+    if (endedByNl && out[i].endsWith('\r')) out[i] = out[i].slice(0, -1)
+  }
+  return out
+}
+
+/** Strings in Rust's order (UTF-8 bytes, i.e. code points): a char above U+FFFF sorts after every other one. */
+export function cmpStr(a, b) {
+  const n = Math.min(a.length, b.length)
+  for (let i = 0; i < n; i++) {
+    const x = a.charCodeAt(i)
+    const y = b.charCodeAt(i)
+    if (x === y) continue
+    if (isSurrogate(x) !== isSurrogate(y)) return isSurrogate(x) ? 1 : -1
+    return x < y ? -1 : 1
+  }
+  return a.length === b.length ? 0 : a.length < b.length ? -1 : 1
+}
+
+const cmpPair = (a, b) => cmpStr(a[0], b[0]) || cmpStr(a[1], b[1])
+
+function utf8Len(s) {
+  let n = 0
+  for (const ch of s) {
+    const c = ch.codePointAt(0)
+    n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4
+  }
+  return n
+}
+
+function utf8Bytes(s) {
+  const out = []
+  for (const ch of s) {
+    let c = ch.codePointAt(0)
+    if (isSurrogate(c)) c = 0xfffd // a lone surrogate (a Rust string never has one)
+    if (c < 0x80) out.push(c)
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63))
+    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63))
+    else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63))
+  }
+  return out
+}
+
+/** Bytes as text, or null when they aren't UTF-8 (`String::from_utf8`: no overlong forms, no surrogates). */
+function utf8Text(b) {
+  let s = ''
+  let i = 0
+  while (i < b.length) {
+    const x = b[i]
+    if (x < 0x80) { s += String.fromCharCode(x); i++; continue }
+    let n, c, min
+    if (x >= 0xc2 && x <= 0xdf) { n = 1; c = x & 0x1f; min = 0x80 }
+    else if (x >= 0xe0 && x <= 0xef) { n = 2; c = x & 0x0f; min = 0x800 }
+    else if (x >= 0xf0 && x <= 0xf4) { n = 3; c = x & 0x07; min = 0x10000 }
+    else return null
+    if (i + n >= b.length) return null
+    for (let k = 1; k <= n; k++) {
+      const y = b[i + k]
+      if ((y & 0xc0) !== 0x80) return null
+      c = (c << 6) | (y & 0x3f)
+    }
+    if (c < min || c > 0x10ffff || isSurrogate(c)) return null
+    s += String.fromCodePoint(c)
+    i += n + 1
+  }
+  return s
+}
+
+// ── fm.rs: frontmatter, the subset Obsidian writes; anything else kept raw, never guessed at ──
+// A property is `{t: 'text'|'list'|'raw', v}` (the Rust `Prop` as serde writes it); props are `[[key, prop]]` in order;
+// a frontmatter that can't be read at all is one entry with an empty key, `[['', {t: 'raw', v: raw}]]`.
+
+/** The frontmatter (without its `---` lines) and the body after it: `[fm | null, body]`. */
+export function fmSplit(text) {
+  let rest
+  if (text.startsWith('---\n')) rest = text.slice(4)
+  else if (text.startsWith('---\r\n')) rest = text.slice(5)
+  else return [null, text]
+  let at = 0
+  while (at < rest.length) {
+    const nl = rest.indexOf('\n', at)
+    const end = nl < 0 ? rest.length : nl + 1
+    const bare = trimEndOf(rest.slice(at, end), '\r\n')
+    if (bare === '---' || bare === '...') return [trimEndOf(rest.slice(0, at), '\r\n'), rest.slice(end)]
+    at = end
+  }
+  return [null, text]
+}
+
+const commentOnly = (s) => rsTrimStart(s).startsWith('#')
+
+/** A plain scalar without a ` # comment` after it. */
+function stripComment(v) {
+  const i = v.indexOf(' #')
+  return rsTrim(i < 0 ? v : v.slice(0, i))
+}
+
+/** A value without its quotes: `"…"` (with `\"`, `\\`, `\n`, `\t`), `'…'` (with `''`). null: a quote never closed. */
+function unquote(v) {
+  if (v.startsWith('"')) {
+    let out = ''
+    for (let i = 1; i < v.length; i++) {
+      const c = v[i]
+      if (c === '\\') {
+        i++
+        if (i >= v.length) return null
+        const o = v[i]
+        out += o === 'n' ? '\n' : o === 't' ? '\t' : o
+      } else if (c === '"') {
+        const rest = v.slice(i + 1)
+        return rsTrim(rest) === '' || commentOnly(rest) ? out : null
+      } else out += c
+    }
+    return null
+  }
+  if (v.startsWith("'")) {
+    let out = ''
+    let rest = v.slice(1)
+    for (;;) {
+      const i = rest.indexOf("'")
+      if (i < 0) return null
+      out += rest.slice(0, i)
+      rest = rest.slice(i + 1)
+      if (rest.startsWith("'")) {
+        out += "'"
+        rest = rest.slice(1)
+      } else return rsTrim(rest) === '' || commentOnly(rest) ? out : null
+    }
+  }
+  return stripComment(v)
+}
+
+/** `[a, "b, c", 'd']` → its items; null when it isn't one well-formed inline list. */
+function inlineList(v) {
+  if (!v.startsWith('[')) return null
+  const whole = v.slice(1)
+  const end = whole.lastIndexOf(']')
+  if (end < 0) return null
+  const after = whole.slice(end + 1)
+  if (!(rsTrim(after) === '' || commentOnly(after))) return null
+  const items = []
+  let cur = ''
+  let quote = null
+  for (const c of whole.slice(0, end)) {
+    if (quote === null && (c === '"' || c === "'")) { quote = c; cur += c }
+    else if (quote !== null && c === quote) { quote = null; cur += c }
+    else if (quote === null && c === ',') { items.push(cur); cur = '' }
+    else cur += c
+  }
+  if (quote !== null) return null
+  if (rsTrim(cur) !== '' || items.length) items.push(cur)
+  const out = []
+  for (const i of items) {
+    const u = unquote(rsTrim(i))
+    if (u === null) return null
+    if (u !== '') out.push(u)
+  }
+  return out
+}
+
+/** Read a frontmatter block (as `fmSplit` gives it) into `[[key, prop]]`. */
+export function fmParse(raw) {
+  const broken = () => [['', { t: 'raw', v: raw }]]
+  const out = []
+  let open = null // [key, value, the indented lines under it]
+  const close = () => {
+    if (!open) return true
+    const [key, value0, under] = open
+    open = null
+    const value = rsTrim(value0)
+    let prop
+    if (under.length) {
+      let items = []
+      for (const l of under) {
+        if (l.startsWith('- ')) items.push(rsTrim(l.slice(2)))
+        else if (l === '-') items.push('')
+        else { items = null; break }
+      }
+      if (value === '' && items !== null) {
+        const v = []
+        for (const i of items) {
+          const u = unquote(i)
+          if (u === null) return false
+          v.push(u)
+        }
+        prop = { t: 'list', v }
+      } else if (value === '|' || value === '|-' || value === '|+') {
+        prop = { t: 'text', v: under.join('\n') } // a literal block keeps its lines
+      } else if (value === '>' || value === '>-' || value === '>+') {
+        prop = { t: 'text', v: under.join(' ') } // a folded one is one line
+      } else if (items === null && value !== '' && !/^[{["'&*!]/.test(value) && !value.endsWith(':')) {
+        prop = { t: 'text', v: `${value} ${under.join(' ')}` } // a plain scalar that goes on over indented lines
+      } else {
+        prop = { t: 'raw', v: value === '' ? under.join('\n') : `${value}\n${under.join('\n')}` }
+      }
+    } else if (value.startsWith('[')) {
+      const v = inlineList(value)
+      if (v === null) return false
+      prop = { t: 'list', v }
+    } else if (value.startsWith('{') || value.startsWith('|') || value.startsWith('>')) {
+      prop = { t: 'raw', v: value }
+    } else {
+      const v = unquote(value)
+      if (v === null) return false
+      prop = { t: 'text', v }
+    }
+    out.push([key, prop])
+    return true
+  }
+  for (const line0 of textLines(raw)) {
+    const line = trimEndOf(line0, '\r')
+    if (rsTrim(line) === '' || rsTrimStart(line).startsWith('#')) continue
+    if (line.startsWith(' ') || line.startsWith('\t') || line.startsWith('- ')) {
+      if (!open) return broken()
+      open[2].push(rsTrim(line))
+      continue
+    }
+    const at = line.indexOf(':')
+    if (at < 0) return broken()
+    const key = line.slice(0, at)
+    const value = line.slice(at + 1)
+    if (rsTrim(key) === '' || /[[\]{}"']/.test(key) || (value !== '' && !value.startsWith(' '))) return broken()
+    if (!close()) return broken()
+    open = [rsTrim(key), value, []]
+  }
+  if (!close()) return broken()
+  return out
+}
+
+/** The value of `key` (ASCII case-insensitive, as Rust's `eq_ignore_ascii_case`), or null. */
+export function fmGet(props, key) {
+  const k = asciiLower(key)
+  const hit = props.find(([pk]) => asciiLower(pk) === k)
+  return hit ? hit[1] : null
+}
+
+/** A text value, or a list's items joined with ", ". */
+export function propText(p) {
+  return p.t === 'list' ? p.v.join(', ') : p.v
+}
+
+/** A list's items, or a text value as one item (`tags: client`), or nothing. */
+export function propItems(p) {
+  if (p.t === 'list') return p.v.slice()
+  if (p.t === 'text' && p.v !== '') return [p.v]
+  return []
+}
+
+// ── ledger::norm and evidence.rs: does a quote really stand in the text it is said to come from ──
+
+const QUOTE_MIN_WORDS = 3
+const WORD_CHAR = /^[\p{Alphabetic}\p{N}_']$/u
+
+/** Lower-case, punctuation-free, single-spaced: the form quotes are compared in (`ledger::norm`). */
+export function normWords(s) {
+  let out = ''
+  let space = false
+  for (const ch of s) {
+    // One char at a time, as Rust's `char::to_lowercase` (no final-sigma rule); it may give more than one char.
+    for (let c of ch.toLowerCase()) {
+      if (c === '‘' || c === '’' || c === '“' || c === '”' || c === '`') c = "'"
+      if (WORD_CHAR.test(c)) {
+        if (space && out !== '') out += ' '
+        space = false
+        out += c
+      } else space = true
+    }
+  }
+  return out
+}
+
+const enoughWords = (q) => q.split(' ').filter((w) => w !== '').length >= QUOTE_MIN_WORDS
+
+/** Is `quote` in `text`: both normalised (`norm`), the quote at least three words, found as one run of whole words. */
+export function quoteFound(text, quote) {
+  const q = normWords(quote)
+  if (!enoughWords(q)) return false
+  return ` ${normWords(text)} `.includes(` ${q} `)
+}
+
+/** The lines (1-based `[first, last]`) `quote` spans in `text` as `quoteFound` finds it — of several places, the one
+ *  starting nearest line `near` (else the first). null when it isn't there. */
+export function quoteLines(text, quote, near = null) {
+  const q0 = normWords(quote)
+  if (!enoughWords(q0)) return null
+  const q = ` ${q0} `
+  let all = ' '
+  const starts = [] // [the space before the line's first word, its line]
+  textLines(text).forEach((l, i) => {
+    const n = normWords(l)
+    if (n !== '') {
+      starts.push([all.length - 1, i + 1])
+      all += `${n} `
+    }
+  })
+  // The line holding offset `at`: the last start at or before it, by binary search (a scan per match is quadratic).
+  const lineAt = (at) => {
+    let lo = 0, hi = starts.length - 1, got = null
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (starts[mid][0] <= at) { got = starts[mid][1]; lo = mid + 1 } else hi = mid - 1 }
+    return got
+  }
+  const found = []
+  let from = 0
+  for (;;) {
+    const at = all.indexOf(q, from)
+    if (at < 0) break
+    const a = lineAt(at)
+    const b = lineAt(at + q.length - 2) // the last word's last unit, before the closing space
+    if (a !== null && b !== null) { found.push([a, b]); if (near == null) break }
+    from = at + 1
+  }
+  if (near != null) {
+    let best = null
+    for (const f of found) if (best === null || Math.abs(f[0] - near) < Math.abs(best[0] - near)) best = f // the first of equals
+    return best
+  }
+  return found.length ? found[0] : null
+}
+
+/** A file whose text a quote can be checked against: `.md .txt .csv .json` (not a PDF or a deck). Paths use `/` (Rust's
+ *  `Path::extension` on Unix: a dotfile like `.md` has none). */
+export function isTextSource(path) {
+  // Path's components skip empty ones and `.`: `a.md/.` names `a.md`.
+  const name = path.split('/').filter((c) => c !== '' && c !== '.').pop() || ''
+  if (name === '' || name === '..') return false
+  const i = name.lastIndexOf('.')
+  if (i <= 0) return false
+  return ['md', 'txt', 'csv', 'json'].includes(asciiLower(name.slice(i + 1)))
+}
+
+// ── diff.rs: a line diff for pages (an LCS over the changed middle), bounded ──
+// Lines are compared with any `\r`; the final line break is not a line; output lines carry no `\n`.
+
+/** Over this many lines on either side, the diff is "all removed, all added". */
+export const DIFF_MAX_LINES = 20000
+/** The most cells the LCS table may have (the changed middle of both sides, multiplied). */
+// Rust's cap is 16M cells; here a cell is 4 bytes of a Uint32Array and every plugin shares Echo's 64 MB QuickJS
+// heap, so 4M (16 MB, about 2000 × 2000 changed lines) — past it, "all removed, all added", as in Rust.
+const DIFF_MAX_CELLS = 4000000
+
+function diffSplit(s) {
+  if (s === '') return []
+  return (s.endsWith('\n') ? s.slice(0, -1) : s).split('\n')
+}
+
+/** `oldText` against `newText`: `[kind, line]` with kind `'='` kept, `'-'` removed, `'+'` added, in order. */
+export function diffLines(oldText, newText) {
+  const a = diffSplit(oldText)
+  const b = diffSplit(newText)
+  const all = (x, y) => [...x.map((l) => ['-', l]), ...y.map((l) => ['+', l])]
+  if (a.length > DIFF_MAX_LINES || b.length > DIFF_MAX_LINES) return all(a, b)
+  let pre = 0
+  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++
+  let suf = 0
+  while (suf < a.length - pre && suf < b.length - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++
+  const ma = a.slice(pre, a.length - suf)
+  const mb = b.slice(pre, b.length - suf)
+  const out = a.slice(0, pre).map((l) => ['=', l])
+  if ((ma.length + 1) * (mb.length + 1) > DIFF_MAX_CELLS) {
+    out.push(...all(ma, mb))
+  } else {
+    // t[i * w + j]: the LCS length of ma[i..] and mb[j..].
+    const w = mb.length + 1
+    const t = new Uint32Array((ma.length + 1) * w)
+    for (let i = ma.length - 1; i >= 0; i--) {
+      for (let j = mb.length - 1; j >= 0; j--) {
+        t[i * w + j] = ma[i] === mb[j] ? t[(i + 1) * w + j + 1] + 1 : Math.max(t[(i + 1) * w + j], t[i * w + j + 1])
+      }
+    }
+    let i = 0
+    let j = 0
+    while (i < ma.length || j < mb.length) {
+      if (i < ma.length && j < mb.length && ma[i] === mb[j]) {
+        out.push(['=', ma[i]])
+        i++
+        j++
+      } else if (j >= mb.length || (i < ma.length && t[(i + 1) * w + j] >= t[i * w + j + 1])) {
+        out.push(['-', ma[i]])
+        i++
+      } else {
+        out.push(['+', mb[j]])
+        j++
+      }
+    }
+  }
+  for (const l of a.slice(a.length - suf)) out.push(['=', l])
+  return out
+}
+
+/** The changes with `context` unchanged lines around each; changes whose contexts touch share a hunk. */
+export function diffHunks(d, context) {
+  const out = []
+  let cur = null
+  const take = ([f, t]) => out.push(d.slice(f, t).map(([k, l]) => [k, l]))
+  d.forEach(([k], i) => {
+    if (k === '=') return
+    const from = Math.max(0, i - context)
+    const to = Math.min(i + context + 1, d.length)
+    if (cur && from <= cur[1]) cur = [cur[0], Math.max(to, cur[1])]
+    else {
+      if (cur) take(cur)
+      cur = [from, to]
+    }
+  })
+  if (cur) take(cur)
+  return out
+}
+
+/** `[added, removed]` line counts. */
+export function diffCounts(d) {
+  let added = 0
+  let removed = 0
+  for (const [k] of d) {
+    if (k === '+') added++
+    else if (k === '-') removed++
+  }
+  return [added, removed]
+}
+
+// ── catalog.rs: a row in the vault's index (`CATALOG.md` and its kin) — text in, text out ──
+// An insertion answers `{text}` (the new index), `{already: true}` (it lists it already) or `{error}` (no table for it).
+
+/** The row's cells as one Markdown table line, shaped to a table of `cols` columns: link · description · date. */
+export function catalogRow(cols, link, desc, date) {
+  const cells = [link]
+  if (cols >= 2) cells.push(catalogCell(desc))
+  if (cols >= 3) cells.push(date)
+  while (cells.length < cols) cells.push('')
+  return `| ${cells.join(' | ')} |`
+}
+
+/** A cell's text: one line, no `|`. */
+export function catalogCell(s) {
+  return rsWords(s.replace(/\|/g, '/')).join(' ')
+}
+
+/** A Markdown link to `target` (relative to the index), its file name as the text; spaces as `%20`. */
+export function catalogLink(target) {
+  const name = target.split('/').pop()
+  const dest = target.replace(/%/g, '%25').replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29')
+  return `[${name.replace(/]/g, '\\]')}](${dest})`
+}
+
+/** The tables of an index's lines: `{heading, header, rows, body}` (line numbers; `body`: where a first row goes). */
+function catalogTables(lines) {
+  const out = []
+  let heading = ''
+  let i = 0
+  while (i < lines.length) {
+    const t = rsTrimStart(lines[i])
+    if (t.startsWith('#')) heading = rsTrim(t.replace(/^#+/, ''))
+    if (t.startsWith('|')) {
+      const header = i
+      let j = i + 1
+      if (j < lines.length) {
+        const l = rsTrim(lines[j])
+        if (l.startsWith('|') && /^[|\-: ]*$/.test(l)) j++
+      }
+      const body = j
+      const rows = []
+      while (j < lines.length && rsTrimStart(lines[j]).startsWith('|')) rows.push(j++)
+      out.push({ heading, header, rows, body })
+      i = j
+      continue
+    }
+    i++
+  }
+  return out
+}
+
+function catalogColumns(line) {
+  let t = rsTrim(line)
+  if (t.startsWith('|')) t = t.slice(1)
+  if (t.endsWith('|')) t = t.slice(0, -1)
+  return t.split('|').length
+}
+
+const isDigit = (u) => u >= 48 && u <= 57
+
+/** The last `YYYY-MM-DD` in a row, or null. */
+function rowDate(line) {
+  for (let i = line.length - 10; i >= 0; i--) {
+    let ok = true
+    for (let k = 0; k < 10 && ok; k++) {
+      const c = line.charCodeAt(i + k)
+      ok = k === 4 || k === 7 ? c === 45 : isDigit(c)
+    }
+    if (ok) return line.slice(i, i + 10)
+  }
+  return null
+}
+
+/** Where a row dated `date` goes in table `t`: after the last row dated on or before it, else before the first dated
+ *  one; at the table's end when no row (or the new one) is dated. */
+function catalogPlace(lines, t, date) {
+  const dated = []
+  for (const r of t.rows) {
+    const d = rowDate(lines[r])
+    if (d !== null) dated.push([r, d])
+  }
+  if (date !== null && dated.length) {
+    for (let k = dated.length - 1; k >= 0; k--) if (cmpStr(dated[k][1], date) <= 0) return dated[k][0] + 1
+    return dated[0][0]
+  }
+  return t.rows.length ? t.rows[t.rows.length - 1] + 1 : t.body
+}
+
+/** `index` with `row` at line `at`, and its *Last update* (in its first 15 lines) made `today`. (Rust slices the 10
+ *  bytes after it, and would panic mid-character; a date is ASCII, so the first 10 UTF-16 units give the same answer.) */
+function catalogWithRow(index, lines, at, row, today) {
+  const out = lines.slice()
+  out.splice(Math.min(at, out.length), 0, row)
+  for (let k = 0; k < Math.min(15, out.length); k++) {
+    const l = out[k]
+    const i = l.indexOf('Last update:')
+    if (i < 0) continue
+    const trimmed = rsTrimStart(l.slice(i + 'Last update:'.length))
+    if (trimmed.length >= 10 && rowDate(trimmed.slice(0, 10)) !== null) out[k] = `${l.slice(0, i)}Last update: ${today}${trimmed.slice(10)}`
+  }
+  let text = out.join('\n')
+  if (index.endsWith('\n')) text += '\n'
+  return text
+}
+
+const NOTES_LIKE = ['notes', 'meetings', 'meeting notes']
+
+/** Put `[file](note)` in the index's notes table, in date order. `notesDir` and `note` are relative to the index's
+ *  folder. `{text}` | `{already: true}` | `{error}`. */
+export function catalogInsert(index, notesDir, note, desc, date, today) {
+  const encoded = catalogLink(note)
+  const k = encoded.lastIndexOf('](')
+  const target = encoded.slice(k < 0 ? 0 : k + 2, encoded.length - 1)
+  if (index.includes(`](${note})`) || index.includes(`](${target})`) || index.includes(`](<${note}>)`)) return { already: true }
+  const lines = textLines(index)
+  const ts = catalogTables(lines)
+  // "action-items" ↔ "Action Items": compared as words.
+  const words = (s) => rsWords(s.toLowerCase().replace(/[-_]/g, ' ')).join(' ')
+  const dir = notesDir.replace(/\/+$/, '')
+  const folder = words(dir.split('/').pop())
+  const named = (t) => NOTES_LIKE.includes(folder) && NOTES_LIKE.includes(words(t.heading))
+  const linksIn = (t) => t.rows.filter((r) => lines[r].includes(`](${dir}/`) || lines[r].includes(`](<${dir}/`)).length
+  let table = ts.find((t) => words(t.heading) === folder) || ts.find(named) || null
+  if (!table) {
+    let best = 0
+    for (const t of ts) {
+      const n = linksIn(t)
+      if (n > 0 && n >= best) { best = n; table = t } // of equals, the last (Rust's `max_by_key`)
+    }
+  }
+  if (!table) {
+    const what = NOTES_LIKE.includes(folder) ? 'Notes' : `“${folder}”`
+    return { error: `no ${what} table in the index — add a section for it` }
+  }
+  const row = catalogRow(catalogColumns(lines[table.header]), encoded, desc, date)
+  return { text: catalogWithRow(index, lines, catalogPlace(lines, table, date), row, today) }
+}
+
+/** The heading of the table whose rows hold line `at` of `text` (0-based) — null when that line isn't a table's row
+ *  (a header, a separator, prose). */
+export function tableOfRow(text, at) {
+  const t = catalogTables(textLines(text)).find((x) => x.rows.includes(at))
+  return t ? t.heading : null
+}
+
+/** Put `row`, a whole table line as an ingest run wrote it, into the table under `heading` of the index as it is now,
+ *  in date order. `{text}` | `{already: true}` (the same line, or a row with its link) | `{error}` (no such table). */
+export function catalogInsertRow(index, heading, row0, today) {
+  const row = rsTrim(row0)
+  let target = null
+  const a = row.indexOf('](')
+  if (a >= 0) {
+    const r = row.slice(a + 2)
+    const b = r.indexOf(')')
+    if (b > 0) target = r.slice(0, b)
+  }
+  const lines = textLines(index)
+  if (lines.some((l) => rsTrim(l) === row) || (target !== null && index.includes(`](${target})`))) return { already: true }
+  const words = (s) => rsWords(s.toLowerCase()).join(' ')
+  const t = catalogTables(lines).find((x) => words(x.heading) === words(heading))
+  if (!t) return { error: `no “${heading}” table in the index now` }
+  return { text: catalogWithRow(index, lines, catalogPlace(lines, t, rowDate(row)), row, today) }
+}
+
+/** The rows of a Markdown text's tables: its `|` lines but each table's header and the `|---|` line under it
+ *  (checks.rs `table_rows`). */
+export function tableRowCount(text) {
+  let n = 0
+  for (const l0 of textLines(text)) {
+    const l = rsTrim(l0)
+    if (!l.startsWith('|')) continue
+    if (l.includes('-') && /^[|\-: ]*$/.test(l)) n = Math.max(0, n - 1)
+    else n++
+  }
+  return n
+}
+
+// ── links.rs: where a page's links lead, resolved as Obsidian resolves them; links never leave the vault ──
+// A link is `{target, line, wiki, embed}` as written (scan.rs `RawLink`); page paths are relative to the pages root.
+
+/** `%xx` decoded (a broken escape kept as written; not UTF-8 after decoding: the text as it was). */
+export function percentDecode(s) {
+  if (!s.includes('%')) return s
+  const b = utf8Bytes(s)
+  const hex = (c) => (c >= 48 && c <= 57 ? c - 48 : c >= 97 && c <= 102 ? c - 87 : c >= 65 && c <= 70 ? c - 55 : -1)
+  const out = []
+  let i = 0
+  while (i < b.length) {
+    if (b[i] === 37 && i + 2 < b.length) {
+      const h = hex(b[i + 1])
+      const l = hex(b[i + 2])
+      if (h >= 0 && l >= 0) {
+        out.push(h * 16 + l)
+        i += 3
+        continue
+      }
+    }
+    out.push(b[i++])
+  }
+  const t = utf8Text(out)
+  return t === null ? s : t
+}
+
+/** `a/b/../c` → `a/c`; null when it climbs above the start. */
+export function normalizePath(path) {
+  const parts = []
+  for (const c of path.split('/')) {
+    if (c === '' || c === '.') continue
+    if (c === '..') {
+      if (!parts.length) return null
+      parts.pop()
+    } else parts.push(c)
+  }
+  return parts.join('/')
+}
+
+/** A path with `.md` added, unless it names another file (an extension of up to 5 ASCII letters or digits). */
+export function withMd(p) {
+  const last = p.split('/').pop()
+  const otherFile = last.includes('.') && /^[A-Za-z0-9]{0,5}$/.test(last.slice(last.lastIndexOf('.') + 1))
+  return otherFile || asciiLower(p).endsWith('.md') ? p : `${p}.md`
+}
+
+/** A page's name without `.md`, lower-case: what a `[[wikilink]]` matches by. */
+export function pageStem(p) {
+  const last = p.split('/').pop()
+  const bare = last.endsWith('.md') || last.endsWith('.MD') ? last.slice(0, -3) : last
+  return bare.toLowerCase()
+}
+
+const folderOf = (p) => {
+  const i = p.lastIndexOf('/')
+  return i < 0 ? '' : p.slice(0, i)
+}
+
+/** The link's target without its `#heading`, `|alias` or `^block`, decoded — what it names. */
+export function linkBare(link) {
+  const t = rsTrim(link.target)
+  if (link.wiki) return rsTrim(t.split('|')[0].split('#')[0])
+  const inner = t.startsWith('<') && t.slice(1).endsWith('>') ? t.slice(1, -1) : t
+  return rsTrim(percentDecode(inner.split('#')[0]))
+}
+
+/** Lookups over a vault's page paths, built once: `{resolve(from, link) → path | null, page(rel) → path | null}`. */
+export function makeResolver(paths) {
+  const sorted = [...new Set(paths)].sort(cmpStr)
+  const pages = new Set(sorted)
+  const byLower = new Map()
+  const byStem = new Map()
+  for (const p of sorted) {
+    byLower.set(p.toLowerCase(), p) // of paths equal but for case, the last in order (as the Rust map's inserts)
+    const s = pageStem(p)
+    if (!byStem.has(s)) byStem.set(s, [])
+    byStem.get(s).push(p)
+  }
+  const slashes = (s) => s.split('/').length - 1
+  for (const v of byStem.values()) v.sort((a, b) => slashes(a) - slashes(b) || utf8Len(a) - utf8Len(b) || cmpStr(a, b))
+  const page = (rel) => (pages.has(rel) ? rel : byLower.get(rel.toLowerCase()) ?? null)
+  const byName = (name, from) => {
+    const candidates = byStem.get(pageStem(name))
+    if (!candidates) return null
+    const here = folderOf(from)
+    return candidates.find((c) => folderOf(c) === here) ?? candidates[0] ?? null
+  }
+  const at = (rel) => (rel === null ? null : page(withMd(rel)))
+  const resolve = (from, link) => {
+    const bare = linkBare(link)
+    if (bare === '') return null
+    if (link.wiki) {
+      const path = bare.replace(/^\/+/, '')
+      if (path.includes('/')) {
+        const p = at(normalizePath(path))
+        if (p !== null) return p
+      }
+      return byName(path, from)
+    }
+    // A Markdown link: from the page's folder, then from the pages root, then by its name (as Obsidian does).
+    const target = bare.replace(/\\/g, '/')
+    const rel = target.startsWith('/') ? normalizePath(target.slice(1)) : normalizePath(`${folderOf(from)}/${target}`)
+    const p = at(rel) ?? at(normalizePath(target.replace(/^\/+/, '')))
+    if (p !== null) return p
+    if (target.includes('/') || !asciiLower(withMd(target)).endsWith('.md')) return null
+    return byName(target, from)
+  }
+  return { resolve, page }
+}
+
+const byPath = (pages) => pages.slice().sort((a, b) => cmpStr(a.path, b.path))
+
+/** Every resolved link but embeds: `[from, to, line]`. `pages`: `[{path, links}]`. */
+export function linkEdges(pages) {
+  const sorted = byPath(pages)
+  const r = makeResolver(sorted.map((p) => p.path))
+  const out = []
+  for (const p of sorted) {
+    for (const l of p.links) {
+      if (l.embed) continue
+      const to = r.resolve(p.path, l)
+      if (to !== null && to !== p.path) out.push([p.path, to, l.line])
+    }
+  }
+  return out
+}
+
+/** The pages linking to `path`, each with the line of its first link to it: `[[from, line]]`, sorted. */
+export function linkBacklinks(pages, path) {
+  const seen = new Map()
+  for (const [from, to, line] of linkEdges(pages)) if (to === path && !seen.has(from)) seen.set(from, line)
+  return [...seen].sort((a, b) => cmpStr(a[0], b[0]))
+}
+
+/** The graph of the vault: pages as nodes (with their top folder and tags), links as edges, and the hubs — the index
+ *  page and pages linking to more than 40 % of the others (of 10 pages or more). `mode`: `links`, `tags` (tags as
+ *  nodes) or `both`. `pages`: `[{path, title, tags, links}]`. */
+export function linkGraph(pages, indexPage, mode) {
+  const sorted = byPath(pages)
+  const e = linkEdges(sorted)
+  const deg = new Map()
+  const outN = new Map()
+  for (const [a, b] of e) {
+    deg.set(a, (deg.get(a) || 0) + 1)
+    deg.set(b, (deg.get(b) || 0) + 1)
+    if (!outN.has(a)) outN.set(a, new Set())
+    outN.get(a).add(b)
+  }
+  const n = Math.max(sorted.length, 1)
+  const hubs = sorted.map((p) => p.path).filter((p) => p === indexPage || (outN.has(p) && outN.get(p).size * 10 > n * 4 && n >= 10))
+  const nodes = sorted.map((p) => {
+    const i = p.path.indexOf('/')
+    return { id: p.path, title: p.title, folder: i < 0 ? '' : p.path.slice(0, i), tags: p.tags, deg: deg.get(p.path) || 0 }
+  })
+  const edges = []
+  if (mode !== 'tags') {
+    const uniq = new Set()
+    for (const [a, b] of e) {
+      const key = JSON.stringify([a, b])
+      if (!uniq.has(key)) { uniq.add(key); edges.push([a, b]) }
+    }
+  }
+  if (mode === 'tags' || mode === 'both') {
+    const tags = [...new Set(sorted.flatMap((p) => p.tags))].sort(cmpStr)
+    for (const t of tags) nodes.push({ id: `#${t}`, title: `#${t}`, tag: true })
+    for (const p of sorted) for (const t of p.tags) edges.push([p.path, `#${t}`])
+  }
+  return { nodes, edges, hubs }
+}
+
+// ── scan.rs `page`: one page read as Obsidian reads it ──
+// Unlike Rust, a page keeps at most these many links, tags and headings: every one is an object in the 64 MB QuickJS
+// heap all plugins share, and a 2 MB page of `[[a]]` would fill it. A link's destination is looked for in the next
+// 4096 units only (a hostile `[](((…` line would make every `](` scan to its end).
+export const PAGE_MAX_LINKS = 5000
+export const PAGE_MAX_TAGS = 1000
+export const PAGE_MAX_HEADINGS = 2000
+const DEST_MAX = 4096
+// And a line's scan for destinations is budgeted (units looked at, with the line's own length eight times over): a
+// line of `](` that never close stops being read for Markdown links rather than taking seconds.
+const DEST_BUDGET = (line) => 65536 + 8 * line.length
+
+/** The line's text outside inline code spans (`` `…` ``), each char of a span (and its backticks) a space. */
+function outsideCode(line) {
+  if (!line.includes('`')) return line
+  // By slices, not a char at a time (a 2 MB line would be millions of strings in the shared heap). A span's units are
+  // spaces (Rust: its chars; only where links and tags are looked for, so the count doesn't matter).
+  const parts = []
+  let at = 0
+  let inCode = false
+  for (;;) {
+    const k = line.indexOf('`', at)
+    const end = k < 0 ? line.length : k
+    parts.push(inCode ? ' '.repeat(end - at) : line.slice(at, end))
+    if (k < 0) break
+    parts.push(' ')
+    inCode = !inCode
+    at = k + 1
+  }
+  return parts.join('')
+}
+
+/** `[[…]]` and `![[…]]` in a line. */
+function wikilinksIn(line, n, out) {
+  let at = 0
+  while (out.length < PAGE_MAX_LINKS) {
+    const i = line.indexOf('[[', at)
+    if (i < 0) break
+    const embed = i > at && line[i - 1] === '!'
+    const j = line.indexOf(']]', i + 2)
+    if (j < 0) break
+    const target = rsTrim(line.slice(i + 2, j))
+    if (target !== '' && !target.includes('\n')) out.push({ target, line: n, wiki: true, embed })
+    at = j + 2
+  }
+}
+
+function mdLinksIn(line, n, out) {
+  let i = 0
+  let budget = DEST_BUDGET(line)
+  // The last `[` before `i` (Rust: `line[..i].rfind('[')`), kept as `i` moves forward — searched back from each `](` it
+  // would be quadratic on a line of `](` with no `[`.
+  let lastOpen = -1
+  let seen = 0
+  while (i < line.length && out.length < PAGE_MAX_LINKS && budget > 0) {
+    if (line[i] === ']' && line[i + 1] === '(') {
+      for (; seen < i; seen++) if (line[seen] === '[') lastOpen = seen
+      const open = lastOpen // the `[` that opens this text (not one of a wikilink)
+      if (open < 0 || (open > 0 && line[open - 1] === '[')) { i++; continue }
+      const embed = open > 0 && line[open - 1] === '!'
+      const rest = line.slice(i + 2, i + 2 + DEST_MAX)
+      let dest
+      let used
+      if (rest.startsWith('<')) {
+        const r = rest.slice(1)
+        const k = r.indexOf('>')
+        budget -= k < 0 ? r.length : k
+        if (k < 0 || !r.slice(k + 1).startsWith(')')) { i++; continue }
+        dest = `<${r.slice(0, k)}>`
+        used = k + 3
+      } else {
+        // Balanced parentheses inside the destination; a title after a space ends it.
+        let depth = 0
+        let end = -1
+        for (let k = 0; k < rest.length; k++) {
+          budget--
+          if (rest[k] === '(') depth++
+          else if (rest[k] === ')') {
+            if (depth === 0) { end = k; break }
+            depth--
+          }
+        }
+        if (end < 0) { i++; continue }
+        dest = rsTrim(rest.slice(0, end).split(' "')[0])
+        used = end + 1
+      }
+      const bare = dest.replace(/^<+/, '')
+      const c = bare.indexOf(':')
+      const scheme = c > 1 && /^[A-Za-z0-9+.-]+$/.test(bare.slice(0, c))
+      if (dest !== '' && !dest.startsWith('#') && !scheme) out.push({ target: dest, line: n, wiki: false, embed })
+      i += 2 + used
+      continue
+    }
+    i++
+  }
+}
+
+/** Inline `#tags` in a line (not headings, not inside words, not all digits). */
+function inlineTagsIn(line, out) {
+  // By index, a code point at a time (no array of the line's chars: a 2 MB line would fill the shared heap).
+  const at = (k) => String.fromCodePoint(line.codePointAt(k))
+  let prev = ''
+  let i = 0
+  while (i < line.length && out.length < PAGE_MAX_TAGS) {
+    const c = at(i)
+    if (c === '#' && (i === 0 || WS.test(prev) || prev === '(')) {
+      let j = i + 1
+      let d
+      while (j < line.length && (ALNUM.test(d = at(j)) || d === '_' || d === '-' || d === '/')) j += d.length
+      const tag = line.slice(i + 1, j)
+      if (tag !== '' && !/^[0-9]+$/.test(tag)) out.push(tag)
+      prev = j > i + 1 ? at(j - 1 - (isSurrogate(line.charCodeAt(j - 1)) ? 1 : 0)) : c
+      i = j
+      continue
+    }
+    prev = c
+    i += c.length
+  }
+}
+
+/** Read one page from its text: `{path, title, props, has_props, tags, headings: [[level, text]], links, size, mtime}`.
+ *  A link's `line` counts the frontmatter's lines; links in code are skipped; tags come from the frontmatter and the
+ *  text outside code and headings. */
+export function scanPage(path, text, size = 0, mtime = 0) {
+  const [raw] = fmSplit(text)
+  const props = raw !== null ? fmParse(raw) : []
+  const fmLines = raw !== null ? textLines(raw).length + 2 : 0
+  const tagProp = fmGet(props, 'tags')
+  const tags = (tagProp ? propItems(tagProp) : []).map((t) => rsTrim(t.replace(/^#+/, ''))).filter((t) => t !== '')
+  const headings = []
+  const links = []
+  let fence = null
+  textLines(text).forEach((line, k) => {
+    const n = k + 1
+    if (n <= fmLines) {
+      wikilinksIn(line, n, links) // properties may link: `client: "[[Acme Corp]]"`
+      return
+    }
+    const t = rsTrimStart(line)
+    if (fence !== null) {
+      if (t.startsWith(fence)) fence = null
+      return
+    }
+    if (t.startsWith('```') || t.startsWith('~~~')) {
+      fence = t.slice(0, 3)
+      return
+    }
+    const hashes = /^#*/.exec(t)[0].length
+    if (hashes >= 1 && hashes <= 6 && t.slice(hashes).startsWith(' ')) {
+      const h = rsTrim(trimEndOf(rsTrim(t.slice(hashes)), '#'))
+      if (h !== '' && headings.length < PAGE_MAX_HEADINGS) headings.push([hashes, h])
+      return
+    }
+    const plain = outsideCode(line)
+    wikilinksIn(plain, n, links)
+    mdLinksIn(plain, n, links)
+    inlineTagsIn(plain, tags)
+  })
+  const seen = new Set()
+  const uniqueTags = tags.filter((t) => {
+    const l = t.toLowerCase()
+    if (seen.has(l)) return false
+    seen.add(l)
+    return true
+  })
+  const stem = path.split('/').pop().replace(/(\.md)+$/, '').replace(/(\.MD)+$/, '')
+  const titleProp = fmGet(props, 'title')
+  const fromProp = titleProp ? propText(titleProp) : ''
+  const h1 = headings.find(([l]) => l === 1)
+  const title = rsTrim(fromProp) !== '' ? fromProp : h1 ? h1[1] : stem
+  return { path, title, props, has_props: raw !== null, tags: uniqueTags, headings, links, size, mtime }
+}
+
+// ── checks.rs: a vault's health, read-only and deterministic ──
+// Only pages count — never the index, the taxonomies, a folder's README. The Rust `run` reads the vault; `runChecks`
+// takes what it read.
+
+/** An index over this is oversized. */
+export const INDEX_MAX_BYTES = 150 * 1024
+export const INDEX_MAX_ROWS = 1500
+
+/** A word that can be a tag: a letter or digit, then letters, digits, `-`, `_`, `/`. */
+export function tagLike(t) {
+  const cs = Array.from(t)
+  return cs.length > 0 && ALNUM.test(cs[0]) && cs.slice(1).every((c) => ALNUM.test(c) || c === '-' || c === '_' || c === '/')
+}
+
+/** The tags a taxonomy file names, in order: every `` `tag` `` and every word of a fenced list (`meeting, concept`). */
+export function tagsInOrder(text) {
+  const out = []
+  const push = (t0) => {
+    const t = rsTrim(t0)
+    if (tagLike(t) && !out.includes(t)) out.push(t)
+  }
+  let fenced = false
+  for (const line of textLines(text)) {
+    const t = rsTrimStart(line)
+    if (t.startsWith('```') || t.startsWith('~~~')) { fenced = !fenced; continue }
+    if (fenced) { line.split(/[, \t]/).forEach(push); continue }
+    const parts = line.split('`')
+    for (let i = 1; i + 1 < parts.length; i += 2) push(parts[i])
+  }
+  return out
+}
+
+/** The tags a taxonomy file allows, sorted (the Rust `BTreeSet`). */
+export function allowedTags(text) {
+  return tagsInOrder(text).sort(cmpStr)
+}
+
+/** The vault's tag taxonomy among its taxonomy files (`detected.taxonomies`), or null. */
+export function tagTaxonomy(taxonomies) {
+  return (taxonomies || []).find((t) => t.replace(/[a-z]/g, (c) => c.toUpperCase()).includes('TAG') || asciiLower(t).endsWith('tags.md')) ?? null
+}
+
+/** The tag meeting notes get: the user's choice (`minutes.tag`), else the taxonomy's first `meeting…` tag, else
+ *  `meeting`. `taxonomyText`: the tag taxonomy's text, or null. */
+export function meetingTag(minutesTag, taxonomyText) {
+  if (minutesTag != null) return minutesTag
+  if (taxonomyText != null) {
+    const t = tagsInOrder(taxonomyText).find((x) => x.toLowerCase().startsWith('meeting'))
+    if (t !== undefined) return t
+  }
+  return 'meeting'
+}
+
+/** A vault's health from what was read of it. `input`:
+ *  - `pages`: `[{path, title, props, has_props, tags, links}]` (as `scanPage` gives them; paths under the pages root);
+ *  - `indexPage`: the index as a page path (null: none, or outside the pages root); `indexLinks`: the index's links
+ *    (`scanPage(index).links`; null: the vault has no index to read); `indexDir`: the index's folder, vault-relative;
+ *    `indexBytes`, `indexText`: its size and text (for an oversized index);
+ *  - `pageDirInVault(path)` → a page's folder, vault-relative; `toPagePath(vaultRel)` → a page path or null (not under
+ *    the pages root); `fileExists(vaultRel)` → is that file or folder there (`''`: the vault's root);
+ *  - `taxonomies`: the taxonomy files as page paths; `taxonomyText`: the tag taxonomy's text, or null;
+ *  - `meetingTag`: the tag meeting notes get (default: `meetingTag(null, taxonomyText)`).
+ *  The answer has the Rust `Checks`' fields as serde writes them, and `broken_links` (`[[page, link]]`). */
+export function runChecks(input) {
+  const pages = byPath(input.pages || [])
+  const indexPage = input.indexPage ?? null
+  const indexLinks = input.indexLinks ?? null
+  const indexDir = input.indexDir || ''
+  const taxonomies = new Set(input.taxonomies || [])
+  const taxonomyText = input.taxonomyText ?? null
+  const pageDir = input.pageDirInVault || folderOf
+  const toPagePath = input.toPagePath || ((p) => p)
+  const exists = input.fileExists || (() => false)
+  const paths = pages.map((p) => p.path)
+  const known = new Set(paths)
+  const inScope = (p) => p !== indexPage && !taxonomies.has(p) && asciiLower(p.split('/').pop()) !== 'readme.md'
+  const notAPage = (l) => l.embed && !asciiLower(linkBare(l)).endsWith('.md')
+  // A link that isn't to a page: true when what it names is in the vault or lies outside it, false when it's missing;
+  // null for a wikilink to a page. `dir`: the linking file's folder, vault-relative.
+  const fileThere = (dir, l) => {
+    const bare = linkBare(l)
+    if (l.wiki) {
+      const last = bare.split('/').pop()
+      const i = last.lastIndexOf('.')
+      return i >= 0 && asciiLower(last.slice(i + 1)) !== 'md' ? true : null
+    }
+    const rel = normalizePath(`${dir}/${bare}`)
+    return rel === null ? true : !!exists(rel)
+  }
+  const r = makeResolver(paths)
+  const c = {
+    not_in_index: [], broken: [], isolated: [], no_props: [], unknown_tags: [], meeting_tag_missing: null, no_index: false,
+    dead_rows: [], usual_props: [], duplicate_titles: [], oversized_index: null, broken_links: [],
+  }
+  const incoming = new Set()
+  const outgoing = new Set()
+  for (const p of pages) {
+    for (const l of p.links) {
+      const to = r.resolve(p.path, l)
+      if (to !== null) {
+        if (to !== p.path) { incoming.add(to); outgoing.add(p.path) }
+        continue
+      }
+      if (notAPage(l)) continue
+      if (indexPage !== null && p.path === indexPage) continue // the index's own links are its rows: `dead_rows`
+      if (fileThere(pageDir(p.path), l) !== true) {
+        c.broken.push([p.path, linkBare(l)])
+        c.broken_links.push([p.path, { ...l }])
+      }
+    }
+  }
+  if (indexLinks === null) c.no_index = true
+  else {
+    // Each index link with its page: resolved from where the index sits (it may be outside the pages root).
+    const targets = indexLinks.map((l) => {
+      let to = indexPage !== null ? r.resolve(indexPage, l) : null
+      if (to === null && !l.wiki) {
+        const vaultRel = normalizePath(`${indexDir}/${linkBare(l)}`)
+        const p = vaultRel === null ? null : toPagePath(vaultRel)
+        if (p != null && known.has(p)) to = p
+      }
+      return [l, to]
+    })
+    const listed = new Set(targets.map(([, to]) => to).filter((to) => to !== null))
+    c.not_in_index = paths.filter((p) => inScope(p) && !listed.has(p))
+    c.dead_rows = targets.filter(([l, to]) => to === null && !notAPage(l) && fileThere(indexDir, l) !== true).map(([l]) => ({ ...l }))
+  }
+  const bytes = input.indexBytes || 0
+  const rows = input.indexText != null ? tableRowCount(input.indexText) : 0
+  if (bytes > INDEX_MAX_BYTES || rows > INDEX_MAX_ROWS) c.oversized_index = { bytes, rows }
+  const scoped = pages.filter((p) => inScope(p.path))
+  // A key at least 80 % of a folder's pages have (folders of 5 or more), missing from a page that has properties.
+  const folders = new Map()
+  for (const p of scoped) {
+    const d = folderOf(p.path)
+    if (!folders.has(d)) folders.set(d, [])
+    folders.get(d).push(p)
+  }
+  for (const ps of folders.values()) {
+    if (ps.length < 5) continue
+    const have = new Map()
+    for (const p of ps) for (const k of new Set(p.props.map(([k]) => k).filter((k) => k !== ''))) have.set(k, (have.get(k) || 0) + 1)
+    for (const [k, n] of have) {
+      if (n * 5 < ps.length * 4) continue
+      for (const p of ps) if (p.has_props && !p.props.some(([pk]) => pk === k)) c.usual_props.push([p.path, k])
+    }
+  }
+  c.usual_props.sort(cmpPair)
+  const titles = new Map()
+  for (const p of scoped) {
+    const t = rsWords(p.title).join(' ').toLowerCase()
+    if (t === '') continue
+    if (!titles.has(t)) titles.set(t, [])
+    titles.get(t).push(p.path)
+  }
+  const cmpList = (a, b) => {
+    for (let i = 0; i < Math.min(a.length, b.length); i++) {
+      const x = cmpStr(a[i], b[i])
+      if (x) return x
+    }
+    return a.length - b.length
+  }
+  c.duplicate_titles = [...titles.values()].filter((ps) => ps.length > 1).sort(cmpList)
+  c.isolated = paths.filter((p) => inScope(p) && !incoming.has(p) && !outgoing.has(p))
+  c.no_props = scoped.filter((p) => !p.has_props).map((p) => p.path)
+  if (taxonomyText !== null) {
+    const allowed = new Set(allowedTags(taxonomyText).map((t) => t.toLowerCase()))
+    for (const p of scoped) for (const t of p.tags) if (!allowed.has(t.toLowerCase())) c.unknown_tags.push([p.path, t])
+    const mt = input.meetingTag ?? meetingTag(null, taxonomyText)
+    if (!allowed.has(mt.toLowerCase())) c.meeting_tag_missing = mt
+  }
+  return c
+}
+
 export function apply(ctx) {
   const running = new Set() // vaults being read now (one analysis per vault at a time)
   const parseList = (text) => { try { const j = JSON.parse(text || '[]'); return Array.isArray(j) ? j : [] } catch { return [] } }

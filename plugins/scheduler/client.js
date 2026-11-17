@@ -188,19 +188,21 @@ export function apply(ctx) {
   const MODELS = [['haiku', 'Haiku'], ['sonnet', 'Sonnet'], ['opus', 'Opus']]
   const pickOf = (m) => (!m ? '' : MODELS.some(([v]) => v === m) ? m : 'other')
   const modelName = (m) => (MODELS.find(([v]) => v === m) || [m, m])[1]
-  const draftOf = (r) => ({ ...r, ...fromSchedule(r.schedule), modelPick: pickOf(r.model || ''), deliver: [...(r.deliver || [])], mail_to: [...(r.mail_to || [])], mailOthers: !!(r.mail_to && r.mail_to.length) })
+  const draftOf = (r) => ({ ...r, ...fromSchedule(r.schedule), modelPick: pickOf(r.model || ''), otherModel: pickOf(r.model || '') === 'other' ? r.model : '', deliver: [...(r.deliver || [])], mail_to: [...(r.mail_to || [])], mailOthers: !!(r.mail_to && r.mail_to.length) })
   const readForm = () => {
     const v = (id) => (document.getElementById(id) || {}).value
     if (!edit) return
     for (const [k, id] of [['name', 'sch-name'], ['prompt', 'sch-prompt'], ['profile', 'sch-profile'], ['time', 'sch-time']]) if (v(id) != null) edit[k] = v(id)
+    const other = v('sch-model')
+    if (other != null && edit.modelPick === 'other') edit.model = other.trim()
     const pick = v('sch-model-pick')
     if (pick != null) {
-      if (pick === 'other' && edit.modelPick !== 'other') edit.model = MODELS.some(([m]) => m === edit.model) ? '' : edit.model
+      // Leaving Other… keeps its name for a way back; coming to it brings that name, never a listed alias.
+      if (edit.modelPick === 'other' && pick !== 'other') edit.otherModel = edit.model
+      if (pick === 'other' && edit.modelPick !== 'other') edit.model = edit.otherModel || ''
       edit.modelPick = pick
       if (pick !== 'other') edit.model = pick
     }
-    const other = v('sch-model')
-    if (other != null && edit.modelPick === 'other') edit.model = other.trim()
     const to = v('sch-mailto')
     if (to != null) edit.mail_to = to.split(/[,;\s]+/).map((a) => a.trim()).filter(Boolean)
     const hrs = v('sch-hours')

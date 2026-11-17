@@ -100,7 +100,7 @@
   },
   {
    "id": "F-OB-18",
-   "title": "The vault's graph: pages with their top folder, tags and number of links, links as edges, tags as nodes when asked, the index a hub; the 0.8 browser still draws it",
+   "title": "The vault's graph: pages with their top folder, tags and number of links, links as edges, tags as nodes when asked, the index a hub; the Knowledge activity draws it",
    "priority": "medium",
    "check": "agent"
   },
@@ -137,6 +137,78 @@
   {
    "id": "F-OB-24",
    "title": "Links and tags are read as Obsidian (and 0.8) reads them, by one reader for Claude's commands, pages, the graph and the checks: none inside %%…%%, <!-- -->, $$…$$ or any code span; a heading's links and #tags count; tags from tags: or tag:, split at commas and spaces; no tag after ( ; no Markdown link with a space in its bare address",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-30",
+   "title": "Knowledge is the plugin's own activity (a folder of notes icon in the activity bar, full screen): #17's header, vault switcher, ⋯ menu and tabs Home · Pages · Graph · Ingest · Health · Settings (no Ask), its own routes #obsidian:knowledge/<vault>/<tab>/<path> (a vault opens on Home, the last one again), its badge the changes waiting and the findings that need the user",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-31",
+   "title": "A page reads as #17 read it: the tree with its filters and find, the page's properties and Echo's safe HTML, its links routing inside the activity, a missing page offered to make, web links opened by Echo, the Links, Outline and History rails and the local graph",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-32",
+   "title": "A page is edited as #17 did: the editor with its live preview, typed text kept across Echo's redraws, a save only over what was opened (committed when the vault commits), a change on disk shown as the conflict with Compare, Take theirs and Keep mine; a new page; a page's row put in the index",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-33",
+   "title": "A page's history in the activity: its versions from git, a version's diff, Restore — refused over changes git hasn't got, else a new commit",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-34",
+   "title": "The Graph tab draws #17's live graph: by folder or tag with its legend, find, a page selected with its card and its local graph, the index and isolated pages hidden or shown, tags as nodes",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-35",
+   "title": "The Health tab lists the code checks' findings by group and kind with #17's score, trend (one point a day) and filters; a finding with its pages, Ask about it and Ignore / List again",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-36",
+   "title": "Home: what changed in the last 14 days (Echo's writes and git's commits), the Health card, where to start reading, the vault's card and the Ask card",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-37",
+   "title": "A vault's Settings tab keeps 0.8's What Claude knows (its state, the When-line and the five parts changed in place, read again, confirm, a new reading proposed) and For whom (clients and threads), then #17's Structure, Meeting minutes, Ingest, Ask, Schema, Skills and Git & AI; a setting changed is kept; Remove asks first",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-38",
+   "title": "Ask the vault opens Claude Code in Echo's panel, in its own tab Claude · Knowledge, in the vault as its own project at its root (its CLAUDE.md, AGENTS.md and .claude/skills), on the user's click only; nothing is typed into it",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-39",
+   "title": "A call's page shows Knowledge in Echo's generic slots and promises nothing this version doesn't do: the chip (call.header) says saving minutes comes in a later version; the ⋯ menu's Save to Knowledge… opens the save sheet over the call saying so (call.menu, ctx.ui.sheet); no line while the minutes come (call.minutes); the host keeps where they would go (thread's vault, else client's, else the default; automatic; the call's profile) and the user's choice per call by its stamp",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-40",
+   "title": "Echo's Settings → From plugins → Knowledge lists the vaults and opens each in the activity; ⌘K has Knowledge's actions",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-41",
+   "title": "What later versions bring says so where #17 showed it, never made up: Ingest and its sources, Health's fixes and AI checks, minutes saved into a vault, a new vault from the twin starter, the twin skill",
    "priority": "high",
    "check": "agent"
   }

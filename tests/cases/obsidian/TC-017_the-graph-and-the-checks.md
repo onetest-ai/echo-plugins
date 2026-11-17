@@ -1,6 +1,6 @@
 ---
 id: TC-017
-title: A vault's graph with its hubs, folders, tags and links, as the 0.8 browser draws it; its checks, read only
+title: A vault's graph with its hubs, folders, tags and links, as the activity draws it; its checks, read only
 priority: medium
 type: functional
 requirements: [F-OB-18, F-OB-19]
@@ -24,7 +24,7 @@ tags: [obsidian, knowledge, graph, checks]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `obs graph '{"id":"acme-twin","mode":"links"}'` | `hubs` ["CATALOG.md"]; clients/acme.md with `folder` "clients", `deg` 5; CATALOG.md's `folder` "(top level)"; an edge clients/acme.md → topics/rollout.md; no tag nodes |
+| 1 | `obs graph '{"id":"acme-twin","mode":"links"}'` | `hubs` ["CATALOG.md"]; clients/acme.md with `folder` "clients", `deg` 5; CATALOG.md's `folder` "" (the top level); an edge clients/acme.md → topics/rollout.md; no tag nodes |
 | 2 | `mode` "both" | Tag nodes #client, #concept, #meeting, #stray-tag (`tag` true) and edges from pages to them |
 | 3 | `obs checks '{"id":"acme-twin"}'` | `not_in_index` [notes/2026-01-08-weekly.md, topics/hostile.md]; `broken` [[clients/acme.md, "Pricing model"]]; `isolated` the same two pages; `no_props` [topics/hostile.md]; `unknown_tags` [[topics/hostile.md, "stray-tag"]]; `dead_rows` []; `no_index` false; `meeting_tag_missing` null |
 | 4 | `(cd "$T" && git status --porcelain)` | Nothing changed |

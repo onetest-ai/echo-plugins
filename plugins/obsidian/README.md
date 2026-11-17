@@ -35,10 +35,18 @@ with it and what to leave alone. You correct the description, and from then on C
 - **Each vault's settings** (`echoctl plugin call obsidian set '{"id", "key", "value"}'`): the AI profile that reads it,
   whether it takes your calls' minutes (`minutes`: auto, ask or off), whether Echo commits what it writes, its folders
   if Echo found them wrong. `default` names the vault a call's minutes go to when its thread or client has none.
+- **The Knowledge activity** (Knowledge in the activity bar, the folder of notes icon; #17's Knowledge 0.1.1 client):
+  a vault's Home (what changed, its health, where to start reading), Pages (read, edit, conflicts, history), Graph,
+  Ingest, Health (the code checks' findings and the score) and Settings — with "What Claude knows" (the description
+  above and whom the vault is for). *Ask the vault* opens Claude Code in Echo's panel, in the vault as its own project:
+  you ask there. A call's page shows where its minutes go (its chip, its ⋯ items, the line while they come). Ingest,
+  Health's fixes and AI checks, saving minutes into a vault and a new vault from the twin starter come in later
+  versions: until then they say so. Settings → From plugins → Knowledge lists the vaults and opens them.
 - **From Obsidian vaults 0.8**: your vaults, their descriptions and Claude's entries stay; each vault takes a call's
   minutes only when you ask. Echo's own facts vault of 0.8 (the Knowledge switch, Knowledge → Notes) is gone.
 - Removing a vault from Echo takes all of this back; the folder stays as it is.
 
 Needs Echo 0.9.15 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
-entries; `client.js` draws Settings → From plugins → Knowledge and the Knowledge activity. Part of the
+entries; `client.js` wires the Knowledge activity (`view.js`, `model.js`, `knowledge.css`, through `seam.js` to the
+host half's commands) into Echo's slots. Part of the
 [Echo plugins](../../README.md) marketplace.

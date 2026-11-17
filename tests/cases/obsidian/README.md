@@ -6,6 +6,7 @@ Run in order, on one environment, by an agent with Bash (the CLI), as Echo's own
 ```bash
 ECHO_REPO=<an Echo checkout from main (0.9.15's primitives), built: cargo build> \
   tests/fixtures/obsidian/up.sh "$(mktemp -d)/ob" 47970   # prints base_url, env, vaults
+# after 22:50 or before 06:00 the made-up day needs an earlier time: DATA_NOW=<YYYY-MM-DDTHH:MM> before up.sh
 # TC-006 only, on an environment of its own: a user of Obsidian vaults 0.8.0, updated in the case
 OBSIDIAN_FROM=0.8 ECHO_REPO=… tests/fixtures/obsidian/up.sh "$(mktemp -d)/ob8" 47972
 . <dir>/env                                               # before every CLI step: echoctl = the debug build
@@ -28,3 +29,7 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   editor would — write, append to or remove a file (`printf`, `rm`), look at its bytes (`xxd`) — and ask git there
   (`git status`, `git log`, `git checkout -- <file>` to undo a step's change); `curl` the window's image route. Nothing
   else.
+- The activity's cases (TC-030 on) are window cases: headless Playwright on `<base_url>` (never the user's browser, never
+  a native dialog — *Choose…* in the Connect and New vault sheets is the system's folder picker: not pressed), light and
+  dark at 1440×900. Their screens are compared with #17's (onetest-ai/echo-plugins#17 on #677's Echo), side by side,
+  in `tests/reports/obsidian-knowledge-ui/`. "Ask the vault" opens the fake Claude in Echo's panel: never typed into.

@@ -5,7 +5,7 @@
 // Nothing is read from a disk: the vault is made up in memory.
 import { apply } from '../../plugins/obsidian/main.js'
 
-export const COMMANDS = ['tree', 'search', 'graph', 'checks', 'page', 'find', 'backlinks', 'browse']
+export const COMMANDS = ['tree', 'search', 'graph', 'checks', 'page', 'find', 'backlinks']
 
 export async function scale(n, kb, commands = COMMANDS, say = () => {}) {
   const store = new Map()

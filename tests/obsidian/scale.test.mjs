@@ -1,5 +1,5 @@
 // Knowledge's index at scale (tests/obsidian/scale.mjs): 5,000 made-up pages of 1 KB with about 22 links each, indexed
-// and asked by tree, search, graph, checks, page, find, backlinks and browse in one process. Node has no 64 MB cap like
+// and asked by tree, search, graph, checks, page, find and backlinks in one process. Node has no 64 MB cap like
 // Echo's QuickJS host, so this is a generous bound against a regression (tests/tools/obsidian-scale.mjs under qjs
 // --memory-limit 65536 is the real check): the heap stays under 160 MB and no command takes 20 s.
 import { test } from 'node:test'

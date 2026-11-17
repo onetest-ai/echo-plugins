@@ -1085,9 +1085,14 @@ function wikilinksIn(line, n, out) {
 function mdLinksIn(line, n, out) {
   let i = 0
   let budget = DEST_BUDGET(line)
+  // The last `[` before `i` (Rust: `line[..i].rfind('[')`), kept as `i` moves forward — searched back from each `](` it
+  // would be quadratic on a line of `](` with no `[`.
+  let lastOpen = -1
+  let seen = 0
   while (i < line.length && out.length < PAGE_MAX_LINKS && budget > 0) {
     if (line[i] === ']' && line[i + 1] === '(') {
-      const open = i > 0 ? line.lastIndexOf('[', i - 1) : -1 // the `[` that opens this text (not one of a wikilink)
+      for (; seen < i; seen++) if (line[seen] === '[') lastOpen = seen
+      const open = lastOpen // the `[` that opens this text (not one of a wikilink)
       if (open < 0 || (open > 0 && line[open - 1] === '[')) { i++; continue }
       const embed = open > 0 && line[open - 1] === '!'
       const rest = line.slice(i + 2, i + 2 + DEST_MAX)

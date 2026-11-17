@@ -526,3 +526,12 @@ test('isTextSource: a trailing `.` component is skipped as Path does', () => {
   assert.equal(textSource('a.md/.'), true)
   assert.equal(textSource('a/..'), false)
 })
+
+test('limits: a line of `](` with no usable `[` is read in linear time', () => {
+  for (const line of [']('.repeat(200000), '[[' + ']('.repeat(200000), '](<'.repeat(200000)]) {
+    const t = Date.now()
+    assert.deepEqual(scanPage('a.md', line).links, [])
+    assert.ok(Date.now() - t < 1000, `${line.slice(0, 4)}…: ${Date.now() - t} ms`)
+  }
+  assert.deepEqual(scanPage('a.md', '[x](a.md) [[w]](b.md) [y](c.md)').links.map((l) => l.target), ['w', 'a.md', 'c.md'])
+})

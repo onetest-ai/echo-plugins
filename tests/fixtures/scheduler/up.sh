@@ -63,9 +63,7 @@ def run(at, ms, ok=True, text="", model="", calls=0, cost=0.0):
     return r
 jobs = {"needs": [], "thread_sync": [], "fetch": [], "brain_reader": []}
 for d in range(29, -1, -1):
-    day = (now - dt.timedelta(days=d)).replace(hour=9, minute=0, second=0)
-    if day > now:
-        day = now - dt.timedelta(hours=1)
+    day = now - dt.timedelta(days=d, hours=3)  # every run of a day before the failed one of today (now − 12 min)
     for k in range(d % 3 + 1):
         jobs["needs"].append(run(day + dt.timedelta(minutes=20 * k), 4200, True, "2 items in Needs you now", "claude-haiku", 1, 0.004 + 0.001 * k))
     if d % 2 == 0:

@@ -387,3 +387,64 @@ test('a folder with files, or one inside a connected vault, is refused before an
   assert.deepEqual(files(outer.root), before)
   await assert.rejects(w.ctx.run('new_vault', { name: '  ' }), /needs a name/)
 })
+
+// ── the activity's commands (seam.js → view.js): the Ingest queue and the Add a source sheet, the twin sheets ──
+
+test('ingest_queue: the sheet\'s queue in #17\'s shape — the sources with meta, what is queued, no runs (step 5)', async () => {
+  const w = world({ calls: [call(CALL, 'Weekly delivery sync')] })
+  const v = await w.vault('Twin', { minutes: 'off' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.run('set', { id: v.id, key: 'ingest.calls', value: 'add' })
+  write(v.root, 'raw_inbox/notes.md', '# Notes\n')
+  await w.ctx.fire('minutes_written', w.data.payload(CALL))
+  const q = await w.ctx.run('ingest_queue', { id: v.id })
+  assert.deepEqual([q.folder, q.exists, q.runs, q.max_file, q.profile_name], ['raw_inbox', true, [], 50 << 20, 'Claude Code (as configured)'])
+  const by = Object.fromEntries(q.sources.map((s) => [s.path, [s.kind, s.state, s.meta.markdown, s.meta.queued]]))
+  assert.deepEqual(by, { 'raw_inbox/notes.md': ['file', 'new', true, false], [`call:${CALL}`]: ['echo', 'new', false, true] })
+  assert.deepEqual(q.offer, { count: 1, folder: 'raw_inbox' })
+})
+
+test('the Add a source sheet: files picked then handed back, calls with their profile and note, mail search, a Teams chat; the skip of a queued one', async () => {
+  const chat = { id: '19:x@thread.v2', topic: 'Ops/Infra: on-call', members: [], url: 'https://teams.example/l/chat/19:x', since: '2026-11-01', until: '2026-11-07', messages: [{ at: '2026-11-02T10:00:00Z', from: 'Sam Rivera', text: 'Paged twice.', files: ['log.txt'] }] }
+  const w = world({ calls: [call(CALL, 'Weekly delivery sync'), call('2026-11-06_100000-x', 'Elsewhere', { profile: 'client-x' })], m365: { search: async () => ({ results: [{ kind: 'mail', id: 'm1' }, { kind: 'chats', chat: '19:x@thread.v2', channel: null }, { kind: 'chats', chat: '19:g@thread.tacv2', channel: '19:g' }, { kind: 'files', id: 'f' }], errors: {} }), chat: async () => chat } })
+  const v = await w.vault('Twin', { minutes: 'off' })
+  write(w.base, 'deck.pdf', '%PDF made up')
+  w.ctx.system.pickFiles = async () => [w.ctx.handle(npath.join(w.base, 'deck.pdf'))]
+  const p = await w.ctx.run('pick_files', {})
+  assert.deepEqual(p.files, [{ name: 'deck.pdf', size: 12 }])
+  const a = await w.ctx.run('source_add', { id: v.id, kind: 'files', pick: p.seq }, { files: p.handles })
+  assert.deepEqual([a.added.map((x) => x.path), a.refused], [['raw_inbox/deck.pdf'], []])
+  const calls = (await w.ctx.run('source_calls', { id: v.id, q: '' })).calls
+  assert.deepEqual(calls.map((c) => [c.name, c.profile_ok, c.profile_name]), [['2026-11-06_100000-x', false, 'Client X'], [CALL, true, 'Claude Code (as configured)']])
+  const mm = await w.ctx.run('source_add', { id: v.id, kind: 'call', call: '2026-11-06_100000-x' })
+  assert.deepEqual(mm.mismatch, { call: 'client-x', vault: 'system', call_name: 'Client X', vault_name: 'Claude Code (as configured)' })
+  const m = await w.ctx.run('source_m365', { id: v.id, q: 'pilot' })
+  assert.deepEqual(m.results.map((h) => h.id || h.chat), ['m1', '19:x@thread.v2'], 'a mail and a chat — not a channel\'s post, not a file')
+  assert.deepEqual(await w.ctx.run('source_m365', { id: v.id, q: ' ' }), { signed_in: true, results: [] })
+  const t = await w.ctx.run('source_add', { id: v.id, kind: 'chat', chat: '19:x@thread.v2', since: '2026-11-01', until: '2026-11-07' })
+  assert.equal(t.path, 'raw_inbox/teams/2026-11-07-ops-infra-on-call.md')
+  const text = read(v.root, t.path)
+  assert.deepEqual(['title', 'kind', 'since', 'until', 'source'].map((k) => prop(text, k)), ['Ops/Infra: on-call', 'teams', '2026-11-01', '2026-11-07', 'https://teams.example/l/chat/19:x'])
+  assert.ok(text.includes(`### Sam Rivera · ${localTime('2026-11-02T10:00:00Z')}\n\nPaged twice.\n\nAttachments: log.txt\n`), text)
+  const w2 = world({ m365: { search: async () => { throw new Error('Microsoft 365 isn\'t connected: sign in to it in Echo\'s Settings → Calendar & chat') } } })
+  const v2 = await w2.vault('Other', { minutes: 'off' })
+  assert.deepEqual(await w2.ctx.run('source_m365', { id: v2.id, q: 'x' }), { signed_in: false, results: [] })
+})
+
+test('the twin sheets: the skill\'s text for every session, its paths absolute; adding or installing it is refused, saying why (Echo writes no .claude for a plugin)', async () => {
+  const w = world()
+  const v = await w.vault('My twin')
+  const t = await w.ctx.run('twin_text', { id: v.id })
+  assert.equal(t.name, 'my-twin')
+  assert.equal(t.own, false, 'the vault has none of its own: the starter\'s')
+  assert.ok(t.text.startsWith('---\nname: my-twin\n') && t.text.includes(`echo_vault: ${v.id}\n---\n`), t.text.slice(0, 200))
+  assert.ok(t.text.includes(`\`${v.root}/knowledge/CATALOG.md\``), 'paths are absolute')
+  await assert.rejects(w.ctx.run('twin', { id: v.id, op: 'add' }), /write a vault's \.claude folder/)
+  await assert.rejects(w.ctx.run('twin', { id: v.id, op: 'global', name: 'my-twin' }), /~\/\.claude\/skills/)
+  // The New vault sheet sends the folder it picked as `pick`, and takes the vault back.
+  const f = npath.join(w.base, 'fresh')
+  nfs.mkdirSync(f)
+  w.folders.push(f)
+  const r = await w.ctx.run('new_vault', { name: 'Fresh', pick: nfs.realpathSync(f), git: false, minutes: 'ask' })
+  assert.deepEqual(r.vault, { id: 'fresh', name: 'Fresh' })
+})

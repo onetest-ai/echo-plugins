@@ -2133,6 +2133,42 @@ export function mailSourceText(thread) {
   return { title, date, subject, text }
 }
 
+/** A Teams chat's messages as a source (sources.rs `add_chat_messages`), from what `ctx.m365.chat` gives: `{id, topic,
+ *  members, url, since, until, messages: [{at, from, text, files}]}` (oldest first). → {title, name, until, text}. */
+export function chatSourceText(chat) {
+  const msgs = (chat && chat.messages) || []
+  if (chat && chat.since && chat.until && chat.since > chat.until) throw new Error('the days end before they start')
+  const name = oneLine(chat.topic || '') || (chat.members || []).map((m) => oneLine(m.name || '')).filter(Boolean).join(', ') || 'Teams chat'
+  if (!msgs.length) throw new Error(`nothing was written in ${name} from ${chat.since} to ${chat.until}`)
+  const people = []
+  for (const m of msgs) { const n = oneLine(m.from || ''); if (n && !people.includes(n)) people.push(n) }
+  const fm = [`title: ${yamlValue(name)}`, `date: ${chat.until}`, 'kind: teams', `since: ${chat.since}`, `until: ${chat.until}`]
+  if (people.length) fm.push(`people: ${yamlValue(people.join(', '))}`)
+  if (oneLine(chat.url || '')) fm.push(`source: ${yamlValue(oneLine(chat.url))}`)
+  fm.push('origin: echo')
+  let text = `---\n${fm.join('\n')}\n---\n\n# ${mdText(name)}\n`
+  for (const m of msgs) {
+    text += `\n### ${mdText(oneLine(m.from || '') || 'Someone')} · ${localTime(m.at)}\n\n`
+    const body = rsTrim(String(m.text || ''))
+    if (body) text += `${body}\n`
+    const files = (m.files || []).map((f) => mdText(oneLine(f))).filter(Boolean)
+    if (files.length) text += `\nAttachments: ${files.join(', ')}\n`
+  }
+  return { title: name, name, until: chat.until, text }
+}
+
+/** The vault's twin skill for use from any folder (starter.rs `twin_skill_text`): named `name`, marked as Echo's copy
+ *  of vault `v.id` (`echo_vault:`), its paths made absolute to the vault. */
+export function twinSkillText(text, v, name) {
+  const root = String(v.root).replace(/\\/g, '/')
+  const [raw, body0] = fmSplit(String(text))
+  const lines = (raw || '').split('\n').filter((l) => l !== '' && !l.startsWith('name:') && !l.startsWith('echo_vault:'))
+  let body = body0
+  for (const p of ['knowledge/', 'raw_inbox/', 'AGENTS.md', 'log.md', '.claude/']) body = body.split(`\`${p}`).join(`\`${root}/${p}`)
+  body = body.split('Paths below are relative to the vault\'s root folder.').join(`The vault is \`${root}\` (${v.name}); work there, wherever Claude Code was started.`)
+  return `---\n${[`name: ${name}`, ...lines, `echo_vault: ${v.id}`].join('\n')}\n---\n${body}`
+}
+
 /** A web page as a source (sources.rs `add_page`): its title and Markdown as Echo read them. */
 export function webSourceText(url, title0, md, date, fetched) {
   const title = oneLine(title0) || url
@@ -2156,8 +2192,14 @@ export const TWIN = 'twin@1'
 export const twinTarget = (p) => (p === 'gitignore' ? '.gitignore' : p)
 /** A starter file's text with the vault's name, owner and day filled in; Obsidian's own `{{title}}`/`{{date}}` stay. */
 export const fillStarter = (text, { name, owner, date }) => String(text).split('{{vault.name}}').join(name).split('{{vault.owner}}').join(owner).split('{{vault.date}}').join(date)
-/** A call's record in the store: `calls/<folder>.json` (a folder name that isn't plain ASCII by its sha). */
-export const callKey = (call, sha) => (/^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/.test(String(call)) ? String(call) : `x-${sha(String(call)).slice(0, 24)}`)
+/** A call's key in the store (`calls/<key>.json`): its folder's stamp `YYYY-MM-DD_HHMMSS`, which a retitle keeps (Echo
+ *  opens a retitled call by it); a folder without one by its name when that is plain ASCII, else by its sha. */
+export const callKey = (call, sha) => {
+  const s = String(call || '')
+  const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(s)
+  if (m) return m[1]
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/.test(s) ? s : `x-${sha(s).slice(0, 24)}`
+}
 
 export function apply(ctx) {
   const running = new Set() // vaults being read now (one analysis per vault at a time)
@@ -3455,8 +3497,7 @@ export function apply(ctx) {
   // What the later steps of Knowledge 1.0 bring answers that it isn't here yet (`LATER` below).
   const HEALTH_LATER = 'Health\'s fixes and AI checks aren\'t in this version of Knowledge yet'
   const INGEST_LATER = 'Ingest isn\'t in this version of Knowledge yet'
-  const MINUTES_LATER = 'Saving minutes into a vault isn\'t in this version of Knowledge yet'
-  const gitNow = async (v) => {
+    const gitNow = async (v) => {
     try {
       const i = await ctx.git.info(v.root)
       if (!i.repo) return { git: null, installed: true }
@@ -3535,7 +3576,7 @@ export function apply(ctx) {
       vault: { id: v.id }, skills, has_twin: skills.some((k) => k.name === 'twin' && k.kind !== 'agents'), global_twin: null, global_twin_name: 'twin',
       tags: taxText != null ? allowedTags(taxText).length : null, terms: null, tag_file: tagTax, meeting_tag: meetingTag(v.minutes.tag, taxText),
       index_bytes: ist && ist.kind === 'file' ? ist.size : 0, pages: typeof d.md_files === 'number' ? d.md_files : null, cache_bytes: null,
-      past: null, templates, in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
+      past: (() => { try { return pastCountOf(v) } catch { return null } })(), templates, in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
     }
   })
   // The editor's preview: the text as the page would read, nothing written.
@@ -3772,62 +3813,13 @@ export function apply(ctx) {
     }
   })
 
-  // A call's Knowledge (the chip on its page, its ⋯ items, the minutes' line): the vaults it may go to, those its minutes
-  // would go to by themselves — the vaults for its threads, else its client, else the default, each on the call's AI
-  // profile and taking minutes automatically — and the user's choice for this call (`calls.json`). Minutes aren't saved
-  // into a vault in this version (step 4): `later` says so, and the window promises nothing.
-  // A call is known by its stamp (its folder's `YYYY-MM-DD_HHMMSS`, which a retitle keeps — Echo opens a retitled
-  // call by it): Echo gives a plugin no other id that survives a rename. Choices of calls over 180 days old are dropped.
-  const callKey = (name) => { const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(String(name || '')); return m ? m[1] : String(name || '') }
-  const CHOICE_DAYS = 180
-  const choicesFrom = (text) => { try { const j = JSON.parse(text || '{}'); return j && typeof j === 'object' && !Array.isArray(j) ? j : {} } catch { return {} } }
-  const choiceOf = (j, name) => { const x = j[callKey(name)]; return x && typeof x === 'object' ? x.vault : typeof x === 'string' ? x : null }
-  const choiceFresh = (key, now) => { const d = Date.parse(`${key.slice(0, 10)}T00:00:00Z`); return isNaN(d) || now - d <= CHOICE_DAYS * 864e5 }
-  ctx.command('call_knowledge', ({ call }) => {
-    const c = call && typeof call === 'object' ? call : {}
-    const name = String(c.name || '')
-    if (!name) throw new Error('call: the call as its page has it')
-    const prof = profilesNow()
-    const callProfile = c.profile || prof.default
-    const vs = load()
-    const vaults = vs.map((v) => ({ id: v.id, name: v.name, available: folderThere(v), profile: v.profile || prof.default, mode: v.minutes.mode }))
-    const mine = (b) => vs.filter((v) => (v.belongs || []).some(b))
-    const threads = Array.isArray(c.threads) ? c.threads : []
-    let routed = mine((b) => b.thread && threads.includes(b.thread))
-    if (!routed.length && c.client) routed = mine((b) => b.client === c.client)
-    if (!routed.length && prefs().default) routed = vs.filter((v) => v.id === prefs().default)
-    const choice = choiceOf(choicesFrom(ctx.store.read('calls.json')), name)
-    const targets = routed.filter((v) => v.minutes.mode === 'auto' && (v.profile || prof.default) === callProfile).map((v) => ({ id: v.id, name: v.name }))
-    return { vaults, targets: choice && choice !== 'none' ? vaults.filter((v) => v.id === choice).map((v) => ({ id: v.id, name: v.name })) : targets, record: { saved: [], choice }, stale: [], failure: null, profile: c.profile || null, later: MINUTES_LATER }
-  })
-  ctx.command('call_choice', ({ call, vault }) => {
-    const name = String(call || '')
-    if (!name) throw new Error('call: the call\'s name')
-    if (vault != null && vault !== '' && vault !== 'none') find(load(), vault)
-    const now = Date.now()
-    ctx.store.update('calls.json', (text) => {
-      const j = choicesFrom(text)
-      for (const k of Object.keys(j)) if (!choiceFresh(k, now)) delete j[k]
-      const k = callKey(name)
-      if (vault == null || vault === '') delete j[k]; else j[k] = { vault: String(vault), at: new Date(now).toISOString() }
-      return JSON.stringify(j, null, 2)
-    })
-    return true
-  })
-
-
-  // What the activity draws now and the later steps of Knowledge 1.0 answer: Ingest and its sources (step 5), minutes
-  // into a vault and a new vault from the twin starter (step 4), Health's fixes and AI checks (step 5). Each says so;
-  // none makes anything up.
+  // What the activity draws now and step 5 of Knowledge 1.0 answers: Ingest's runs and their review, Health's fixes and
+  // AI checks. Each says so; none makes anything up.
   const LATER = {
-    ingest_queue: INGEST_LATER, ingest_run: INGEST_LATER, ingest_changes: INGEST_LATER, ingest_text: INGEST_LATER, ingest_go: INGEST_LATER,
+    ingest_run: INGEST_LATER, ingest_changes: INGEST_LATER, ingest_text: INGEST_LATER, ingest_go: INGEST_LATER,
     ingest_stop: INGEST_LATER, change: INGEST_LATER, ingest_apply: INGEST_LATER, ingest_discard: INGEST_LATER, ingest_requeue: INGEST_LATER,
-    ingest_skill: INGEST_LATER, source_add: INGEST_LATER, source_skip: INGEST_LATER, baseline: INGEST_LATER, pick_files: INGEST_LATER,
-    source_calls: INGEST_LATER, source_m365: INGEST_LATER,
+    ingest_skill: INGEST_LATER,
     fixes: HEALTH_LATER, fix: HEALTH_LATER, fix_all: HEALTH_LATER, lint: HEALTH_LATER, lint_run: HEALTH_LATER, lint_stop: HEALTH_LATER,
-    minutes_preview: MINUTES_LATER, save_minutes: MINUTES_LATER, past: MINUTES_LATER, sample: MINUTES_LATER,
-    new_vault: 'A new vault from Echo\'s twin starter isn\'t in this version of Knowledge yet',
-    twin: 'Installing the twin skill isn\'t in this version of Knowledge yet', twin_text: 'Installing the twin skill isn\'t in this version of Knowledge yet',
   }
   for (const [name, why] of Object.entries(LATER)) ctx.command(name, () => { throw new Error(why) })
 
@@ -4073,6 +4065,8 @@ export function apply(ctx) {
   // A call's record is the store's `calls/<folder>.json` {choice, saved, failed}; a vault's sources ledger
   // `vaults/<id>/ingest.json`; notes saved by the rule wait for one commit per quiet window (`vaults/<id>/pending.json`).
   const QUIET_MS = 2 * 60 * 1000
+  // A command also called from another one here (`own.<name>`).
+  const own = (name, fn) => { own[name] = fn; ctx.command(name, fn) }
   const lockOf = new Map()
   // One save into a vault at a time in this process (its note, its index row and log line read and written together);
   // across processes the writes are compare-and-swap (`createNew`, `ifSha`), so a race fails rather than loses a row.
@@ -4099,7 +4093,6 @@ export function apply(ctx) {
   }
   const today = () => ymd(new Date())
   const errText = (e) => String((e && e.message) || e)
-  const profilesNow = () => { try { return ctx.profiles() || { default: null, profiles: [] } } catch { return { default: null, profiles: [] } } }
   // An AI profile as a vault or a call names it: `null` is the default profile.
   const profileOf = (p, ps = profilesNow()) => p || ps.default || null
   const profileName = (id, ps = profilesNow()) => ((ps.profiles || []).find((p) => p.id === id) || {}).name || id || 'the default profile'
@@ -4189,6 +4182,19 @@ export function apply(ctx) {
     throw new Error(`no free file name for ${base}`)
   }
   const pendingPath = (id) => `vaults/${id}/pending.json`
+  // A file Echo wrote for a note still waiting for its commit (`pending.json`), unchanged since, is Echo's, not the
+  // user's: any save may commit it. A commit takes the paths it holds out of the waiting list.
+  const absorbPending = (v, dirty) => {
+    if (!dirty.paths.size) return dirty
+    for (const it of (readJson(pendingPath(v.id), { items: [] }).items || [])) {
+      if (dirty.paths.has(it.path) && it.sha && (statSafe(v, it.path, { sha: true }) || {}).sha === it.sha) dirty.paths.delete(it.path)
+    }
+    return dirty
+  }
+  const dropPending = (v, paths, commit) => {
+    if (!commitId(commit) || !paths.length) return
+    try { updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (q) => { q.items = (q.items || []).filter((it) => !paths.includes(it.path)) }) } catch (e) { ctx.log(`pending of ${v.id}: ${errText(e)}`) }
+  }
   // Save a call's minutes into vault `v`. `how`: {manual, new, replace, anyway, stem, transcript, chat};
   // `commit`: 'now' (a command: one commit), 'quiet' (the rule's: one commit per quiet window), 'later' (past minutes:
   // the caller's one commit). → {vault, path, state, index, commit, paths (to commit)}.
@@ -4210,12 +4216,7 @@ export function apply(ctx) {
     // git first: from the check that the note is as Echo left it to the write, nothing slow runs.
     const cands = [mine && mine.kind === 'file' ? entry.path : null, indexRel, logRel].filter(Boolean)
     const dirty = v.commit && commitMode !== 'off' ? await dirtyOf(v, cands) : CLEAN
-    // A file Echo wrote for a note still waiting for its commit, unchanged since, is Echo's: it goes in that commit.
-    if (commitMode === 'quiet' && dirty.paths.size) {
-      for (const it of (readJson(pendingPath(v.id), { items: [] }).items || [])) {
-        if (dirty.paths.has(it.path) && it.sha && (statSafe(v, it.path, { sha: true }) || {}).sha === it.sha) dirty.paths.delete(it.path)
-      }
-    }
+    absorbPending(v, dirty)
     let rel, state, was = null
     if (mine && mine.kind === 'file') {
       rel = entry.path
@@ -4269,6 +4270,7 @@ export function apply(ctx) {
     let commit
     if (!v.commit) commit = 'off'
     else if (commitMode === 'now') commit = await commitOne(v, written, dirty, `Echo: minutes of "${n.title}" (${n.date}) → ${notesDir}/`)
+    if (commitMode === 'now') dropPending(v, clean, commit)
     else if (!clean.length) commit = `skipped: ${dirty.why || 'the files had changes of yours that weren\'t committed'}`
     else commit = 'pending'
     if (commitMode === 'quiet' && commit === 'pending') {
@@ -4387,7 +4389,7 @@ export function apply(ctx) {
     const dot = n.name.lastIndexOf('.')
     const [stem, ext] = dot > 0 ? [n.name.slice(0, dot), n.name.slice(dot)] : [n.name, '']
     const readmeRel = `${base}/README.md`
-    const dirty = v.commit ? await dirtyOf(v, there ? [`${dir}/${n.name}`] : [`${dir}/${n.name}`, readmeRel]) : CLEAN
+    const dirty = v.commit ? absorbPending(v, await dirtyOf(v, there ? [`${dir}/${n.name}`] : [`${dir}/${n.name}`, readmeRel])) : CLEAN
     const written = []
     if (!there) {
       const text = sourcesReadme()
@@ -4630,9 +4632,9 @@ export function apply(ctx) {
     }
   })
   // The note the minutes would make in a vault and its index row — nothing written.
-  ctx.command('preview', async ({ call: c, vault, stem }) => {
+  own('minutes_preview', async ({ call: c, vault, id, stem }) => {
     const call = callId(c)
-    const v = find(load(), vault)
+    const v = find(load(), vault || id)
     const src = source(call, { transcript: false, chat: false })
     const n = await noteOf(v, src, call, {})
     const notesDir = notesDirOf(v)
@@ -4659,13 +4661,18 @@ export function apply(ctx) {
     const v = find(load(), vault)
     const day = typeof since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(since) ? since : null
     if (!day) throw new Error('since: a day, YYYY-MM-DD')
-    const calls = (ctx.echo.read('calls', { since: day, limit: 500 }) || []).filter((c) => c.minutes)
-    const todo = calls.filter((c) => {
+    return pastMinutes(v, day, dry)
+  })
+  // The past calls of a vault (since `day`, else the last 500 calls), and with `dry` false their minutes saved there.
+  const pastTodo = (v, day) => (ctx.echo.read('calls', day ? { since: day, limit: 500 } : { limit: 500 }) || []).filter((c) => c.minutes).filter((c) => {
       const id = String(c.id || '').replace(/^call:/, '')
       const rec = callRec(id)
       return rec.choice !== 'none' && (!rec.choice || rec.choice === v.id) && !rec.saved.some((e) => e.vault === v.id) && sameProfile(c.profile, v) &&
         (rec.choice === v.id || routeOf(c.threads || []).vaults.some((x) => x.id === v.id))
-    })
+  })
+  const pastCountOf = (v) => { const todo = pastTodo(v, null); return { count: todo.length, first: todo.slice(0, 5).map((c) => ({ call: String(c.id).replace(/^call:/, ''), title: c.title, date: c.date })) } }
+  const pastMinutes = async (v, day, dry) => {
+    const todo = pastTodo(v, day)
     if (dry) return { count: todo.length, first: todo.slice(0, 5).map((c) => ({ call: String(c.id).replace(/^call:/, ''), title: c.title, date: c.date })) }
     return serial(v.id, async () => {
       let saved = 0, skipped = 0
@@ -4680,12 +4687,13 @@ export function apply(ctx) {
       let commit = 'off'
       if (v.commit && paths.size) {
         try { const r = await ctx.git.commit(v.root, { paths: [...paths], message: `Echo: minutes of ${saved} past calls` }); commit = r && r.rev ? r.rev : 'skipped: nothing changed' } catch (e) { commit = `skipped: ${errText(e)}` }
+        dropPending(v, [...paths], commit)
         for (const c of todo) updateRec(String(c.id).replace(/^call:/, ''), (r) => { const x = r.saved.find((e) => e.vault === v.id); if (x && x.commit === 'pending') x.commit = commit })
         if (commitId(commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'minutes', ref: null, plus: 0, minus: 0, commit, also: [...paths] })
       }
       return { saved, skipped, commit }
     })
-  })
+  }
   // The rule's notes waiting for their commit, committed now (a terminal has no timer; the app commits after 2 quiet
   // minutes by itself).
   ctx.command('commit_pending', async ({ vault } = {}) => {
@@ -4696,7 +4704,7 @@ export function apply(ctx) {
   })
 
   // ── commands: sources ──
-  ctx.command('sources', async ({ vault }) => {
+  own('sources', async ({ vault }) => {
     const v = find(load(), vault)
     const l = ledger(v)
     const dir = sourcesDirOf(v)
@@ -4713,7 +4721,7 @@ export function apply(ctx) {
       sources: q, baseline: l.baseline, rules: { calls: v.ingest.calls, mail: v.ingest.mail || 'off' }, profile: profileOf(v.profile), web: !!ctx.web, m365: !!ctx.m365,
     }
   })
-  ctx.command('add_source', async ({ vault, kind, call, message, url, transcript, chat, anyway }, extra = {}) => {
+  own('add_source', async ({ vault, kind, call, message, url, transcript, chat, anyway }, extra = {}) => {
     const v = find(load(), vault)
     if (kind === 'call') {
       const c = callId(call)
@@ -4777,7 +4785,7 @@ export function apply(ctx) {
     }
     return { written, failed: failedTo, commit }
   })
-  ctx.command('skip_source', async ({ vault, path, id, note }) => {
+  own('skip_source', async ({ vault, path, id, note }) => {
     const v = find(load(), vault)
     const n = note == null ? null : Array.from(oneLine(note)).slice(0, 500).join('') || null
     if (id) {
@@ -4792,7 +4800,7 @@ export function apply(ctx) {
     return { path: rel, state: 'skipped' }
   })
   // The first open's answer for the files already there: done (`done: true`) or new; not asked again.
-  ctx.command('baseline', async ({ vault, done }) => {
+  own('baseline', async ({ vault, done }) => {
     const v = find(load(), vault)
     const processed = processedOf(v)
     const found = (await sourceFiles(v)).filter((f) => !processed.has(f.path))
@@ -4826,7 +4834,8 @@ export function apply(ctx) {
   // with its name, owner and day filled in, `git init` and a first commit when asked, registered as `twin@1` (commits
   // on when committed), an activity line. Echo writes no hidden file for a plugin: the preset's `.claude/skills`,
   // `.gitignore` and `knowledge/.obsidian` are left out and said so.
-  ctx.command('new_vault', async ({ name: n0, folder, git, minutes }) => {
+  ctx.command('new_vault', async ({ name: n0, folder: f0, pick, git, minutes }) => {
+    const folder = f0 || pick
     const name = rsTrim(String(n0 || '')).slice(0, 80)
     if (!name) throw new Error('a vault needs a name')
     const mode = minutes == null || minutes === '' ? 'ask' : String(minutes)
@@ -4881,8 +4890,136 @@ export function apply(ctx) {
     const skills = where === 'global'
       ? { where, installed: false, why: 'Echo doesn\'t let a plugin write your ~/.claude/skills' }
       : { where, installed: !leftOut.some((x) => x.path.startsWith('.claude/')), why: leftOut.some((x) => x.path.startsWith('.claude/')) ? 'Echo doesn\'t let a plugin write a vault\'s .claude folder' : null }
-    return { id, root: picked, git: gitState, written: written.length, left_out: leftOut, skills }
+    return { id, vault: { id, name }, root: picked, git: gitState, written: written.length, left_out: leftOut, skills }
   })
+
+  // ── the activity's step-4 commands (seam.js names them; view.js draws their answers, as #17's routes answered) ──
+  // A call's Knowledge for its page: the chip, its ⋯ items and the "Then saved to…" line (`call` as the page has it:
+  // {name, threads, client, profile, notes}).
+  ctx.command('call_knowledge', ({ call: c0 }) => {
+    const c = c0 && typeof c0 === 'object' ? c0 : { name: c0 }
+    const call = callId(c.name)
+    let src = null
+    if (c.notes !== false) { try { src = source(call, { transcript: false, chat: false }) } catch { /* no minutes yet */ } }
+    const p = src ? src.profile : c.profile ?? null
+    const route = routeOf(src ? src.threads : (c.threads || []))
+    const rec = callRec(call)
+    const ps = profilesNow()
+    const vs = load()
+    const vaults = vs.map((v) => ({ id: v.id, name: v.name, available: available(v), profile: profileOf(v.profile, ps), mode: v.minutes.mode }))
+    const revision = src && src.minutes ? src.minutes.revision : null
+    const stale = rec.saved.filter((e) => {
+      if (e.how !== 'manual' || !revision || !e.revision || e.revision === revision) return false
+      const v = vs.find((x) => x.id === e.vault)
+      const st = v ? statSafe(v, e.path, { sha: true }) : null
+      return !!st && st.sha === e.sha256
+    }).map((e) => e.vault)
+    const f = rec.failed[rec.failed.length - 1]
+    return {
+      vaults, targets: targetsOf(rec, route, p).map((v) => ({ id: v.id, name: v.name })),
+      record: { saved: rec.saved, choice: rec.choice }, stale,
+      failure: f ? { vault: f.vault, name: (vs.find((v) => v.id === f.vault) || {}).name || f.vault, error: f.error } : null,
+      profile: profileOf(p, ps),
+    }
+  })
+  // Settings → Meeting minutes: the past calls it would save (`apply`: saved, one commit).
+  ctx.command('past', async ({ id, apply }) => { const v = find(load(), id); return apply ? pastMinutes(v, null, false) : pastCountOf(v) })
+  // How the newest call with minutes on the vault's profile lands here; null before there is one. Nothing written.
+  ctx.command('sample', async ({ id }) => {
+    const v = find(load(), id)
+    const c = (ctx.echo.read('calls', { limit: 200 }) || []).find((x) => x.minutes && sameProfile(x.profile, v))
+    return c ? own.minutes_preview({ call: String(c.id).replace(/^call:/, ''), vault: v.id }) : null
+  })
+  // The twin skill: into the vault (`add`), or for every Claude Code session (`global`, `global_remove`). Echo writes no
+  // hidden file for a plugin (`.claude/…`) and nothing in ~/.claude: said, never worked around.
+  ctx.command('twin', async ({ id, op }) => {
+    const v = find(load(), id)
+    if (op === 'add') {
+      if (statSafe(v, '.claude/skills/twin/SKILL.md')) throw new Error('This vault already has a twin skill')
+      const text = ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md')
+      try { ctx.fs.write(v.root, '.claude/skills/twin/SKILL.md', text, { createNew: true }) } catch (e) {
+        if (/hidden/.test(errText(e))) throw new Error('Echo doesn\'t let a plugin write a vault\'s .claude folder — copy the starter\'s twin skill into .claude/skills/twin/ yourself')
+        throw e
+      }
+      return { path: '.claude/skills/twin/SKILL.md' }
+    }
+    if (op === 'global' || op === 'global_remove') throw new Error('Echo doesn\'t let a plugin write your ~/.claude/skills')
+    throw new Error('op: add, global or global_remove')
+  })
+  // The vault's twin skill as `global` would write it: its own (else the starter's), named, its paths made absolute.
+  ctx.command('twin_text', ({ id, name }) => {
+    const v = find(load(), id)
+    const own = readSafe(v, '.claude/skills/twin/SKILL.md', 1 << 20)
+    const n = String(name || '') || (v.id.includes('twin') ? v.id : `${v.id}-twin`)
+    return { name: n, own: own !== null, text: twinSkillText(own ?? ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md') ?? '', { id: v.id, name: v.name, root: v.root }, n) }
+  })
+  // Ingest's queue as the view lists it (sources.rs `value`): the folder, the first open's question, the sources with
+  // their state, and what is queued and not written yet. Runs are step 5's: none here.
+  ctx.command('ingest_queue', async ({ id }) => {
+    const v = find(load(), id)
+    const s = await own.sources({ vault: v.id })
+    const ps = profilesNow()
+    const sources = s.sources.map((x) => ({
+      path: x.path || x.id, kind: x.kind, title: x.title, state: x.state,
+      meta: { size: x.size ?? null, markdown: !!x.path && isMd(x.path), added: x.added, by: x.by, note: x.note, run: null, kept: null, anyway: x.anyway, queued: !!x.queued, rule: x.rule || null },
+    }))
+    return { ...s, sources, runs: [], profile_name: profileName(s.profile, ps), max_file: 50 << 20 }
+  })
+  // The system's file picker, for the Add a source sheet: names and sizes, the handles kept by the sheet.
+  ctx.command('pick_files', async () => {
+    const files = await ctx.system.pickFiles('Sources for the vault', { multiple: true })
+    return { seq: `p${Date.now().toString(36)}`, files: files.map((f) => ({ name: f.name, size: f.size })), handles: files }
+  })
+  ctx.command('source_add', async (a, extra = {}) => {
+    const { id, kind } = a
+    if (kind === 'files') {
+      const r = await own.add_source({ vault: id, kind: 'file' }, extra)
+      if (r.cancelled) return { added: [], refused: [] }
+      return { added: r.added.filter((x) => x.path), refused: r.added.filter((x) => x.error).map((x) => ({ name: x.name, why: x.error })) }
+    }
+    if (kind === 'call') {
+      const r = await own.add_source({ vault: id, kind: 'call', call: a.call, transcript: a.transcript, chat: a.chat, anyway: a.anyway })
+      if (r.mismatch) { const ps = profilesNow(); return { mismatch: { ...r.mismatch, call_name: profileName(r.mismatch.call, ps), vault_name: profileName(r.mismatch.vault, ps) } } }
+      return r
+    }
+    if (kind === 'chat') return chatSource(find(load(), id), String(a.chat || ''), a.since, a.until)
+    return own.add_source({ vault: id, kind, message: a.message, url: a.url })
+  })
+  ctx.command('source_skip', ({ id, path, note }) => (/^(call|mail):/.test(String(path || '')) ? own.skip_source({ vault: id, id: path, note }) : own.skip_source({ vault: id, path, note })))
+  // Calls and memos with minutes, for the sheet: newest first, their profile and whether it is the vault's, their note.
+  ctx.command('source_calls', ({ id, q }) => {
+    const v = find(load(), id)
+    const ps = profilesNow()
+    const rows = (ctx.echo.read('calls', { q: String(q || ''), limit: 200 }) || []).filter((c) => c.minutes).slice(0, 40)
+    return {
+      calls: rows.map((c) => {
+        const call = String(c.id).replace(/^call:/, '')
+        const e = callRec(call).saved.find((x) => x.vault === v.id)
+        return { name: call, title: c.title, date: c.date, people: c.people || [], memo: !!c.memo, profile: profileOf(c.profile, ps), profile_name: profileName(profileOf(c.profile, ps), ps), profile_ok: sameProfile(c.profile, v), transcript: !!c.transcript, chat: !!c.chat, note: e && statSafe(v, e.path) ? e.path : null }
+      }),
+    }
+  })
+  // Mail and Teams chats matching `q` over 90 days, through Echo's Microsoft 365 sign-in; without one, only that.
+  ctx.command('source_m365', async ({ q }) => {
+    if (!ctx.m365) return { signed_in: false, results: [] }
+    if (!String(q || '').trim()) return { signed_in: true, results: [] }
+    try {
+      const r = await ctx.m365.search(String(q), { kinds: ['mail', 'chats'], days: 90 })
+      const addable = (h) => h.kind === 'mail' || (h.kind === 'chats' && typeof h.chat === 'string' && h.chat && h.channel == null)
+      return { signed_in: true, results: ((r && r.results) || []).filter(addable), errors: (r && r.errors) || null }
+    } catch (e) {
+      if (/isn't connected/.test(errText(e))) return { signed_in: false, results: [] }
+      throw e
+    }
+  })
+  // A Teams chat's messages over some local days as a source (sources.rs `add_chat_messages`), `teams/<until>-<chat>.md`.
+  const chatSource = async (v, chat, since, until) => {
+    if (!chat) throw new Error('which chat?')
+    const r = await ctx.m365.chat(chat, { since, until })
+    const t = chatSourceText(r)
+    const { paths, ...out } = await writeSource(v, { sub: 'teams', name: datedName(t.until, t.name, 'chat'), title: t.title, by: 'teams', from: chat, text: t.text })
+    return out
+  }
 
   // An analysis Echo quit during is run again — once it can't be running anywhere (its run stops after 10 minutes):
   // a terminal's `echoctl plugin call` loads this plugin in a process of its own and must not start a second one.

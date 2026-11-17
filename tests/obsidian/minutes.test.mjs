@@ -13,7 +13,8 @@ import { world, call, read, write, exists, hasGit, gitOut } from './world.mjs'
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 const NOTE = 'knowledge/notes/2026-11-05-weekly-delivery-sync.md'
-const rec = (ctx, c) => JSON.parse(ctx.files[`calls/${c}.json`] || '{"saved":[],"failed":[]}')
+// A call's record, by its folder's stamp (YYYY-MM-DD_HHMMSS: a retitle keeps it).
+const rec = (ctx, c) => JSON.parse(ctx.files[`calls/${c.slice(0, 17)}.json`] || '{"saved":[],"failed":[]}')
 
 const GOLDEN = '---\ntitle: "Weekly delivery sync"\ndate: 2026-11-05\nmeeting: "Weekly delivery sync (MS Teams)"\ntags: [meeting]\nparticipants: Dana Reyes, Alex Doe, Sam Rivera\nduration: 46m\nsource: echo://call/2026-11-05_090012-weekly-delivery-sync\norigin: echo\necho_call: 2026-11-05_090012-weekly-delivery-sync\nsummary: "The team agreed to move the pilot | rollout to 18 November and to keep the pricing page as it is."\n---\n\n# Weekly delivery sync — 2026-11-05\n\n## Summary\n\nThe team agreed to move the pilot | rollout to 18 November and to keep the pricing page as it is.\n\n## Decisions\n\n- Pilot moves to 18 November.\n\n## Action items\n\n- [ ] Me — send the revised plan to Dana by Friday.\n\n## Open questions\n\n- Who owns the data migration?\n'
 
@@ -275,7 +276,7 @@ test('a missing vault: the rule\'s save is tried, fails, and the failure shows (
   const f = rec(w.ctx, CALL).failed
   assert.equal(f[0].vault, v.id)
   assert.match(f[0].error, /folder isn't there/)
-  const key = `minutes:${CALL}`
+  const key = `minutes:${CALL.slice(0, 17)}`
   assert.ok(w.ctx.inboxNow[key], 'an Inbox item')
   assert.deepEqual(w.ctx.inboxNow[key].actions[0], { label: 'Save again', command: 'save_minutes', args: { call: CALL, vault: v.id }, primary: true })
   nfs.renameSync(moved, v.root)
@@ -300,7 +301,7 @@ test('the preview is what the save writes', async () => {
   const w = world({ calls: [call(CALL, 'Weekly delivery sync')] })
   const v = await w.vault('My twin')
   write(v.root, NOTE, '# someone else\'s\n')
-  const p = await w.ctx.run('preview', { call: CALL, vault: v.id })
+  const p = await w.ctx.run('minutes_preview', { call: CALL, vault: v.id })
   const s = await w.ctx.run('save_minutes', { call: CALL, vault: v.id })
   assert.equal(p.path, s.path)
   assert.equal(s.path, 'knowledge/notes/2026-11-05-weekly-delivery-sync-2.md')
@@ -315,7 +316,7 @@ test('the preview is what the save writes', async () => {
   w.folders.push(plain)
   w.data.calls.push(call('2026-11-05_140000-design-review', 'Design review'))
   const added = await w.ctx.run('add', { root: nfs.realpathSync(plain), wait: false })
-  const p2 = await w.ctx.run('preview', { call: '2026-11-05_140000-design-review', vault: added.id })
+  const p2 = await w.ctx.run('minutes_preview', { call: '2026-11-05_140000-design-review', vault: added.id })
   const s2 = await w.ctx.run('save_minutes', { call: '2026-11-05_140000-design-review', vault: added.id })
   assert.equal(p2.path, s2.path)
   assert.equal(s2.path, 'knowledge/notes/2026-11-05-design-review.md')
@@ -470,4 +471,55 @@ test('two calls at once are queued, each once', async () => {
   await w.ctx.run('set', { id: v.id, key: 'ingest.calls', value: 'prepare' })
   await Promise.all([w.ctx.fire('minutes_written', w.data.payload(CALL)), w.ctx.fire('minutes_written', w.data.payload('2026-11-06_100000-pricing-review'))])
   assert.equal(Object.keys(ingestOf(w.ctx, v.id).queued).length, 2)
+})
+
+// ── the activity's commands (seam.js → view.js): a call's chip, the save sheet, Settings' past minutes and sample ──
+
+test('call_knowledge: the vaults, the targets by the call\'s route and profile, the record, kept and stale, the failure; its choice by the call\'s stamp', async () => {
+  const threads = [{ id: 'pilot', name: 'Acme pilot', client: 'acme' }]
+  const w = world({ calls: [call(CALL, 'Weekly delivery sync', { threads: ['pilot'] })], threads, clients: [{ id: 'acme', name: 'Acme' }] })
+  const v = await w.vault('My twin')
+  const page = { name: CALL, threads: ['pilot'], client: 'acme', profile: null, notes: true }
+  assert.deepEqual((await w.ctx.run('call_knowledge', { call: page })).targets, [], 'no vault for its thread, client or by default')
+  await w.ctx.run('client_vault', { client: 'acme', vault: v.id })
+  const k = await w.ctx.run('call_knowledge', { call: page })
+  assert.deepEqual(k.vaults.map((x) => [x.id, x.mode, x.available, x.profile]), [[v.id, 'auto', true, 'system']])
+  assert.deepEqual(k.targets, [{ id: v.id, name: 'My twin' }])
+  assert.ok(!('later' in k), 'saving works: the chip and the minutes line promise it')
+  await w.ctx.run('call_choice', { call: CALL, vault: 'none' })
+  assert.equal((await w.ctx.run('call_knowledge', { call: page })).record.choice, 'none')
+  assert.equal((await w.ctx.run('call_knowledge', { call: { ...page, name: '2026-11-05_090012-retitled' } })).record.choice, 'none', 'a retitled call keeps its record by its stamp')
+  await w.ctx.run('call_choice', { call: CALL, vault: null })
+  await w.ctx.run('save_minutes', { call: CALL, vault: v.id })
+  assert.deepEqual((await w.ctx.run('call_knowledge', { call: page })).record.saved.map((e) => [e.vault, e.how]), [[v.id, 'manual']])
+  w.data.calls[0].notes = MINUTES.replace('18 November', '25 November')
+  assert.deepEqual((await w.ctx.run('call_knowledge', { call: page })).stale, [v.id], 'offered as an update')
+  nfs.renameSync(v.root, `${v.root}-gone`)
+  await w.ctx.run('save_minutes', { call: CALL, vault: v.id }).catch(() => {})
+  assert.match((await w.ctx.run('call_knowledge', { call: page })).failure.error, /folder isn't there/)
+})
+
+test('Settings: the past minutes it would save, then saved; the sample is the newest call on the vault\'s profile; nothing written by either look', async () => {
+  const w = world({ calls: [call('2026-11-04_100000-older', 'Older'), call(CALL, 'Weekly delivery sync'), call('2026-11-06_100000-x', 'Elsewhere', { profile: 'client-x' })] })
+  const v = await w.vault('My twin')
+  await w.ctx.run('default', { id: v.id })
+  assert.equal((await w.ctx.run('vault_settings', { id: v.id })).past.count, 2)
+  const s = await w.ctx.run('sample', { id: v.id })
+  assert.equal(s.title, 'Weekly delivery sync')
+  assert.ok(s.note.includes('title: "Weekly delivery sync"'))
+  assert.deepEqual(nfs.readdirSync(npath.join(v.root, 'knowledge/notes')), ['README.md'])
+  assert.deepEqual(await w.ctx.run('past', { id: v.id, apply: true }), { saved: 2, skipped: 0, commit: 'off' })
+  assert.equal((await w.ctx.run('past', { id: v.id })).count, 0)
+})
+
+test('a save by hand while the rule\'s notes wait for their commit: Echo\'s own index and log go in a commit, nothing of Echo\'s is left uncommitted', { skip: !hasGit }, async () => {
+  const w = world({ calls: [call(CALL, 'Weekly delivery sync'), call('2026-11-06_100000-pricing-review', 'Pricing review', { started_at: '2026-11-06T10:00:00+02:00', ended_at: '2026-11-06T10:30:00+02:00' })], git: true })
+  const v = await w.vault('My twin', { git: true })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.fire('minutes_written', w.data.payload(CALL))
+  const s = await w.ctx.run('save_minutes', { call: '2026-11-06_100000-pricing-review', vault: v.id })
+  assert.match(s.commit, /^[0-9a-f]{40}$/)
+  assert.deepEqual(gitOut(v.root, 'show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort(), ['knowledge/CATALOG.md', 'knowledge/notes/2026-11-06-pricing-review.md', 'log.md'], 'the index and log Echo wrote are its own')
+  await w.ctx.run('commit_pending', { vault: v.id })
+  assert.equal(gitOut(v.root, 'status', '--porcelain'), '', 'the rule\'s note committed too, nothing left')
 })

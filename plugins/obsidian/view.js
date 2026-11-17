@@ -2176,7 +2176,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st()
     if (!shown()) go(home())
     s.switcher = false
-    s.sheet = { kind: 'connect', step: 1, picked: null, minutes: 'ask', commit: false, name: '' }
+    s.sheet = { kind: 'connect', step: 1, picked: null, minutes: 'auto', commit: false, name: '' }
     render()
   }
   async function doPick(forNew) {

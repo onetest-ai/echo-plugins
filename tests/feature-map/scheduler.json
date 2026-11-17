@@ -28,19 +28,19 @@
   },
   {
    "id": "F-SCH-05",
-   "title": "Its install sheet says it shows Echo's background jobs and changes them only in its screens (`uses.echo.jobs`); it needs Echo 0.9.13",
+   "title": "Its install sheet says it shows Echo's background jobs and changes them only in its screens (`uses.echo.jobs`); it needs Echo 0.9.14 (the one routine contract)",
    "priority": "high",
    "check": "agent"
   },
   {
    "id": "F-SCH-06",
-   "title": "Echo's jobs in their own tab of the Scheduler (Routines | Echo’s jobs, kept as left; ⌘K \"Scheduler: Echo’s jobs\" opens it): one row a job — its name (what it does as the tooltip) and its settings in plain words (how often or its batch, the night, the model or \"default model\", last run and runs today, or \"not run yet\"), what the user changed marked with a dot",
+   "title": "Two tabs, Routines and System (kept as left; ⌘K opens either): every routine — the user's or Echo's own job — drawn by the same row from the one routine contract: name and schedule (model), next run (a time, \"paused at night\", or \"On its events\"), last run (state, when, how long, cost), where it sends, 30 days (a bar a day, runs and cost, or \"no model\"); facts above each table",
    "priority": "critical",
    "check": "agent"
   },
   {
    "id": "F-SCH-07",
-   "title": "A job's ✎ opens its settings under its row (one job at a time), labels left and controls right with their units: a number, the night switch, the model (Default, Haiku, Sonnet, Opus) change on the user's own change; a changed one has ↺ \"Back to default (…)\"; Echo's refusal is shown and the field keeps Echo's value; the row's summary follows",
+   "title": "A system routine opens into the routine panel (sends to, when, at night, model, what; its last runs with bars, each run's state, time, model, Echo's one line and cost) and its editor (Edit): its timer fields with units, the night and the model (Default, Haiku, Sonnet, Opus) saved at once with Save; ↺ back to a default; Echo's refusal shown, the editor kept; Cancel changes nothing",
    "priority": "critical",
    "check": "agent"
   },

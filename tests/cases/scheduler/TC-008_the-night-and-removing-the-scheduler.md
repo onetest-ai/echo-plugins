@@ -14,7 +14,7 @@ tags: [scheduler, jobs, removal]
 # TC-008: The night, and removing the Scheduler
 
 ## Preconditions
-- TC-007 done; the Echo’s jobs tab open; the last case of the run (it removes the plugin)
+- TC-007 done; the System tab open; the last case of the run (it removes the plugin)
 
 **Changes:** `<config dir>/jobs.json`, the installed plugins
 
@@ -26,7 +26,7 @@ tags: [scheduler, jobs, removal]
 | 2 | Set the first to 23:00, Tab; the second to 06:30, Enter; `echoctl jobs` | "Night 23:00 → 06:30" with ↺ ("Back to default (22:30 → 07:00)"); `night` `{"from": "23:00", "to": "06:30"}` |
 | 3 | Click ↺ | "Night 22:30 → 07:00", no ↺; `echoctl jobs`: `{"from": "22:30", "to": "07:00"}` |
 | 4 | Click the times, then Escape | Back to "22:30 → 07:00"; nothing saved |
-| 5 | Needs you now's ✎: every 15, Enter; `echoctl plugin remove scheduler`; `echoctl jobs` | Needs you now still every 15 (`"set": true`): removing the plugin changes none of Echo's jobs |
+| 5 | Needs you now → Edit: Every 15, Save; `echoctl plugin remove scheduler`; `echoctl jobs` | Needs you now still every 15 (`"set": true`): removing the plugin changes none of Echo's jobs |
 | 6 | `echoctl jobs set needs every=` | Back to 5 |
 
 ## Expected Final State

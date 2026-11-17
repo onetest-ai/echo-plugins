@@ -3,12 +3,14 @@
 See and tune what Echo runs by itself, and run your own Claude prompts on a schedule — a plan for your day, Monday
 asks, a Friday wrap-up, meeting prep — and get the answer in Telegram, Teams or mail.
 
-- **Echo's jobs**, at the top of its section: Needs you now, Thread sync, Threads' mail and meeting chats, Minutes,
-  Meeting prep, Recall and Live notes — what each does, when it last ran and how often today, and its settings: how
-  often it runs, whether it pauses at night, its model (Haiku, Sonnet or Opus — each AI profile maps them to its own).
-  Change one and it applies at the job's next run; "Back to default" undoes it. The night (from–to) is shared by every
-  job that pauses. Echo's jobs run on their own settings with or without the Scheduler: it only shows them and changes
-  them when you do (`echoctl jobs` is the same from the terminal).
+- **Two tabs, one look.** *Routines* are yours; *System* holds Echo's own jobs — Needs you now, Thread sync, Threads'
+  mail and meeting chats, Minutes, Meeting prep, Recall, Live notes — as system routines. Every routine, yours or
+  Echo's, is drawn the same way from Echo's one routine contract: its schedule, next run (or what it waits for), last
+  run with how long it took and its cost, where it sends, and its last 30 days as a bar a day with runs and cost. A
+  system routine opens into the same panel (its runs as Echo recorded them) and editor: its timer, whether it pauses
+  at night, its model (Haiku, Sonnet or Opus — each AI profile maps them to its own); "↺" goes back to a default. The
+  night (from–to) is in the System tab's head. Echo's jobs run on their own settings with or without the Scheduler: it
+  only shows them and changes them when you do (`echoctl jobs` is the same from the terminal).
 - **Its own Settings section** (Settings → From plugins → Scheduler): a row per routine with its next and last run and
   what it cost in 30 days; the routine's runs on the right; each run's answer, tokens and cost, where it went, what
   Claude did.
@@ -24,6 +26,6 @@ asks, a Friday wrap-up, meeting prep — and get the answer in Telegram, Teams o
 - Runs on your AI profiles through Echo; costs as Claude Code reports them. Missed runs (Echo off) run once when Echo
   is back.
 
-Needs Echo 0.9.13 or later. `main.js` is its host half (schedule, runs, delivery), `client.js` its client half (the Settings section).
+Needs Echo 0.9.14 or later. `main.js` is its host half (schedule, runs, delivery), `client.js` its client half (the Settings section).
 
 Part of the [Echo plugins](../../README.md) marketplace.

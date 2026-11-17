@@ -44,6 +44,8 @@ const CSS = `
 .sch-spark { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
 .sch-spark i { width: 4px; border-radius: 1px; background: color-mix(in srgb, var(--accent) 60%, transparent); display: block; }
 .sch-spark i.f { background: var(--danger); }
+.sch-spark30 { gap: 1px; }
+.sch-spark30 i { width: 3px; }
 .sch-p { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
 .sch-kv { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 6px 10px; font-size: 12px; }
 .sch-kv span { color: var(--text-3); }
@@ -160,7 +162,7 @@ export function apply(ctx) {
   let jobsAt = 0, seenAt = 0, jobsSeq = 0, held = false // when the list was last asked for; the newest request; a redraw held back
   try { if (localStorage.getItem('sch-tab') === 'system') tab = 'system' } catch { /* no storage: Routines */ }
   const setTab = (t) => { tab = t; try { localStorage.setItem('sch-tab', t) } catch { /* kept for now only */ } }
-  const canJobs = () => !!(ctx.echo && ctx.echo.jobs)
+  const canJobs = () => !!(ctx.echo && ctx.echo.jobs && ctx.echo.routines)
   // A redraw replaces the section's fields: never while the user is typing in a job's field — held until they leave it.
   const typing = () => { const a = document.activeElement; return !!(a && a.matches && a.matches('[data-sch-jf],[data-sch-night]')) }
   const redraw = () => { if (typing()) held = true; else { held = false; ctx.render() } }
@@ -170,14 +172,14 @@ export function apply(ctx) {
     if (!canJobs()) return
     jobsAt = Date.now()
     const n = ++jobsSeq
-    try { const l = await ctx.echo.jobs.list(); if (n !== jobsSeq) return; jobs = l; jobsErr = '' } catch (e) { if (n !== jobsSeq) return; jobsErr = String(e.message || e) }
+    try { const l = await ctx.echo.routines.list(); if (n !== jobsSeq) return; jobs = l; jobsErr = '' } catch (e) { if (n !== jobsSeq) return; jobsErr = String(e.message || e) }
     redraw()
   }
   const setJob = async (job, settings) => {
     const n = ++jobsSeq
     let err = ''
-    try { const l = await ctx.echo.jobs.set(job, settings); if (n === jobsSeq) jobs = l } catch (e) { err = String(e.message || e) }
-    if (err) await loadJobs() // its fields back to what Echo holds
+    try { await ctx.echo.jobs.set(job, settings) } catch (e) { err = String(e.message || e) }
+    if (n === jobsSeq) await loadJobs() // the routine as Echo holds it now (or still, after a refusal)
     jobsErr = err
     ctx.render()
   }
@@ -253,14 +255,14 @@ export function apply(ctx) {
   const NIGHT_DEFAULT = { from: '22:30', to: '07:00' }
   // A label as Echo gives it, "Every (minutes)", split into what it is and its unit.
   const unitOf = (label) => { const m = /^(.*?)\s*\((minutes|seconds)\)\s*$/.exec(label); return m ? [m[1], m[2] === 'minutes' ? 'min' : 's'] : [label, ''] }
-  const fieldOf = (j, key) => j.fields.find((f) => f.key === key)
+  const fieldOf = (j, key) => (j.settings || []).find((f) => f.key === key)
   const part = (set, text) => `<span${set ? ' class="sch-chg"' : ''}>${esc(text)}</span>`
   // A system routine's schedule — its timer — in plain words, what the user changed marked.
   const timer = (j) => {
     const out = []
     const w = fieldOf(j, 'batch_wait'), i = fieldOf(j, 'batch_items')
     if (w && i) out.push(part(w.set || i.set, `Mail and chat wait up to ${w.value} min or ${i.value} item${i.value === 1 ? '' : 's'}`))
-    for (const f of j.fields) {
+    for (const f of j.settings || []) {
       if (f.kind !== 'number' || f === w || f === i) continue
       const [what, unit] = unitOf(f.label)
       const text = f.key === 'every' || f.key === 'every_s' ? `Every ${f.value} ${unit}`
@@ -273,48 +275,123 @@ export function apply(ctx) {
   }
   const nightWords = (j) => { const f = fieldOf(j, 'night'); return f ? part(f.set, f.value ? 'pauses at night' : 'runs at night') : '' }
   const modelWords = (j) => { const f = fieldOf(j, 'model'); return f ? part(f.set, f.set ? MODEL_NAMES[f.value] || String(f.value) : 'Default model') : '<span class="sch-sub">No model</span>' }
-  const jobLast = (j) => (j.last_run ? ['ok', 'Ran', when(j.last_run)] : ['', 'Not run yet', ''])
-  const jobById = (id) => jobs && jobs.jobs.find((j) => j.id === id)
-  // The System tab: Echo's own jobs as system routines — the routines' row, the night in its head.
+  // ── The one routine contract (Echo's plugin API § Routines): every routine — the user's, Echo's own (system), a
+  // plugin's — drawn by the same row and panel. The user's routines are mapped into it here.
+  const jobById = (id) => jobs && jobs.routines.find((j) => j.id === id)
+  const TO = { today: 'Today', thread_work: 'Threads’ work', thread_sources: 'Threads’ sources', minutes: 'Minutes', prep: 'Meeting prep', recall: 'Recall', live_notes: 'Live notes' }
+  const userRun = (x) => x && ({
+    started: x.at, ended: x.finished_at || null, duration_ms: x.usage ? x.usage.duration_ms : x.duration_ms,
+    state: x.state || 'running', ok: x.state !== 'failed', summary: x.state !== 'failed' ? x.message : undefined, error: x.state === 'failed' ? x.message : undefined,
+    model: x.model, cost_usd: x.usage ? x.usage.cost_usd : x.cost, sent: x.sent || [], trial: !!x.trial, run: x.run,
+  })
+  const dailyOf = (runs) => {
+    const days = []
+    for (let i = 29; i >= 0; i--) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); days.push({ day: d.toDateString(), runs: 0, failed: 0, cost: 0 }) }
+    for (const x of runs) { const e = days.find((d) => d.day === new Date(x.at).toDateString()); if (e) { e.runs++; if (x.state === 'failed') e.failed++; e.cost += x.cost || 0 } }
+    return days
+  }
+  const userRoutine = (r) => ({
+    id: r.id, source: 'user', name: r.name, what: r.prompt, enabled: r.enabled, to: r.deliver || [],
+    schedule: { text: `${r.when} · ${perm(r.tools)}`, kind: 'time' }, next_run: r.next, next: null, paused_until: null,
+    running: r.running, last: r.running ? { state: 'running' } : userRun(r.last), model: { value: r.model || '', default: '' },
+    month: { runs: r.month.runs, cost: r.month.cost, daily: dailyOf(r.runs || []) }, runs: (r.runs || []).map(userRun), raw: r,
+  })
+  const runLine = (R, x) => !x ? ['', 'Not run yet']
+    : x.state === 'running' ? ['run', 'Running…']
+    : x.state === 'failed' ? ['bad', x.error && x.error.startsWith('Not sent') ? 'Not sent' : 'Failed']
+    : x.state === 'empty' ? ['', 'Nothing to send']
+    : (x.sent || []).length ? ['ok', `Sent to ${x.sent.map((k) => label(k)).join(', ')}`] : ['ok', R.source === 'user' ? 'Answered' : 'Done']
+  const toChips = (R) => (R.source === 'user' ? sends(R.raw) : (R.to || []).map((k) => `<span class="sch-ci">${esc(TO[k] || label(k))}</span>`).join('') || '<span class="sch-sub">—</span>')
+  const modelLabel = (R) => (R.model && R.model.value ? (R.source === 'user' ? modelName(R.model.value) : MODEL_NAMES[R.model.value] || R.model.value) : '')
+  const nextCell = (R) => !R.enabled ? '<span class="sch-sub">Off</span>'
+    : R.running ? '<span class="sch-sub">Running now</span>'
+    : R.paused_until ? `${esc(when(R.paused_until))}<div class="sch-sub">paused at night</div>`
+    : R.next_run ? esc(when(R.next_run))
+    : R.next ? '<span class="sch-sub">On its events</span>' : '<span class="sch-sub">—</span>'
+  const spark = (R) => {
+    const d = (R.month && R.month.daily) || []
+    const byCost = d.some((x) => x.cost > 0), max = Math.max(byCost ? 0.0001 : 1, ...d.map((x) => (byCost ? x.cost : x.runs)))
+    return d.map((x) => `<i class="${x.failed ? 'f' : ''}" style="height:${x.runs ? Math.max(2, Math.round(((byCost ? x.cost : x.runs) / max) * 16)) : 0}px"></i>`).join('')
+  }
+  const monthLine = (R) => { const m = R.month || { runs: 0, cost: 0 }; return `${m.runs} run${m.runs === 1 ? '' : 's'} · ${R.model === null ? 'no model' : money(Math.abs(m.cost || 0))}` }
+  // One routine's row in a routines table (the Routines and System tabs alike).
+  const routineRow = (R, selected, attr) => {
+    const [cls, txt] = runLine(R, R.last)
+    const L = R.last && R.last.state !== 'running' ? R.last : null
+    const lastMeta = L ? `${esc(when(L.started))}${L.duration_ms != null ? ` · ${secs(L.duration_ms)}` : ''}${L.cost_usd != null ? ` · ${money(L.cost_usd)}` : ''}` : ''
+    const changed = R.source !== 'user' && (R.settings || []).some((f) => f.set && f.kind === 'number')
+    const m = modelLabel(R)
+    return `<div class="sch-tr${selected ? ' sel' : ''}" role="row" ${attr}="${esc(R.id)}">
+      <div><div class="sch-nm${R.enabled ? '' : ' off'}"${R.source !== 'user' && R.what ? ` title="${esc(R.what)}"` : ''}>${esc(R.name)}</div><div class="sch-sub">${changed ? part(true, R.schedule.text) : esc(R.schedule.text)}${m ? ` · ${R.source !== 'user' ? part(true, m) : esc(m)}` : ''}</div></div>
+      <div class="sch-num" style="font-size:12px">${nextCell(R)}</div>
+      <div><div class="sch-st"><span class="sch-dot ${cls}"></span>${esc(txt)}</div><div class="sch-sub sch-num">${lastMeta}</div></div>
+      <div>${toChips(R)}</div>
+      <div><div class="sch-spark sch-spark30" aria-hidden="true">${spark(R)}</div><div class="sch-sub sch-num">${monthLine(R)}</div></div>
+      ${R.source === 'user' ? `<button class="sw${R.enabled ? ' on' : ''}" role="switch" aria-checked="${!!R.enabled}" aria-label="${esc(R.name)} on" data-sch-on="${esc(R.id)}" data-on="${!R.enabled}"></button>` : '<span></span>'}</div>`
+  }
+  // The facts above a table, from its routines.
+  const factsOf = (list, noun, T) => {
+    const on = list.filter((R) => R.enabled)
+    const next = on.filter((R) => R.next_run).sort((a, b) => a.next_run.localeCompare(b.next_run))[0]
+    return `<div class="sch-facts" aria-label="Last 30 days">
+      <div class="sch-fact"><b>${list.length}</b><span>${noun}, ${on.length} on</span></div>
+      <div class="sch-fact"><b>${next ? esc(when(next.next_run)) : '—'}</b><span>${next ? `next: ${esc(next.name)}` : 'nothing scheduled'}</span></div>
+      <div class="sch-fact"><b class="sch-num">${T.runs}</b><span>runs in 30 days${T.failed ? ` · ${T.failed} failed` : ''}</span></div>
+      <div class="sch-fact"><b class="sch-num">${big(T.tokens)}</b><span>tokens${T.tokens ? ` · ${Math.round((100 * T.cached) / T.tokens)}% from cache` : ''}</span></div>
+      <div class="sch-fact"><b class="sch-num">${money(Math.abs(T.cost || 0))}</b><span>in 30 days</span></div></div>`
+  }
+  const HEAD = '<div class="sch-th" role="row"><span>Routine</span><span>Next run</span><span>Last run</span><span>Sends to</span><span>30 days</span><span></span></div>'
+  // The System tab: Echo's own jobs as system routines, the night in its head.
   const systemTab = () => {
     if (!jobs) return jobsErr ? `<p class="sch-jerr" role="alert">${esc(jobsErr)}</p>` : '<div class="skeleton" style="padding:20px"><i></i><i></i><i></i></div>'
-    const n = jobs.night || {}, dn = jobs.night_default || NIGHT_DEFAULT
+    const n = jobs.night || {}, dn = n.default || NIGHT_DEFAULT
     const changed = n.from !== dn.from || n.to !== dn.to
     const night = nightEdit
       ? `<label for="sch-night-from">Night</label><input class="sch-in sch-num" id="sch-night-from" type="time" value="${esc(n.from || '')}" data-sch-night="from"><span>→</span><input class="sch-in sch-num" id="sch-night-to" type="time" value="${esc(n.to || '')}" data-sch-night="to" aria-label="Night ends"><button class="btn ghost" data-sch-nightdone>Done</button>`
       : `<span>Night</span><button class="btn ghost" data-sch-nightedit title="Change the night system routines pause in">${esc(n.from || '')} → ${esc(n.to || '')}</button>${changed ? `<button class="icon-btn" data-sch-nightdef title="Back to default (${esc(dn.from)} → ${esc(dn.to)})" aria-label="Back to default night">${UNDO}</button>` : ''}`
-    const rows = jobs.jobs.map((j) => {
-      const [cls, txt, at] = jobLast(j)
-      const today = `${j.runs_today} run${j.runs_today === 1 ? '' : 's'} today${j.cost_today != null ? ` · ${money(j.cost_today)}` : ''}`
-      return `<div class="sch-tr${selJob === j.id ? ' sel' : ''}" role="row" data-sch-jsel="${esc(j.id)}">
-        <div><div class="sch-nm" title="${esc(j.what)}">${esc(j.name)}</div><div class="sch-sub">${timer(j)}</div></div>
-        <div style="font-size:12px">${nightWords(j) || '<span class="sch-sub">—</span>'}</div>
-        <div><div class="sch-st"><span class="sch-dot ${cls}"></span>${esc(txt)}</div><div class="sch-sub sch-num">${esc(at)}</div></div>
-        <div style="font-size:12px">${modelWords(j)}</div>
-        <div><div class="sch-sub sch-num">${esc(today)}</div></div>
-        <div></div></div>`
-    }).join('')
+    const list = jobs.routines
+    const T = list.reduce((a, R) => { const m = R.month || {}; a.runs += m.runs || 0; a.failed += m.failed || 0; a.tokens += (m.tokens || 0) + (m.cached || 0); a.cached += m.cached || 0; a.cost += m.cost || 0; return a }, { runs: 0, failed: 0, tokens: 0, cached: 0, cost: 0 })
     return `<div class="sch-head" style="align-items:center"><div style="flex:1;min-width:0" class="sch-sub">Echo’s own jobs, run by itself — on these settings with or without the Scheduler; a change applies at the job’s next run.</div><div class="sch-night">${night}</div></div>
+      ${factsOf(list, 'system routines', T)}
       ${jobsErr ? `<p class="sch-jerr" role="alert">${esc(jobsErr)}</p>` : ''}
-      <div class="sch-tbl" role="table" aria-label="System routines"><div class="sch-th" role="row"><span>System routine</span><span>At night</span><span>Last run</span><span>Model</span><span>Today</span><span></span></div>${rows}</div>`
+      <div class="sch-tbl" role="table" aria-label="System routines">${HEAD}${list.map((R) => routineRow(R, selJob === R.id, 'data-sch-jsel')).join('')}</div>
+      <div class="sch-sub">Runs and costs as Echo records them; each kept 31 days. A pass that found nothing to do isn’t a run.</div>`
   }
-  // The selected system routine in the right panel, as a routine's.
-  const jobPanel = () => {
-    const j = jobById(selJob)
-    if (!j) return '<div class="sch-p"><span class="sch-sub">Pick a system routine.</span></div>'
-    const [, txt, at] = jobLast(j)
-    const runs = (jobRuns[j.id] || [])
-    const list = runs.slice(0, 8).map((x) => `<div class="sch-run" style="cursor:default"><span class="sch-dot ${x.ok === false || x.state === 'failed' ? 'bad' : 'ok'}"></span><div><div class="w2">${esc(when(x.at || x.start || ''))}${x.summary ? ` · ${esc(String(x.summary).slice(0, 80))}` : ''}</div><div class="meta">${x.duration_ms != null ? secs(x.duration_ms) : ''}${x.model ? ` · ${esc(x.model)}` : ''}${x.error ? ` · ${esc(String(x.error).slice(0, 80))}` : ''}</div></div><span class="sch-cost">${x.cost != null ? money(x.cost) : ''}</span></div>`).join('')
+  // One routine in the right panel (the user's or a system one): what it is, its settings, its runs.
+  const routinePanel = (R, runs) => {
+    const done = runs.filter((x) => x.cost_usd != null)
+    const avg = done.length ? done.reduce((a, x) => a + x.cost_usd, 0) / done.length : null
+    const avgT = runs.length ? runs.reduce((a, x) => a + (x.duration_ms || 0), 0) / runs.length : null
+    const max = Math.max(0.0001, ...runs.map((x) => x.cost_usd || 0))
+    const bars = runs.slice(0, 20).reverse().map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(4, Math.round(((x.cost_usd || 0) / max) * 100))}%" title="${esc(when(x.started))}${x.cost_usd != null ? ` · ${money(x.cost_usd)}` : ''}"></i>`).join('')
+    const list = runs.slice(0, 8).map((x) => {
+      const [cls, txt] = runLine(R, x)
+      const line = x.error || x.summary || ''
+      const inner = `<span class="sch-dot ${cls}"></span><div><div class="w2">${esc(when(x.started))} · ${esc(txt.toLowerCase())}</div><div class="meta">${secs(x.duration_ms)}${x.model ? ` · ${esc(x.model)}` : ''}${line ? ` · ${esc(line.slice(0, 80))}` : ''}</div></div><span class="sch-cost">${x.cost_usd != null ? money(x.cost_usd) : ''}</span>`
+      return R.source === 'user' && x.run ? `<button class="sch-run" data-sch-runopen="${esc(R.id)}" data-run="${esc(x.run)}">${inner}</button>` : `<div class="sch-run">${inner}</div>`
+    }).join('')
+    const u = R.raw
+    const kv = R.source === 'user'
+      ? `<span>Sends to</span><div>${(u.deliver || []).map((k) => (k === 'mail' && u.mail_to.length ? `Mail — ${esc(u.mail_to.join(', '))}` : k === 'mail' ? 'Mail — you' : esc(label(k)))).join(', ') || 'Nowhere'}</div>
+        <span>Permissions</span><div>${esc(perm(u.tools).replace(/^./, (c) => c.toUpperCase()))}</div>
+        <span>AI</span><div>${esc(profileName(u.profile))}${u.model ? ` · ${esc(modelName(u.model))}` : ''}</div>
+        <span>Prompt</span><div class="sch-sub" style="color:var(--text-2)">${esc(u.prompt.replace(/\s+/g, ' ').slice(0, 140))}${u.prompt.length > 140 ? '…' : ''}</div>`
+      : `<span>Sends to</span><div>${(R.to || []).map((k) => esc(TO[k] || label(k))).join(', ') || '—'}</div>
+        <span>When</span><div>${esc(R.schedule.text)}</div>
+        ${fieldOf(R, 'night') ? `<span>At night</span><div>${nightWords(R)} (${esc((jobs.night || {}).from || '')} → ${esc((jobs.night || {}).to || '')})</div>` : ''}
+        <span>Model</span><div>${R.model ? `${modelWords(R)}${R.model.value ? '' : ` <span class="sch-sub">— ${esc(String(R.model.default))}</span>`}` : '<span class="sch-sub">None: it calls no model</span>'}</div>
+        <span>What</span><div class="sch-sub" style="color:var(--text-2)">${esc(R.what || '')}</div>`
+    const nextTxt = !R.enabled ? ' · off' : R.paused_until ? ` · paused until ${esc(when(R.paused_until).toLowerCase())}` : R.next_run ? ` · next ${esc(when(R.next_run).toLowerCase())}` : R.next ? ` · ${esc(R.next)}` : ''
     return `<div class="sch-p">
-      <div><div style="font-size:15px;font-weight:650">${esc(j.name)}</div><div class="sch-sub">${esc(j.what)}</div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary" data-sch-jedit="${esc(j.id)}">Edit</button></div>
-      <div class="sch-kv"><span>When</span><div>${timer(j)}</div>
-        ${fieldOf(j, 'night') ? `<span>At night</span><div>${nightWords(j)} (${esc((jobs.night || {}).from || '')} → ${esc((jobs.night || {}).to || '')})</div>` : ''}
-        ${fieldOf(j, 'model') ? `<span>Model</span><div>${modelWords(j)}${fieldOf(j, 'model').set ? '' : ` <span class="sch-sub">— ${esc(String(fieldOf(j, 'model').default))}</span>`}</div>` : ''}
-        <span>Last run</span><div>${esc(txt)}${at ? ` · ${esc(at)}` : ''} · ${j.runs_today} today</div>
-        <span>Runs</span><div class="sch-sub">By Echo, as a system routine: no prompt, nothing sent.</div></div>
-      ${runs.length ? `<div><h4 class="sch-h4" style="margin-bottom:6px">Last ${runs.length} run${runs.length === 1 ? '' : 's'}</h4>${list}</div>` : '<span class="sch-sub">No runs recorded yet.</span>'}
+      <div><div style="font-size:15px;font-weight:650">${esc(R.name)}</div><div class="sch-sub">${esc(R.schedule.text)}${nextTxt}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${R.source === 'user' ? `${R.running ? '<button class="btn" disabled>Running…</button>' : `<button class="btn primary" data-sch-run="${esc(R.id)}">Run now</button>`}<button class="btn" data-sch-edit="${esc(R.id)}">Edit</button>` : `<button class="btn primary" data-sch-jedit="${esc(R.id)}">Edit</button>`}</div>
+      <div class="sch-kv">${kv}</div>
+      ${runs.length ? `<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">Last ${Math.min(runs.length, 20)} run${runs.length === 1 ? '' : 's'}</h4><span class="sch-sub sch-num">${avg != null ? `avg ${money(avg)} · ` : ''}${secs(avgT)}</span></div><div class="sch-bars" aria-label="Each run, oldest first">${bars}</div></div><div>${list}</div>` : '<span class="sch-sub">No runs yet.</span>'}
     </div>`
+  }
+  const jobPanel = () => {
+    const R = jobById(selJob)
+    return R ? routinePanel(R, jobRuns[R.id] || []) : '<div class="sch-p"><span class="sch-sub">Pick a system routine.</span></div>'
   }
   // A system routine's editor, as a routine's: its timer, the night and the model; saved at once with Save.
   const jobEditPage = () => {
@@ -325,7 +402,7 @@ export function apply(ctx) {
     const back = (f, shown) => `<button class="sch-jdefb icon-btn" data-sch-jdef="${esc(f.key)}" title="Back to default (${esc(shown)})" aria-label="Back to default (${esc(shown)})">${UNDO}</button>`
     const isDefault = (f) => (e[f.key] === undefined ? !f.set : e[f.key] === null)
     const val = (f) => (e[f.key] === undefined ? f.value : e[f.key] === null ? f.default : e[f.key])
-    const nums = j.fields.filter((f) => f.kind === 'number').map((f) => {
+    const nums = (j.settings || []).filter((f) => f.kind === 'number').map((f) => {
       const [what, unit] = unitOf(f.label), r = f.range || {}
       return `<div class="sch-f"><label class="sch-lbl" for="sch-jf-${esc(f.key)}">${esc(what)}</label><div class="sch-jnum"><input class="sch-in sch-num" id="sch-jf-${esc(f.key)}" type="number"${r.min != null ? ` min="${r.min}" max="${r.max}"` : ''} value="${esc(String(val(f)))}" data-sch-jf="${esc(f.key)}">${unit ? `<span class="sch-sub">${unit}</span>` : ''}${isDefault(f) ? `<span class="sch-sub">default${r.min != null ? ` · ${r.min}–${r.max}` : ''}</span>` : back(f, String(f.default))}</div></div>`
     }).join('')
@@ -380,41 +457,24 @@ export function apply(ctx) {
   // Each system routine's runs, from Echo when it records them (`ctx.echo.jobs.runs`); none before.
   const jobRuns = {}
   const loadJobRuns = async (id) => {
-    if (!(ctx.echo && ctx.echo.jobs && ctx.echo.jobs.runs)) return
-    try { const r = await ctx.echo.jobs.runs(id, { limit: 20 }); jobRuns[id] = Array.isArray(r) ? r : (r && r.runs) || [] } catch { jobRuns[id] = [] }
+    if (!canJobs()) return
+    try { const r = await ctx.echo.routines.runs(id, { limit: 20 }); jobRuns[id] = Array.isArray(r) ? r : (r && r.runs) || [] } catch { jobRuns[id] = [] }
     redraw()
   }
   const listPage = () => {
     const T = data.totals || { runs: 0, failed: 0, tokens: 0, cached: 0, cost: 0 }
-    const on = data.routines.filter((r) => r.enabled && !r.error)
-    const next = on.filter((r) => r.next).sort((a, b) => a.next.localeCompare(b.next))[0]
-    const facts = `<div class="sch-facts" aria-label="Last 30 days">
-      <div class="sch-fact"><b>${data.routines.length}</b><span>routines, ${on.length} on</span></div>
-      <div class="sch-fact"><b>${next ? esc(when(next.next)) : '—'}</b><span>${next ? `next: ${esc(next.name)}` : 'nothing scheduled'}</span></div>
-      <div class="sch-fact"><b class="sch-num">${T.runs}</b><span>runs in 30 days${T.failed ? ` · ${T.failed} failed` : ''}</span></div>
-      <div class="sch-fact"><b class="sch-num">${big(T.tokens)}</b><span>tokens${T.tokens ? ` · ${Math.round((100 * T.cached) / T.tokens)}% from cache` : ''}</span></div>
-      <div class="sch-fact"><b class="sch-num">${money(T.cost)}</b><span>in 30 days</span></div></div>`
-    const rows = data.routines.map((r) => {
-      if (r.error) return `<div class="sch-tr" role="row"><div><div class="sch-nm">${esc(r.id)}</div><div class="sch-sub" style="color:var(--danger)">${esc(r.error)}</div></div><div></div><div></div><div></div><div></div><div></div></div>`
-      const [cls, txt] = r.running ? ['run', 'Running…'] : lastLine(r.last)
-      const lastMeta = r.last ? `${esc(when(r.last.at))}${r.last.usage ? ` · ${secs(r.last.usage.duration_ms)} · ${money(r.last.usage.cost_usd)}` : ''}` : ''
-      const max = Math.max(0.01, ...r.runs.map((x) => x.cost || 0))
-      const spark = r.runs.slice(0, 12).reverse().map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(2, Math.round(((x.cost || 0) / max) * 16))}px"></i>`).join('')
-      return `<div class="sch-tr${sel === r.id ? ' sel' : ''}" role="row" data-sch-sel="${esc(r.id)}">
-        <div><div class="sch-nm${r.enabled ? '' : ' off'}">${esc(r.name)}</div><div class="sch-sub">${esc(r.when)} · ${perm(r.tools)}${r.model ? ` · ${esc(modelName(r.model))}` : ''}</div></div>
-        <div class="sch-num" style="font-size:12px">${r.enabled ? esc(when(r.next)) : '<span class="sch-sub">Off</span>'}</div>
-        <div><div class="sch-st"><span class="sch-dot ${cls}"></span>${esc(txt)}</div><div class="sch-sub sch-num">${lastMeta}</div></div>
-        <div>${sends(r)}</div>
-        <div><div class="sch-spark" aria-hidden="true">${spark}</div><div class="sch-sub sch-num">${r.month.runs} run${r.month.runs === 1 ? '' : 's'} · ${money(r.month.cost)}</div></div>
-        <button class="sw${r.enabled ? ' on' : ''}" role="switch" aria-checked="${!!r.enabled}" aria-label="${esc(r.name)} on" data-sch-on="${esc(r.id)}" data-on="${!r.enabled}"></button></div>`
-    }).join('')
+    const mine = data.routines.filter((r) => !r.error).map(userRoutine)
+    const facts = factsOf(mine, 'routines', T)
+    const rows = data.routines.map((r) => r.error
+      ? `<div class="sch-tr" role="row"><div><div class="sch-nm">${esc(r.id)}</div><div class="sch-sub" style="color:var(--danger)">${esc(r.error)}</div></div><div></div><div></div><div></div><div></div><div></div></div>`
+      : routineRow(userRoutine(r), sel === r.id, 'data-sch-sel')).join('')
     const empty = !data.routines.length ? `<div class="sch-tr"><div style="grid-column:1/-1;padding:14px 0"><b>No routines yet.</b> <span class="sch-sub">Start from a template — a plan for your day, Monday asks, a Friday wrap-up, meeting prep — or write your own.</span></div></div>` : ''
     return `<div class="sch">
       <div class="sch-head"><div style="flex:1"><h2>Scheduler</h2><div class="sch-sub">${canJobs() ? 'Your prompts, run by Claude on a schedule; and Echo’s own, as system routines.' : 'Your prompts, run by Claude on a schedule; the answer sent to you.'}</div></div>${!canJobs() || tab === 'routines' ? newButton() : ''}</div>
-      ${canJobs() ? `<div class="tabs sch-tabs" role="tablist"><button class="tab" role="tab" data-sch-tab="routines" aria-selected="${tab === 'routines'}">Routines<span class="n">${data.routines.length}</span></button><button class="tab" role="tab" data-sch-tab="system" aria-selected="${tab === 'system'}">System${jobs ? `<span class="n">${jobs.jobs.length}</span>` : ''}</button></div>` : ''}
+      ${canJobs() ? `<div class="tabs sch-tabs" role="tablist"><button class="tab" role="tab" data-sch-tab="routines" aria-selected="${tab === 'routines'}">Routines<span class="n">${data.routines.length}</span></button><button class="tab" role="tab" data-sch-tab="system" aria-selected="${tab === 'system'}">System${jobs ? `<span class="n">${jobs.routines.length}</span>` : ''}</button></div>` : ''}
       ${canJobs() && tab === 'system' ? `${systemTab()}</div>` : ''}${canJobs() && tab === 'system' ? '' : `
       ${facts}
-      <div class="sch-tbl" role="table" aria-label="Routines"><div class="sch-th" role="row"><span>Routine</span><span>Next run</span><span>Last run</span><span>Sends to</span><span>30 days</span><span></span></div>${rows}${empty}</div>
+      <div class="sch-tbl" role="table" aria-label="Routines">${HEAD}${rows}${empty}</div>
       ${error ? `<p class="error">${esc(error)}</p>` : ''}
       <div class="sch-sub">Costs as Claude Code reports them for each run, on the routine’s AI profile. Each routine keeps its last 20 runs: prompt, answer and log.</div></div>`}`
   }
@@ -424,26 +484,9 @@ export function apply(ctx) {
 
   const panel = () => {
     const r = data && data.routines.find((x) => x.id === sel)
-    if (!r) return '<div class="sch-p"><span class="sch-sub">Pick a routine.</span></div>'
-    const runs = r.runs || []
-    const max = Math.max(0.01, ...runs.map((x) => x.cost || 0))
-    const done = runs.filter((x) => x.cost != null)
-    const avg = done.length ? done.reduce((a, x) => a + x.cost, 0) / done.length : null
-    const avgT = done.length ? done.reduce((a, x) => a + (x.duration_ms || 0), 0) / done.length : null
-    const bars = runs.slice().reverse().map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(4, Math.round(((x.cost || 0) / max) * 100))}%" title="${esc(when(x.at))} · ${money(x.cost)}"></i>`).join('')
-    const list = runs.slice(0, 6).map((x) => {
-      const [cls, txt] = lastLine(x)
-      return `<button class="sch-run" data-sch-runopen="${esc(r.id)}" data-run="${esc(x.run)}"><span class="sch-dot ${cls}"></span><div><div class="w2">${esc(when(x.at))} · ${esc(txt.toLowerCase())}</div><div class="meta">${secs(x.duration_ms)}${x.state === 'failed' && x.message ? ` · ${esc(x.message.slice(0, 80))}` : ''}</div></div><span class="sch-cost">${money(x.cost)}</span></button>`
-    }).join('')
-    return `<div class="sch-p">
-      <div><div style="font-size:15px;font-weight:650">${esc(r.name)}</div><div class="sch-sub">${esc(r.when)}${r.enabled && r.next ? ` · next ${esc(when(r.next).toLowerCase())}` : r.enabled ? '' : ' · off'}</div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${r.running ? '<button class="btn" disabled>Running…</button>' : `<button class="btn primary" data-sch-run="${esc(r.id)}">Run now</button>`}<button class="btn" data-sch-edit="${esc(r.id)}">Edit</button></div>
-      <div class="sch-kv"><span>Sends to</span><div>${(r.deliver || []).map((k) => (k === 'mail' && r.mail_to.length ? `Mail — ${esc(r.mail_to.join(', '))}` : k === 'mail' ? 'Mail — you' : esc(label(k)))).join(', ') || 'Nowhere'}</div>
-        <span>Permissions</span><div>${esc(perm(r.tools).replace(/^./, (c) => c.toUpperCase()))}</div>
-        <span>AI</span><div>${esc(profileName(r.profile))}${r.model ? ` · ${esc(modelName(r.model))}` : ''}</div>
-        <span>Prompt</span><div class="sch-sub" style="color:var(--text-2)">${esc(r.prompt.replace(/\s+/g, ' ').slice(0, 140))}${r.prompt.length > 140 ? '…' : ''}</div></div>
-      ${runs.length ? `<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">Last ${runs.length} run${runs.length === 1 ? '' : 's'}</h4><span class="sch-sub sch-num">${avg != null ? `avg ${money(avg)} · ${secs(avgT)}` : ''}</span></div><div class="sch-bars" aria-label="Cost of each run, oldest first">${bars}</div></div><div>${list}</div>` : '<span class="sch-sub">No runs yet.</span>'}
-    </div>`
+    if (!r || r.error) return '<div class="sch-p"><span class="sch-sub">Pick a routine.</span></div>'
+    const R = userRoutine(r)
+    return routinePanel(R, R.runs)
   }
   const profileName = (id) => {
     const P = data.profiles || { profiles: [] }

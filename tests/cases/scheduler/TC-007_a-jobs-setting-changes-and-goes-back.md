@@ -28,10 +28,11 @@ tags: [scheduler, jobs]
 | 4 | In Meeting prep, click the "Paused at night" switch | The switch on; "Back to default: off"; `echoctl jobs`: `prep` → `night` true, set |
 | 5 | Click Needs you now's "Back to default: 5"; in Thread sync pick "Job’s default"; click Meeting prep's "Back to default: off"; `echoctl jobs`; `cat "$ECHOCTL_CONFIG_DIR/jobs.json"` | Each shows "default: …" again (5; the model's default; off, the switch off); every field `"set": false`; the file holds none of them (no `needs`, `thread_sync`, `prep`) |
 | 6 | Reload the page | As left: every job on its defaults |
+| 7 | Empty Needs you now's "Every (minutes)" and press Tab | The field shows 5 again; nothing sent (`echoctl jobs`: `every` not set) — "Back to default" is the way back |
 
 ## Expected Final State
 Every job on its defaults.
 
 ## Notes
 - A change without the user's click or key is refused by Echo itself (`ctx.echo.jobs.set` throws before sending):
-  Echo's case plugins/TC-059 covers it; the Scheduler only calls it from its click and change handlers.
+  Echo's case plugins/TC-059 covers it; the Scheduler calls it only from the user's change (a number on Enter or Tab, a model picked), click (a switch, "Back to default") or leaving a night field — never from a redraw, a load or the window losing focus.

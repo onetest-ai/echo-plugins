@@ -151,9 +151,8 @@ export function apply(ctx) {
 
   const load = async () => {
     try { data = await ctx.call('view'); error = '' } catch (e) { error = e.message }
-    if (here()) loadJobs()
     if (data && sel && !data.routines.some((r) => r.id === sel)) sel = null
-    ctx.render()
+    redraw()
     if (here() && data && (data.routines.some((r) => r.running) || (trial && !trial.detail?.record))) setTimeout(load, 2000)
   }
   const op = async (command, args) => {
@@ -164,16 +163,25 @@ export function apply(ctx) {
   // ── Echo's own background jobs (`uses.echo.jobs`, Echo 0.9.13): listed, and changed only on the user's click or key
   // (Echo refuses any other change). They run on their own settings with or without this plugin.
   let jobs = null, jobsErr = '', jobsOpen = true
+  let jobsAt = 0, seenAt = 0, jobsSeq = 0, held = false // when the list was last asked for; the newest request; a redraw held back
   try { jobsOpen = localStorage.getItem('sch-jobs-open') !== 'no' } catch { /* no storage: open */ }
   const canJobs = () => !!(ctx.echo && ctx.echo.jobs)
+  // A redraw replaces the section's fields: never while the user is typing in a job's field — held until they leave it.
+  const typing = () => { const a = document.activeElement; return !!(a && a.matches && a.matches('[data-sch-jnum],[data-sch-night]')) }
+  const redraw = () => { if (typing()) held = true; else { held = false; ctx.render() } }
+  // The list each time the section is entered (and at most every 30 s while it stays open, for last run and runs
+  // today); an answer older than the newest request (a set, say) is dropped.
   const loadJobs = async () => {
     if (!canJobs()) return
-    try { jobs = await ctx.echo.jobs.list(); jobsErr = '' } catch (e) { jobsErr = String(e.message || e) }
-    ctx.render()
+    jobsAt = Date.now()
+    const n = ++jobsSeq
+    try { const l = await ctx.echo.jobs.list(); if (n !== jobsSeq) return; jobs = l; jobsErr = '' } catch (e) { if (n !== jobsSeq) return; jobsErr = String(e.message || e) }
+    redraw()
   }
   const setJob = async (job, settings) => {
+    const n = ++jobsSeq
     let err = ''
-    try { jobs = await ctx.echo.jobs.set(job, settings) } catch (e) { err = String(e.message || e) }
+    try { const l = await ctx.echo.jobs.set(job, settings); if (n === jobsSeq) jobs = l } catch (e) { err = String(e.message || e) }
     if (err) await loadJobs() // its fields back to what Echo holds
     jobsErr = err
     ctx.render()
@@ -431,6 +439,10 @@ export function apply(ctx) {
     icon: CLOCK,
     badge: () => (data ? data.routines.length : ''),
     render() {
+      // Coming (back) to the section — not drawn for a few seconds — or 30 s on: Echo's jobs asked for again.
+      const now = Date.now()
+      if (canJobs() && (now - seenAt > 5000 || now - jobsAt > 30000)) loadJobs()
+      seenAt = now
       if (!data) { if (!error) load(); return error ? `<p class="error">${esc(error)}</p>` : '<div class="skeleton" style="padding:20px"><i></i><i></i><i></i></div>' }
       return page === 'run' && runView ? runPage() : page === 'edit' && edit ? editPage() : listPage()
     },
@@ -438,7 +450,7 @@ export function apply(ctx) {
   ctx.panels.add({ id: 'routine', label: 'Routine', icon: CLOCK, area: 'right', when: () => here() && page === 'list' && !!sel, render: panel })
   // Its card in Settings → Plugins points to its section.
   ctx.settings.add({ render: () => ctx.ui.setCard('', [ctx.ui.setRow('Routines and Echo’s jobs', `${data ? data.routines.length : '…'} routine${data && data.routines.length === 1 ? '' : 's'}, and what Echo runs by itself — see and change them in its own section.`, `<button class="btn" data-sch-open>Open Scheduler</button>`)]) })
-  ctx.palette.add({ label: 'Scheduler: Echo’s jobs', keywords: 'background jobs night pause model interval sync recall prep minutes', run: () => { page = 'list'; jobsOpen = true; ctx.go(`settings/${SECTION}`) } })
+  ctx.palette.add({ label: 'Scheduler: Echo’s jobs', keywords: 'background jobs night pause model interval sync recall prep minutes', run: () => { page = 'list'; jobsOpen = true; jobsAt = 0; try { localStorage.setItem('sch-jobs-open', 'yes') } catch { /* kept for now only */ } ctx.go(`settings/${SECTION}`) } })
   ctx.palette.add({ label: 'Scheduler: routines', keywords: 'routine schedule cron digest', run: () => ctx.go(`settings/${SECTION}`) })
   ctx.palette.add({ label: 'Scheduler: new routine from a template', keywords: 'routine plan monday friday prep', run: () => { page = 'list'; picker = true; ctx.go(`settings/${SECTION}`) } })
 
@@ -487,20 +499,34 @@ export function apply(ctx) {
       return
     }
     if ('schTrialclose' in d) { trial = null; return ctx.render() }
-    if ('schOpen' in d) { page = 'list'; return ctx.go(`settings/${SECTION}`) }
+    if ('schOpen' in d) { page = 'list'; jobsAt = 0; return ctx.go(`settings/${SECTION}`) }
     if ('schConnect' in d) return ctx.go(d.schConnect ? `settings/${d.schConnect}:main` : 'settings/plugins')
   })
   // The night's times are saved when the field is left (Tab, a click elsewhere) or on Enter: a time field changes with
   // each part typed, and saving then would redraw it under the typing.
   listen('focusout', (ev) => {
-    const t = ev.target, k = t && t.dataset && t.dataset.schNight
-    if (k && jobs && t.value && t.value !== (jobs.night || {})[k]) setJob('night', [`${k}=${t.value}`])
+    const t = ev.target
+    if (!t || !t.dataset || !t.matches || !t.matches('[data-sch-jnum],[data-sch-night]')) return
+    // Only a field the user left in this window: not one a redraw took away, nor the window losing focus.
+    if (!t.isConnected || !document.hasFocus()) return
+    const k = t.dataset.schNight
+    if (k && jobs && t.value && t.value !== (jobs.night || {})[k]) return setJob('night', [`${k}=${t.value}`])
+    if (k && !t.value) { if (jobs && jobs.night) t.value = jobs.night[k] || ''; return } // emptied: back to Echo's time
+    if (held) setTimeout(redraw, 0)
   })
   listen('keydown', (ev) => { if (ev.key === 'Enter' && ev.target && ev.target.dataset && ev.target.dataset.schNight) ev.target.blur() })
   listen('input', (ev) => { if (page === 'edit' && ev.target && ev.target.id === 'sch-hours') readForm() })
   listen('change', (ev) => {
     const j = ev.target && ev.target.dataset
-    if (j && 'schJnum' in j) return setJob(j.schJob, [`${j.key}=${String(ev.target.value).trim()}`])
+    if (j && 'schJnum' in j) {
+      const v = String(ev.target.value).trim()
+      if (v) return setJob(j.schJob, [`${j.key}=${v}`])
+      // Emptied: Echo's value again ("Back to default" is the way back), put in the field itself — a redraw of the same
+      // HTML wouldn't touch it.
+      const f = jobs && ((jobs.jobs.find((x) => x.id === j.schJob) || {}).fields || []).find((x) => x.key === j.key)
+      if (f) ev.target.value = String(f.value)
+      return
+    }
     if (j && 'schJmodel' in j) return setJob(j.schJob, [`model=${ev.target.value}`])
     if (page === 'edit' && ev.target && ['sch-time', 'sch-hours', 'sch-model-pick'].includes(ev.target.id)) {
       readForm(); ctx.render()

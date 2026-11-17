@@ -97,21 +97,15 @@ textarea.sch-in { height: 260px; padding: 9px 10px; line-height: 1.55; resize: v
 .sch-menu button:hover { background: var(--accent-soft); }
 .sch-menu b { font-size: 13px; font-weight: 600; }
 .sch-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
-.sch-jobs { border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--surface); }
-.sch-jhead { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 14px; }
-.sch-jhead h3 { margin: 0; font-size: 13.5px; font-weight: 650; }
-.sch-jhead + .sch-job { border-top: 1px solid var(--line); }
-.sch-night { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-2); }
-.sch-night .sch-in { width: 96px; height: 28px; }
-.sch-job { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; padding: 10px 14px; border-bottom: 1px solid var(--line); align-items: start; }
-.sch-job:last-child { border-bottom: 0; }
-.sch-jfields { display: flex; flex-direction: column; gap: 6px; }
-.sch-jf { display: grid; grid-template-columns: minmax(0, 1fr) 150px minmax(0, 0.85fr); gap: 8px; align-items: center; font-size: 12px; color: var(--text-2); }
-.sch-jf .sch-in { height: 28px; width: 100%; }
-.sch-jdef { border: 0; background: none; padding: 0; font: inherit; font-size: 12px; color: var(--accent-ink); text-align: left; cursor: default; }
-.sch-jdef:hover { text-decoration: underline; }
-.sch-jerr { margin: 0; padding: 0 14px 10px; color: var(--danger); font-size: 12px; }
-@media (max-width: 760px) { .sch-job { grid-template-columns: minmax(0, 1fr); } }
+.sch-tabs { border-bottom: 1px solid var(--line); }
+.sch-night { display: flex; gap: 6px; align-items: center; flex: none; font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+.sch-night .sch-in { width: 104px; height: 28px; }
+.sch-night .btn { height: 28px; padding: 0 8px; font-variant-numeric: tabular-nums; }
+.sch-chg { color: var(--text); }
+.sch-chg::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 3px; background: var(--accent); margin-right: 5px; vertical-align: 1px; }
+.sch-jerr { margin: 0; color: var(--danger); font-size: 12px; }
+.sch-jnum { display: flex; gap: 8px; align-items: center; }
+.sch-jnum input { width: 84px; }
 `
 
 export function apply(ctx) {
@@ -162,12 +156,13 @@ export function apply(ctx) {
   }
   // ── Echo's own background jobs (`uses.echo.jobs`, Echo 0.9.13): listed, and changed only on the user's click or key
   // (Echo refuses any other change). They run on their own settings with or without this plugin.
-  let jobs = null, jobsErr = '', jobsOpen = true
+  let jobs = null, jobsErr = '', tab = 'routines', selJob = null, jobEdit = null, nightEdit = false
   let jobsAt = 0, seenAt = 0, jobsSeq = 0, held = false // when the list was last asked for; the newest request; a redraw held back
-  try { jobsOpen = localStorage.getItem('sch-jobs-open') !== 'no' } catch { /* no storage: open */ }
+  try { if (localStorage.getItem('sch-tab') === 'system') tab = 'system' } catch { /* no storage: Routines */ }
+  const setTab = (t) => { tab = t; try { localStorage.setItem('sch-tab', t) } catch { /* kept for now only */ } }
   const canJobs = () => !!(ctx.echo && ctx.echo.jobs)
   // A redraw replaces the section's fields: never while the user is typing in a job's field — held until they leave it.
-  const typing = () => { const a = document.activeElement; return !!(a && a.matches && a.matches('[data-sch-jnum],[data-sch-night]')) }
+  const typing = () => { const a = document.activeElement; return !!(a && a.matches && a.matches('[data-sch-jf],[data-sch-night]')) }
   const redraw = () => { if (typing()) held = true; else { held = false; ctx.render() } }
   // The list each time the section is entered (and at most every 30 s while it stays open, for last run and runs
   // today); an answer older than the newest request (a set, say) is dropped.
@@ -253,32 +248,141 @@ export function apply(ctx) {
 
   // ── views ──
   const MODEL_NAMES = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' }
-  const defText = (f) => (f.kind === 'night' ? (f.default ? 'on' : 'off') : String(f.default))
-  const jobField = (j, f) => {
-    const id = `sch-j-${j.id}-${f.key}`
-    const data = `data-sch-job="${esc(j.id)}" data-key="${esc(f.key)}"`
-    const back = f.set ? `<button class="sch-jdef" data-sch-jreset ${data}>Back to default: ${esc(defText(f))}</button>` : `<span class="sch-sub">default: ${esc(defText(f))}</span>`
-    if (f.kind === 'model') {
-      const v = f.set ? String(f.value) : ''
-      return `<div class="sch-jf"><label for="${id}">${esc(f.label)}</label><select class="sch-in" id="${id}" ${data} data-sch-jmodel>
-        <option value=""${!v ? ' selected' : ''}>Job’s default</option>${Object.entries(MODEL_NAMES).map(([m, l]) => `<option value="${m}"${v === m ? ' selected' : ''}>${l}</option>`).join('')}${v && !MODEL_NAMES[v] ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : ''}</select>${back}</div>`
+  const UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h11a5 5 0 0 1 0 10h-4"/><path d="M8 5L4 9l4 4"/></svg>'
+  // Echo's own night when the list doesn't say (its `jobs::NIGHT`): to know whether the user changed it.
+  const NIGHT_DEFAULT = { from: '22:30', to: '07:00' }
+  // A label as Echo gives it, "Every (minutes)", split into what it is and its unit.
+  const unitOf = (label) => { const m = /^(.*?)\s*\((minutes|seconds)\)\s*$/.exec(label); return m ? [m[1], m[2] === 'minutes' ? 'min' : 's'] : [label, ''] }
+  const fieldOf = (j, key) => j.fields.find((f) => f.key === key)
+  const part = (set, text) => `<span${set ? ' class="sch-chg"' : ''}>${esc(text)}</span>`
+  // A system routine's schedule — its timer — in plain words, what the user changed marked.
+  const timer = (j) => {
+    const out = []
+    const w = fieldOf(j, 'batch_wait'), i = fieldOf(j, 'batch_items')
+    if (w && i) out.push(part(w.set || i.set, `Mail and chat wait up to ${w.value} min or ${i.value} item${i.value === 1 ? '' : 's'}`))
+    for (const f of j.fields) {
+      if (f.kind !== 'number' || f === w || f === i) continue
+      const [what, unit] = unitOf(f.label)
+      const text = f.key === 'every' || f.key === 'every_s' ? `Every ${f.value} ${unit}`
+        : f.key === 'delay' ? `${f.value} ${unit} after a call`
+        : f.key === 'per_pass' ? `${f.value} a pass`
+        : `${what} ${f.value}${unit ? ` ${unit}` : ''}`
+      out.push(part(f.set, out.length ? text.charAt(0).toLowerCase() + text.slice(1) : text))
     }
-    if (f.kind === 'night') return `<div class="sch-jf"><span id="${id}">${esc(f.label)}</span><span><button class="sw${f.value ? ' on' : ''}" role="switch" aria-checked="${!!f.value}" aria-labelledby="${id}" ${data} data-sch-jnight data-on="${!f.value}"></button></span>${back}</div>`
-    const r = f.range || {}
-    return `<div class="sch-jf"><label for="${id}">${esc(f.label)}</label><input class="sch-in sch-num" id="${id}" type="number"${r.min != null ? ` min="${r.min}"` : ''}${r.max != null ? ` max="${r.max}"` : ''} value="${esc(String(f.value))}" ${data} data-sch-jnum title="${r.min != null ? `${r.min}–${r.max}` : ''}">${back}</div>`
+    return out.join(' · ')
   }
-  const jobsSection = () => {
-    if (!canJobs()) return ''
-    if (!jobs) return jobsErr ? `<div class="sch-jobs"><div class="sch-jhead"><h3>Echo’s jobs</h3></div><p class="sch-jerr">${esc(jobsErr)}</p></div>` : ''
-    const n = jobs.night || {}
-    const head = `<div class="sch-jhead"><div style="flex:1;min-width:220px"><h3>Echo’s jobs</h3><div class="sch-sub">What Echo runs by itself. They run on these settings with or without the Scheduler; a change applies at a job’s next run.</div></div>
-      ${jobsOpen ? `<div class="sch-night"><label for="sch-night-from">Night: from</label><input class="sch-in sch-num" id="sch-night-from" type="time" value="${esc(n.from || '')}" data-sch-night="from"><label for="sch-night-to">to</label><input class="sch-in sch-num" id="sch-night-to" type="time" value="${esc(n.to || '')}" data-sch-night="to"><button class="sch-jdef" data-sch-nightdef title="Echo’s own night">Back to default</button></div>` : ''}
-      <button class="btn ghost" data-sch-jfold aria-expanded="${jobsOpen}">${jobsOpen ? 'Hide' : `Show ${jobs.jobs.length}`}</button></div>`
-    const rows = !jobsOpen ? '' : jobs.jobs.map((j) => `<div class="sch-job" data-sch-jrow="${esc(j.id)}">
-        <div><div class="sch-nm">${esc(j.name)}</div><div class="sch-sub">${esc(j.what)}</div>
-          <div class="sch-sub sch-num" style="margin-top:3px">${j.last_run ? `Last run ${esc(when(j.last_run).replace(/^T/, 't'))}` : 'Not run yet'} · ${j.runs_today} run${j.runs_today === 1 ? '' : 's'} today</div></div>
-        <div class="sch-jfields">${j.fields.map((f) => jobField(j, f)).join('')}</div></div>`).join('')
-    return `<div class="sch-jobs" aria-label="Echo’s jobs">${head}${jobsErr ? `<p class="sch-jerr" role="alert">${esc(jobsErr)}</p>` : ''}${rows}</div>`
+  const nightWords = (j) => { const f = fieldOf(j, 'night'); return f ? part(f.set, f.value ? 'pauses at night' : 'runs at night') : '' }
+  const modelWords = (j) => { const f = fieldOf(j, 'model'); return f ? part(f.set, f.set ? MODEL_NAMES[f.value] || String(f.value) : 'Default model') : '<span class="sch-sub">No model</span>' }
+  const jobLast = (j) => (j.last_run ? ['ok', 'Ran', when(j.last_run)] : ['', 'Not run yet', ''])
+  const jobById = (id) => jobs && jobs.jobs.find((j) => j.id === id)
+  // The System tab: Echo's own jobs as system routines — the routines' row, the night in its head.
+  const systemTab = () => {
+    if (!jobs) return jobsErr ? `<p class="sch-jerr" role="alert">${esc(jobsErr)}</p>` : '<div class="skeleton" style="padding:20px"><i></i><i></i><i></i></div>'
+    const n = jobs.night || {}, dn = jobs.night_default || NIGHT_DEFAULT
+    const changed = n.from !== dn.from || n.to !== dn.to
+    const night = nightEdit
+      ? `<label for="sch-night-from">Night</label><input class="sch-in sch-num" id="sch-night-from" type="time" value="${esc(n.from || '')}" data-sch-night="from"><span>→</span><input class="sch-in sch-num" id="sch-night-to" type="time" value="${esc(n.to || '')}" data-sch-night="to" aria-label="Night ends"><button class="btn ghost" data-sch-nightdone>Done</button>`
+      : `<span>Night</span><button class="btn ghost" data-sch-nightedit title="Change the night system routines pause in">${esc(n.from || '')} → ${esc(n.to || '')}</button>${changed ? `<button class="icon-btn" data-sch-nightdef title="Back to default (${esc(dn.from)} → ${esc(dn.to)})" aria-label="Back to default night">${UNDO}</button>` : ''}`
+    const rows = jobs.jobs.map((j) => {
+      const [cls, txt, at] = jobLast(j)
+      const today = `${j.runs_today} run${j.runs_today === 1 ? '' : 's'} today${j.cost_today != null ? ` · ${money(j.cost_today)}` : ''}`
+      return `<div class="sch-tr${selJob === j.id ? ' sel' : ''}" role="row" data-sch-jsel="${esc(j.id)}">
+        <div><div class="sch-nm" title="${esc(j.what)}">${esc(j.name)}</div><div class="sch-sub">${timer(j)}</div></div>
+        <div style="font-size:12px">${nightWords(j) || '<span class="sch-sub">—</span>'}</div>
+        <div><div class="sch-st"><span class="sch-dot ${cls}"></span>${esc(txt)}</div><div class="sch-sub sch-num">${esc(at)}</div></div>
+        <div style="font-size:12px">${modelWords(j)}</div>
+        <div><div class="sch-sub sch-num">${esc(today)}</div></div>
+        <div></div></div>`
+    }).join('')
+    return `<div class="sch-head" style="align-items:center"><div style="flex:1;min-width:0" class="sch-sub">Echo’s own jobs, run by itself — on these settings with or without the Scheduler; a change applies at the job’s next run.</div><div class="sch-night">${night}</div></div>
+      ${jobsErr ? `<p class="sch-jerr" role="alert">${esc(jobsErr)}</p>` : ''}
+      <div class="sch-tbl" role="table" aria-label="System routines"><div class="sch-th" role="row"><span>System routine</span><span>At night</span><span>Last run</span><span>Model</span><span>Today</span><span></span></div>${rows}</div>`
+  }
+  // The selected system routine in the right panel, as a routine's.
+  const jobPanel = () => {
+    const j = jobById(selJob)
+    if (!j) return '<div class="sch-p"><span class="sch-sub">Pick a system routine.</span></div>'
+    const [, txt, at] = jobLast(j)
+    const runs = (jobRuns[j.id] || [])
+    const list = runs.slice(0, 8).map((x) => `<div class="sch-run" style="cursor:default"><span class="sch-dot ${x.ok === false || x.state === 'failed' ? 'bad' : 'ok'}"></span><div><div class="w2">${esc(when(x.at || x.start || ''))}${x.summary ? ` · ${esc(String(x.summary).slice(0, 80))}` : ''}</div><div class="meta">${x.duration_ms != null ? secs(x.duration_ms) : ''}${x.model ? ` · ${esc(x.model)}` : ''}${x.error ? ` · ${esc(String(x.error).slice(0, 80))}` : ''}</div></div><span class="sch-cost">${x.cost != null ? money(x.cost) : ''}</span></div>`).join('')
+    return `<div class="sch-p">
+      <div><div style="font-size:15px;font-weight:650">${esc(j.name)}</div><div class="sch-sub">${esc(j.what)}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn primary" data-sch-jedit="${esc(j.id)}">Edit</button></div>
+      <div class="sch-kv"><span>When</span><div>${timer(j)}</div>
+        ${fieldOf(j, 'night') ? `<span>At night</span><div>${nightWords(j)} (${esc((jobs.night || {}).from || '')} → ${esc((jobs.night || {}).to || '')})</div>` : ''}
+        ${fieldOf(j, 'model') ? `<span>Model</span><div>${modelWords(j)}${fieldOf(j, 'model').set ? '' : ` <span class="sch-sub">— ${esc(String(fieldOf(j, 'model').default))}</span>`}</div>` : ''}
+        <span>Last run</span><div>${esc(txt)}${at ? ` · ${esc(at)}` : ''} · ${j.runs_today} today</div>
+        <span>Runs</span><div class="sch-sub">By Echo, as a system routine: no prompt, nothing sent.</div></div>
+      ${runs.length ? `<div><h4 class="sch-h4" style="margin-bottom:6px">Last ${runs.length} run${runs.length === 1 ? '' : 's'}</h4>${list}</div>` : '<span class="sch-sub">No runs recorded yet.</span>'}
+    </div>`
+  }
+  // A system routine's editor, as a routine's: its timer, the night and the model; saved at once with Save.
+  const jobEditPage = () => {
+    const j = jobById(jobEdit.id)
+    if (!j) return '<div class="sch"><span class="sch-sub">No such system routine.</span></div>'
+    const e = jobEdit.draft
+    const crumbs = `<div class="sch-crumb"><button data-sch-list>Scheduler</button><span>›</span><button data-sch-list>System</button><span>›</span><span>${esc(j.name)}</span><span>›</span><span>Edit</span></div>`
+    const back = (f, shown) => `<button class="sch-jdefb icon-btn" data-sch-jdef="${esc(f.key)}" title="Back to default (${esc(shown)})" aria-label="Back to default (${esc(shown)})">${UNDO}</button>`
+    const isDefault = (f) => (e[f.key] === undefined ? !f.set : e[f.key] === null)
+    const val = (f) => (e[f.key] === undefined ? f.value : e[f.key] === null ? f.default : e[f.key])
+    const nums = j.fields.filter((f) => f.kind === 'number').map((f) => {
+      const [what, unit] = unitOf(f.label), r = f.range || {}
+      return `<div class="sch-f"><label class="sch-lbl" for="sch-jf-${esc(f.key)}">${esc(what)}</label><div class="sch-jnum"><input class="sch-in sch-num" id="sch-jf-${esc(f.key)}" type="number"${r.min != null ? ` min="${r.min}" max="${r.max}"` : ''} value="${esc(String(val(f)))}" data-sch-jf="${esc(f.key)}">${unit ? `<span class="sch-sub">${unit}</span>` : ''}${isDefault(f) ? `<span class="sch-sub">default${r.min != null ? ` · ${r.min}–${r.max}` : ''}</span>` : back(f, String(f.default))}</div></div>`
+    }).join('')
+    const nf = fieldOf(j, 'night'), mf = fieldOf(j, 'model')
+    const nightOn = nf ? !!val(nf) : false
+    const N = jobs.night || {}
+    const nightRow = nf ? `<div class="sch-f"><span class="sch-lbl">At night</span><div style="display:flex;gap:8px;align-items:center"><button class="sch-dest" data-sch-jnightd style="grid-template-columns:auto minmax(0,1fr);border:0;padding:4px 0;flex:1"><span class="sch-cb${nightOn ? ' on' : ''}" aria-hidden="true">${nightOn ? '✓' : ''}</span><span>Pause at night (${esc(N.from || '')} → ${esc(N.to || '')})</span></button>${isDefault(nf) ? '<span class="sch-sub">default</span>' : back(nf, nf.default ? 'on' : 'off')}</div></div>` : ''
+    const mv = mf ? (e.model === undefined ? (mf.set ? String(mf.value) : '') : e.model === null ? '' : e.model) : ''
+    const modelRow = mf ? `<div class="sch-f"><label class="sch-lbl" for="sch-jf-model">Model</label><select class="sch-in" id="sch-jf-model" data-sch-jf="model" style="max-width:340px"><option value=""${!mv ? ' selected' : ''}>Default — ${esc(String(mf.default))}</option>${Object.entries(MODEL_NAMES).map(([m, l]) => `<option value="${m}"${mv === m ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="sch-sub">Each AI profile runs its own model for Haiku, Sonnet and Opus.</span></div>` : ''
+    return `<div class="sch">${crumbs}
+      <div class="sch-edit">
+        <div class="sch-col">
+          <div class="sch-f"><span class="sch-lbl">Name</span><div style="font-weight:600">${esc(j.name)}</div><span class="sch-sub">${esc(j.what)}</span></div>
+          ${modelRow}
+        </div>
+        <div class="sch-col">
+          <div class="sch-f"><span class="sch-lbl">When</span><span class="sch-sub">Echo’s timer for it; it runs by itself while Echo runs.</span></div>
+          ${nums}
+          ${nightRow}
+        </div>
+      </div>
+      ${jobsErr ? `<p class="error">${esc(jobsErr)}</p>` : ''}
+      <div class="sch-foot"><span style="flex:1"></span><span class="sch-sub">A change applies at its next run</span><button class="btn" data-sch-list>Cancel</button><button class="btn primary" data-sch-jsave>Save</button></div></div>`
+  }
+  // The editor's fields into its draft: a value typed (different from what Echo holds) or reset (null).
+  const readJobForm = () => {
+    if (!jobEdit) return
+    const j = jobById(jobEdit.id)
+    if (!j) return
+    for (const el of document.querySelectorAll('[data-sch-jf]')) {
+      const f = fieldOf(j, el.dataset.schJf)
+      if (!f) continue
+      const v = String(el.value).trim()
+      if (f.kind === 'model') { jobEdit.draft.model = v === '' ? (f.set ? null : undefined) : v; continue }
+      if (v === '') continue
+      const cur = jobEdit.draft[f.key] === undefined ? f.value : jobEdit.draft[f.key] === null ? f.default : jobEdit.draft[f.key]
+      if (String(cur) !== v) jobEdit.draft[f.key] = +v
+    }
+  }
+  const saveJob = async () => {
+    readJobForm()
+    const j = jobById(jobEdit.id)
+    const sets = Object.entries(jobEdit.draft).filter(([, v]) => v !== undefined).map(([k, v]) => {
+      const f = fieldOf(j, k)
+      return v === null ? `${k}=` : f && f.kind === 'night' ? `${k}=${v ? 'on' : 'off'}` : `${k}=${v}`
+    })
+    if (!sets.length) { page = 'list'; jobEdit = null; return ctx.render() }
+    await setJob(j.id, sets)
+    if (!jobsErr) { page = 'list'; selJob = j.id; jobEdit = null }
+    ctx.render()
+  }
+  // Each system routine's runs, from Echo when it records them (`ctx.echo.jobs.runs`); none before.
+  const jobRuns = {}
+  const loadJobRuns = async (id) => {
+    if (!(ctx.echo && ctx.echo.jobs && ctx.echo.jobs.runs)) return
+    try { const r = await ctx.echo.jobs.runs(id, { limit: 20 }); jobRuns[id] = Array.isArray(r) ? r : (r && r.runs) || [] } catch { jobRuns[id] = [] }
+    redraw()
   }
   const listPage = () => {
     const T = data.totals || { runs: 0, failed: 0, tokens: 0, cached: 0, cost: 0 }
@@ -306,13 +410,13 @@ export function apply(ctx) {
     }).join('')
     const empty = !data.routines.length ? `<div class="sch-tr"><div style="grid-column:1/-1;padding:14px 0"><b>No routines yet.</b> <span class="sch-sub">Start from a template — a plan for your day, Monday asks, a Friday wrap-up, meeting prep — or write your own.</span></div></div>` : ''
     return `<div class="sch">
-      <div class="sch-head"><div style="flex:1"><h2>Scheduler</h2><div class="sch-sub">${canJobs() ? 'What Echo runs by itself, and your prompts run by Claude on a schedule with the answer sent to you.' : 'Your prompts, run by Claude on a schedule; the answer sent to you.'}</div></div>${newButton()}</div>
-      ${jobsSection()}
-      ${canJobs() ? '<div class="sch-jhead" style="padding:4px 0 0"><h3>Your routines</h3></div>' : ''}
+      <div class="sch-head"><div style="flex:1"><h2>Scheduler</h2><div class="sch-sub">${canJobs() ? 'Your prompts, run by Claude on a schedule; and Echo’s own, as system routines.' : 'Your prompts, run by Claude on a schedule; the answer sent to you.'}</div></div>${!canJobs() || tab === 'routines' ? newButton() : ''}</div>
+      ${canJobs() ? `<div class="tabs sch-tabs" role="tablist"><button class="tab" role="tab" data-sch-tab="routines" aria-selected="${tab === 'routines'}">Routines<span class="n">${data.routines.length}</span></button><button class="tab" role="tab" data-sch-tab="system" aria-selected="${tab === 'system'}">System${jobs ? `<span class="n">${jobs.jobs.length}</span>` : ''}</button></div>` : ''}
+      ${canJobs() && tab === 'system' ? `${systemTab()}</div>` : ''}${canJobs() && tab === 'system' ? '' : `
       ${facts}
       <div class="sch-tbl" role="table" aria-label="Routines"><div class="sch-th" role="row"><span>Routine</span><span>Next run</span><span>Last run</span><span>Sends to</span><span>30 days</span><span></span></div>${rows}${empty}</div>
       ${error ? `<p class="error">${esc(error)}</p>` : ''}
-      <div class="sch-sub">Costs as Claude Code reports them for each run, on the routine’s AI profile. Each routine keeps its last 20 runs: prompt, answer and log.</div></div>`
+      <div class="sch-sub">Costs as Claude Code reports them for each run, on the routine’s AI profile. Each routine keeps its last 20 runs: prompt, answer and log.</div></div>`}`
   }
   const newButton = () => `<div class="sch-pick"><button class="btn primary" data-sch-new aria-haspopup="menu" aria-expanded="${picker}">+ New routine</button>${picker ? `<div class="sch-menu" role="menu">
       ${(data.templates || []).map((t) => `<button role="menuitem" data-sch-tpl="${esc(t.template)}"><b>${esc(t.name)}</b><span class="sch-sub">${esc(t.description)}</span></button>`).join('')}
@@ -444,25 +548,32 @@ export function apply(ctx) {
       if (canJobs() && (now - seenAt > 5000 || now - jobsAt > 30000)) loadJobs()
       seenAt = now
       if (!data) { if (!error) load(); return error ? `<p class="error">${esc(error)}</p>` : '<div class="skeleton" style="padding:20px"><i></i><i></i><i></i></div>' }
-      return page === 'run' && runView ? runPage() : page === 'edit' && edit ? editPage() : listPage()
+      return page === 'run' && runView ? runPage() : page === 'edit' && edit ? editPage() : page === 'jobedit' && jobEdit && jobs ? jobEditPage() : listPage()
     },
   })
-  ctx.panels.add({ id: 'routine', label: 'Routine', icon: CLOCK, area: 'right', when: () => here() && page === 'list' && !!sel, render: panel })
+  ctx.panels.add({ id: 'routine', label: 'Routine', icon: CLOCK, area: 'right', when: () => here() && page === 'list' && (tab === 'routines' || !canJobs()) && !!sel, render: panel })
+  ctx.panels.add({ id: 'system', label: 'System routine', icon: CLOCK, area: 'right', when: () => here() && page === 'list' && tab === 'system' && canJobs() && !!selJob, render: jobPanel })
   // Its card in Settings → Plugins points to its section.
   ctx.settings.add({ render: () => ctx.ui.setCard('', [ctx.ui.setRow('Routines and Echo’s jobs', `${data ? data.routines.length : '…'} routine${data && data.routines.length === 1 ? '' : 's'}, and what Echo runs by itself — see and change them in its own section.`, `<button class="btn" data-sch-open>Open Scheduler</button>`)]) })
-  ctx.palette.add({ label: 'Scheduler: Echo’s jobs', keywords: 'background jobs night pause model interval sync recall prep minutes', run: () => { page = 'list'; jobsOpen = true; jobsAt = 0; try { localStorage.setItem('sch-jobs-open', 'yes') } catch { /* kept for now only */ } ctx.go(`settings/${SECTION}`) } })
-  ctx.palette.add({ label: 'Scheduler: routines', keywords: 'routine schedule cron digest', run: () => ctx.go(`settings/${SECTION}`) })
+  ctx.palette.add({ label: 'Scheduler: system routines (Echo’s jobs)', keywords: 'system echo jobs background night pause model interval sync recall prep minutes', run: () => { page = 'list'; setTab('system'); jobsAt = 0; ctx.go(`settings/${SECTION}`) } })
+  ctx.palette.add({ label: 'Scheduler: routines', keywords: 'routine schedule cron digest', run: () => { page = 'list'; setTab('routines'); ctx.go(`settings/${SECTION}`) } })
   ctx.palette.add({ label: 'Scheduler: new routine from a template', keywords: 'routine plan monday friday prep', run: () => { page = 'list'; picker = true; ctx.go(`settings/${SECTION}`) } })
 
   listen('click', async (ev) => {
-    const t = ev.target.closest && ev.target.closest('[data-sch-sel],[data-sch-on],[data-sch-new],[data-sch-tpl],[data-sch-blank],[data-sch-run],[data-sch-edit],[data-sch-runopen],[data-sch-list],[data-sch-back],[data-sch-prompt],[data-sch-mode],[data-sch-day],[data-sch-to],[data-sch-others],[data-sch-skip],[data-sch-perm],[data-sch-save],[data-sch-del],[data-sch-try],[data-sch-trialclose],[data-sch-open],[data-sch-connect],[data-sch-jreset],[data-sch-jnight],[data-sch-nightdef],[data-sch-jfold]')
+    const t = ev.target.closest && ev.target.closest('[data-sch-sel],[data-sch-on],[data-sch-new],[data-sch-tpl],[data-sch-blank],[data-sch-run],[data-sch-edit],[data-sch-runopen],[data-sch-list],[data-sch-back],[data-sch-prompt],[data-sch-mode],[data-sch-day],[data-sch-to],[data-sch-others],[data-sch-skip],[data-sch-perm],[data-sch-save],[data-sch-del],[data-sch-try],[data-sch-trialclose],[data-sch-open],[data-sch-connect],[data-sch-nightdef],[data-sch-tab],[data-sch-jedit],[data-sch-nightedit],[data-sch-nightdone],[data-sch-jsel],[data-sch-jsave],[data-sch-jdef],[data-sch-jnightd]')
     if (!t) { if (picker && !(ev.target.closest && ev.target.closest('.sch-pick'))) { picker = false; ctx.render() } return }
     const d = t.dataset
     if (page === 'edit') readForm()
-    if ('schJreset' in d) return setJob(d.schJob, [`${d.key}=`])
-    if ('schJnight' in d) return setJob(d.schJob, [`night=${d.on === 'true' ? 'on' : 'off'}`])
+    if (page === 'jobedit') readJobForm()
     if ('schNightdef' in d) return setJob('night', ['from=', 'to='])
-    if ('schJfold' in d) { jobsOpen = !jobsOpen; try { localStorage.setItem('sch-jobs-open', jobsOpen ? 'yes' : 'no') } catch { /* kept for now only */ } return ctx.render() }
+    if (d.schTab) { setTab(d.schTab); picker = false; if (d.schTab === 'system') jobsAt = 0; ctx.render(); if (d.schTab === 'system') loadJobs(); return }
+    if (d.schJsel) { selJob = d.schJsel; ctx.showPanel('system'); ctx.render(); return loadJobRuns(selJob) }
+    if (d.schJedit) { jobEdit = { id: d.schJedit, draft: {} }; jobsErr = ''; page = 'jobedit'; return ctx.render() }
+    if ('schJsave' in d) return saveJob()
+    if (d.schJdef) { jobEdit.draft[d.schJdef] = null; return ctx.render() }
+    if ('schJnightd' in d) { const j = jobById(jobEdit.id), f = j && fieldOf(j, 'night'); if (f) { const cur = jobEdit.draft.night === undefined ? f.value : jobEdit.draft.night === null ? f.default : jobEdit.draft.night; jobEdit.draft.night = !cur } return ctx.render() }
+    if ('schNightedit' in d) { nightEdit = true; ctx.render(); const f = document.getElementById('sch-night-from'); if (f) f.focus(); return }
+    if ('schNightdone' in d) { nightEdit = false; return ctx.render() }
     if ('schOn' in d) { ev.stopPropagation(); return op('enable', { id: d.schOn, on: d.on === 'true' }) }
     if (d.schSel) { sel = d.schSel; ctx.showPanel('routine'); return ctx.render() }
     if ('schNew' in d) { picker = !picker; return ctx.render() }
@@ -471,7 +582,7 @@ export function apply(ctx) {
     if (d.schEdit) { const r = data.routines.find((x) => x.id === d.schEdit); trial = null; edit = draftOf(r); page = 'edit'; return ctx.render() }
     if (d.schRun) { await op('run', { id: d.schRun }); sel = d.schRun; page = 'list'; return ctx.render() }
     if (d.schRunopen) return openRun(d.schRunopen, t.dataset.run)
-    if ('schList' in d) { page = 'list'; edit = null; error = ''; return ctx.render() }
+    if ('schList' in d) { page = 'list'; edit = null; jobEdit = null; error = ''; jobsErr = ''; return ctx.render() }
     if (d.schBack) { page = 'list'; sel = d.schBack; ctx.showPanel('routine'); return ctx.render() }
     if ('schPrompt' in d) { runView.prompt = !runView.prompt; return ctx.render() }
     if (d.schMode) { edit.mode = d.schMode; if (edit.mode === 'days' && !edit.days.some(Boolean)) edit.days = [true, false, false, false, false, false, false]; return ctx.render() }
@@ -506,7 +617,7 @@ export function apply(ctx) {
   // each part typed, and saving then would redraw it under the typing.
   listen('focusout', (ev) => {
     const t = ev.target
-    if (!t || !t.dataset || !t.matches || !t.matches('[data-sch-jnum],[data-sch-night]')) return
+    if (!t || !t.dataset || !t.matches || !t.matches('[data-sch-jf],[data-sch-night]')) return
     // Only a field the user left in this window: not one a redraw took away, nor the window losing focus.
     if (!t.isConnected || !document.hasFocus()) return
     const k = t.dataset.schNight
@@ -514,20 +625,14 @@ export function apply(ctx) {
     if (k && !t.value) { if (jobs && jobs.night) t.value = jobs.night[k] || ''; return } // emptied: back to Echo's time
     if (held) setTimeout(redraw, 0)
   })
-  listen('keydown', (ev) => { if (ev.key === 'Enter' && ev.target && ev.target.dataset && ev.target.dataset.schNight) ev.target.blur() })
+  listen('keydown', (ev) => {
+    const k = ev.target && ev.target.dataset && ev.target.dataset.schNight
+    if (k && ev.key === 'Enter') { ev.target.blur(); setTimeout(() => { nightEdit = false; ctx.render() }, 0) }
+    if (k && ev.key === 'Escape') { nightEdit = false; ctx.render() }
+  })
   listen('input', (ev) => { if (page === 'edit' && ev.target && ev.target.id === 'sch-hours') readForm() })
   listen('change', (ev) => {
     const j = ev.target && ev.target.dataset
-    if (j && 'schJnum' in j) {
-      const v = String(ev.target.value).trim()
-      if (v) return setJob(j.schJob, [`${j.key}=${v}`])
-      // Emptied: Echo's value again ("Back to default" is the way back), put in the field itself — a redraw of the same
-      // HTML wouldn't touch it.
-      const f = jobs && ((jobs.jobs.find((x) => x.id === j.schJob) || {}).fields || []).find((x) => x.key === j.key)
-      if (f) ev.target.value = String(f.value)
-      return
-    }
-    if (j && 'schJmodel' in j) return setJob(j.schJob, [`model=${ev.target.value}`])
     if (page === 'edit' && ev.target && ['sch-time', 'sch-hours', 'sch-model-pick'].includes(ev.target.id)) {
       readForm(); ctx.render()
       if (ev.target.id === 'sch-model-pick' && edit.modelPick === 'other') { const o = document.getElementById('sch-model'); if (o) o.focus() }

@@ -34,19 +34,19 @@
   },
   {
    "id": "F-SCH-06",
-   "title": "An \"Echo’s jobs\" part above the routines: each of Echo's jobs with its name, what it does, last run and runs today, and its settings (how often, paused at night, model) with \"default: …\" when not set; it can be hidden and shown again, and stays as left",
+   "title": "Echo's jobs in their own tab of the Scheduler (Routines | Echo’s jobs, kept as left; ⌘K \"Scheduler: Echo’s jobs\" opens it): one row a job — its name (what it does as the tooltip) and its settings in plain words (how often or its batch, the night, the model or \"default model\", last run and runs today, or \"not run yet\"), what the user changed marked with a dot",
    "priority": "critical",
    "check": "agent"
   },
   {
    "id": "F-SCH-07",
-   "title": "A job's setting changes on the user's own change (a number, the night switch, Haiku/Sonnet/Opus) and \"Back to default\" (or Job’s default) undoes it; Echo's refusal (out of range) is shown and the field goes back to what Echo holds",
+   "title": "A job's ✎ opens its settings under its row (one job at a time), labels left and controls right with their units: a number, the night switch, the model (Default, Haiku, Sonnet, Opus) change on the user's own change; a changed one has ↺ \"Back to default (…)\"; Echo's refusal is shown and the field keeps Echo's value; the row's summary follows",
    "priority": "critical",
    "check": "agent"
   },
   {
    "id": "F-SCH-08",
-   "title": "The shared night (from–to) is shown and changed there, and back to Echo's own; Echo's jobs keep their settings when the Scheduler is removed",
+   "title": "The shared night in the tab's head (\"Night 22:30 → 07:00\"): its times clicked to edit in place, saved on leaving a field or Enter, Escape cancels; ↺ back to Echo's own when changed; Echo's jobs keep their settings when the Scheduler is removed",
    "priority": "high",
    "check": "agent"
   }

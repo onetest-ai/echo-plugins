@@ -1,6 +1,6 @@
 ---
 id: TC-006
-title: Echo's jobs above the routines — each job's name, what it does, last run, runs today and its settings with their defaults; hidden and shown again
+title: Echo's jobs in their own tab — one row a job with its settings in plain words, what was changed marked; the tab kept as left and opened from ⌘K
 priority: critical
 type: functional
 requirements: [F-SCH-06]
@@ -11,7 +11,7 @@ data: standard
 tags: [scheduler, jobs]
 ---
 
-# TC-006: Echo's jobs above the routines
+# TC-006: Echo's jobs tab
 
 ## Preconditions
 - The environment from `up.sh`: every job on its defaults; Needs you now recorded as run 3 times today, Recall once
@@ -20,14 +20,13 @@ tags: [scheduler, jobs]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | Open `{{base_url}}/#today`, then Settings → From plugins → Scheduler | The Scheduler's section, with its part "Echo’s jobs" there (not only after a reload): "What Echo runs by itself. They run on these settings with or without the Scheduler; a change applies at a job’s next run.", the night's two time fields (values `22:30` and `07:00`), "Back to default", "Hide" — then "Your routines" with the facts and the routines' table (Gateway digest); the head reads "What Echo runs by itself, and your prompts run by Claude on a schedule with the answer sent to you." |
-| 2 | Read the jobs, in order | Seven: Needs you now, Thread sync, Threads' mail and meeting chats, Minutes, Meeting prep, Recall, Live notes — each with what it does (Echo's words, e.g. "Keeps a running summary during a call") |
-| 3 | Read Needs you now and Recall, then Minutes | Needs you now: "Last run today <time> · 3 runs today"; Recall: "Last run today <time> · 1 run today"; Minutes: "Not run yet · 0 runs today" |
-| 4 | Read Needs you now's settings | "Every (minutes)" 5, "default: 5"; "Paused at night" on, "default: on"; "Model" "Job’s default" (options Job’s default, Haiku, Sonnet, Opus — no Other…), "default: the profile's live model" |
-| 5 | Read the rest's settings | Thread sync: "Mail and chat wait at most (minutes)" 120, "…or until this many wait" 5, paused at night on, a model; Threads' mail and meeting chats: every 30, paused at night, no model; Minutes: "Automatic: after the call (minutes)" 15, a model, no night; Meeting prep: every 5, paused at night off ("default: off"), a model; Recall: every 5, "Documents a pass" 30, paused at night off, a model; Live notes: "Summary every (seconds)" 90, a model, no night |
-| 6 | Click "Hide"; reload the page | Only the part's head with "Show 7"; still so after the reload |
-| 7 | Click "Show 7" | The seven jobs again |
-| 8 | Go to Today; press ⌘K, type "Echo’s jobs", pick "Scheduler: Echo’s jobs" | The Scheduler's section with the seven jobs shown |
+| 1 | Open `{{base_url}}/#today`, then Settings → From plugins → Scheduler | "Scheduler" ("Your prompts, run by Claude on a schedule, and what Echo runs by itself."), two tabs "Routines 1" (picked) and "Echo’s jobs 7"; under Routines the facts, the table (Gateway digest) and "+ New routine" |
+| 2 | Click "Echo’s jobs" | "+ New routine" gone; the head "Echo’s jobs" — "What Echo runs by itself — on these settings with or without the Scheduler; a change applies at the job’s next run." — with "Night 22:30 → 07:00" on the right, no ↺; one card with seven rows in order: Needs you now, Thread sync, Threads' mail and meeting chats, Minutes, Meeting prep, Recall, Live notes, each with a ✎ button ("Change <job>’s settings") |
+| 3 | Read the rows' second lines | Needs you now "every 5 min · pauses at night · default model · <time>, 3 today"; Thread sync "waits up to 120 min or 5 items · pauses at night · default model · not run yet"; Threads' mail… "every 30 min · pauses at night · not run yet"; Minutes "15 min after the call · default model · not run yet"; Meeting prep "every 5 min · runs at night · default model · not run yet"; Recall "every 5 min · 30 a pass · runs at night · default model · <time>, 1 today"; Live notes "every 90 s · default model · not run yet". No part marked (no dot) |
+| 4 | Hover "Live notes" | Its tooltip: "Keeps a running summary during a call" |
+| 5 | `echoctl jobs set thread_sync model=haiku`; reload | Thread sync's line: "… · ● Haiku · …" — Haiku in the text colour with a violet dot, the rest in the sub colour; the "Echo’s jobs" tab still picked after the reload |
+| 6 | Click "Routines"; reload; ⌘K "Scheduler: Echo’s jobs" | Routines kept after the reload; the ⌘K entry opens the Echo’s jobs tab |
+| 7 | `echoctl jobs set thread_sync model=` | Back to defaults |
 
 ## Expected Final State
-Nothing changed; the part open.
+Every job on its defaults; the Echo’s jobs tab picked.

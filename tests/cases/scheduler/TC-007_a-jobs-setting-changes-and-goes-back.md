@@ -1,6 +1,6 @@
 ---
 id: TC-007
-title: A job's setting changes on the user's own change — a number, the night switch, a model — and goes back to its default; Echo's refusal shows and the field keeps Echo's value
+title: A job's ✎ opens its settings under its row — a number, the night switch, a model change on the user's own change and go back with ↺; Echo's refusal shows and the field keeps Echo's value
 priority: critical
 type: functional
 requirements: [F-SCH-07]
@@ -14,7 +14,7 @@ tags: [scheduler, jobs]
 # TC-007: Change a job and go back
 
 ## Preconditions
-- TC-006 done; `{{base_url}}/#settings/scheduler:main` open, Echo's jobs shown
+- TC-006 done; the Echo’s jobs tab open
 
 **Changes:** `<config dir>/jobs.json`
 
@@ -22,17 +22,18 @@ tags: [scheduler, jobs]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | In Needs you now, set "Every (minutes)" to 10 and press Enter; `echoctl jobs` | The field 10, beside it "Back to default: 5" in place of "default: 5"; `needs` → `every` value 10, `"set": true` |
-| 2 | Set it to 0 and press Enter | Under the part's head "needs every: 0 is outside 1–240" (Echo's words); the field back to 10; `echoctl jobs`: still 10 |
-| 3 | In Thread sync, pick "Haiku" in "Model"; `echoctl jobs` | No error line; "Back to default: the thread's, else the profile's minutes model"; `thread_sync` → `model` "haiku", set |
-| 4 | In Meeting prep, click the "Paused at night" switch | The switch on; "Back to default: off"; `echoctl jobs`: `prep` → `night` true, set |
-| 5 | Click Needs you now's "Back to default: 5"; in Thread sync pick "Job’s default"; click Meeting prep's "Back to default: off"; `echoctl jobs`; `cat "$ECHOCTL_CONFIG_DIR/jobs.json"` | Each shows "default: …" again (5; the model's default; off, the switch off); every field `"set": false`; the file holds none of them (no `needs`, `thread_sync`, `prep`) |
-| 6 | Reload the page | As left: every job on its defaults |
-| 7 | Empty Needs you now's "Every (minutes)" and press Tab | The field shows 5 again; nothing sent (`echoctl jobs`: `every` not set) — "Back to default" is the way back |
+| 1 | Click Thread sync's ✎ | Under its row, labels on the left, controls on the right: "Mail and chat wait at most" [120] min, "…or until this many wait" [5], "Paused at night" (switch on), "Model" ("Default — the thread's, else the profile's minutes model", Haiku, Sonnet, Opus); no ↺ |
+| 2 | Set "Mail and chat wait at most" to 60, Enter; `echoctl jobs` | The row's line "● waits up to 60 min or 5 items · …"; ↺ beside the field ("Back to default (120)"); `thread_sync` `batch_wait` 60, set |
+| 3 | Set it to 0, Enter | "thread_sync batch_wait: 0 is outside 5–1440" (Echo's words) under the head; the field back to 60; `echoctl jobs`: 60 |
+| 4 | Pick "Haiku" in Model; click the "Paused at night" switch | No error; the line "… · ● runs at night · ● Haiku · …"; each with ↺; `echoctl jobs`: `model` haiku, `night` false, both set |
+| 5 | Click Needs you now's ✎ | Thread sync's fields close, Needs you now's open (one job at a time) |
+| 6 | Thread sync's ✎ again; click each ↺ (wait, night, model); `cat "$ECHOCTL_CONFIG_DIR/jobs.json"` | The line back to "waits up to 120 min or 5 items · pauses at night · default model · …", no dot, no ↺; the file holds no `thread_sync` |
+| 7 | Empty "Mail and chat wait at most" and press Tab | The field shows 120 again; nothing sent (`echoctl jobs`: not set) |
 
 ## Expected Final State
 Every job on its defaults.
 
 ## Notes
 - A change without the user's click or key is refused by Echo itself (`ctx.echo.jobs.set` throws before sending):
-  Echo's case plugins/TC-059 covers it; the Scheduler calls it only from the user's change (a number on Enter or Tab, a model picked), click (a switch, "Back to default") or leaving a night field — never from a redraw, a load or the window losing focus.
+  Echo's case plugins/TC-059 covers it. The Scheduler calls it only from the user's change (a number on Enter or Tab, a
+  model picked), click (a switch, ↺) or leaving a night field — never from a redraw, a load or the window losing focus.

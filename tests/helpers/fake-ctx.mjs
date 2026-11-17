@@ -168,10 +168,10 @@ const secs = (st) => Math.floor(st.mtimeMs / 1000)
 const DEVICE_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i
 
 function diskFs(folders, fsLog) {
-  const granted = () => folders.map((f) => nfs.realpathSync(f))
+  const granted = () => folders.map((f) => nfs.realpathSync.native(f))
   const rootOf = (root) => {
     let r
-    try { r = nfs.realpathSync(String(root)) } catch { throw new Error(`${root} isn't one of this plugin's folders`) }
+    try { r = nfs.realpathSync.native(String(root)) } catch { throw new Error(`${root} isn't one of this plugin's folders`) }
     if (!granted().includes(r)) throw new Error(`${r} isn't one of the folders you gave this plugin`)
     return r
   }
@@ -186,7 +186,7 @@ function diskFs(folders, fsLog) {
   const inside = (root, rel) => {
     const full = npath.join(root, plain(root, rel))
     let real
-    try { real = nfs.realpathSync(full) } catch { return full }
+    try { real = nfs.realpathSync.native(full) } catch { return full }
     if (real !== root && !real.startsWith(root + npath.sep)) throw new Error(`“${rel}” leads outside ${root}`)
     return real
   }
@@ -202,7 +202,7 @@ function diskFs(folders, fsLog) {
     try { if (nfs.lstatSync(full).isSymbolicLink()) throw new Error(`“${rel}” is a link: a plugin changes files, not links`) } catch (e) { if (e.code !== 'ENOENT') throw e }
     let at = npath.dirname(full)
     while (!nfs.existsSync(at)) at = npath.dirname(at)
-    const real = nfs.realpathSync(at)
+    const real = nfs.realpathSync.native(at)
     if (real !== root && !real.startsWith(root + npath.sep)) throw new Error(`“${rel}” leads outside ${root}`)
     return full
   }
@@ -268,7 +268,7 @@ function diskFs(folders, fsLog) {
       let st
       try { st = nfs.lstatSync(full) } catch { return null }
       let real = null
-      try { const x = nfs.realpathSync(full); if (x === root || x.startsWith(root + npath.sep)) real = npath.relative(root, x).split(npath.sep).join('/') } catch { /* a dangling link */ }
+      try { const x = nfs.realpathSync.native(full); if (x === root || x.startsWith(root + npath.sep)) real = npath.relative(root, x).split(npath.sep).join('/') } catch { /* a dangling link */ }
       const kind = st.isSymbolicLink() ? 'link' : st.isDirectory() ? 'dir' : st.isFile() ? 'file' : 'other'
       const out = { kind, size: kind === 'file' ? st.size : 0, mtime: secs(st), real }
       if (o.sha && kind === 'file') out.sha = sha256(nfs.readFileSync(full))
@@ -311,12 +311,12 @@ const ECHO_MAIL = '@plugins.echo.invalid'
 function gitOf(folders) {
   const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_LITERAL_PATHSPECS: '1', LC_ALL: 'C' }
   const rootOf = (root) => {
-    const r = nfs.realpathSync(String(root))
-    if (!folders.map((f) => nfs.realpathSync(f)).includes(r)) throw new Error(`${r} isn't one of the folders you gave this plugin`)
+    const r = nfs.realpathSync.native(String(root))
+    if (!folders.map((f) => nfs.realpathSync.native(f)).includes(r)) throw new Error(`${r} isn't one of the folders you gave this plugin`)
     return r
   }
   const run = (cwd, args, ok = true) => {
-    try { return { ok: true, out: execFileSync('git', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }) } } catch (e) {
+    try { return { ok: true, out: execFileSync('git', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 }) } } catch (e) {
       if (ok) throw new Error(String(e.stderr || e.message).trim() || 'git failed')
       return { ok: false, out: Buffer.alloc(0) }
     }
@@ -324,6 +324,19 @@ function gitOf(folders) {
   const text = (b) => b.toString('utf8').trim()
   const repo = (cwd) => { const t = run(cwd, ['rev-parse', '--show-toplevel', '--show-prefix'], false); if (!t.ok) return null; const [top, prefix = ''] = t.out.toString('utf8').split('\n'); return { top, prefix } }
   const need = (cwd) => { const r = repo(cwd); if (!r) throw new Error('this folder isn\'t in a git repository'); return r }
+  // A path as git.rs `named` gives it to git: by its real name (another case, through a link inside the folder), the
+  // part not there yet as typed; never outside the folder.
+  const named = (cwd, rel) => {
+    const parts = String(rel).split('/').filter((c) => c && c !== '.')
+    for (let k = parts.length; k >= 0; k--) {
+      let real
+      try { real = nfs.realpathSync.native(npath.join(cwd, ...parts.slice(0, k))) } catch { continue }
+      const full = npath.join(real, ...parts.slice(k))
+      if (full !== cwd && !full.startsWith(cwd + npath.sep)) throw new Error(`“${rel}” leads outside the folder`)
+      return npath.relative(cwd, full).split(npath.sep).join('/')
+    }
+    throw new Error(`“${rel}” isn't in the folder`)
+  }
   const head = (cwd) => { const h = run(cwd, ['rev-parse', '-q', '--verify', 'HEAD'], false); return h.ok ? text(h.out) : null }
   const validRev = (rev) => rev === 'HEAD' || /^HEAD~[0-9]{1,6}$/.test(rev) || /^[0-9a-fA-F]{4,64}$/.test(rev)
   return {
@@ -338,7 +351,7 @@ function gitOf(folders) {
     status: async (root, o = {}) => {
       const cwd = rootOf(root)
       const r = need(cwd)
-      const out = run(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...(o.paths || ['.'])]).out.toString('utf8').split('\0').filter(Boolean)
+      const out = run(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...(o.paths ? o.paths.map((x) => named(cwd, x)) : ['.'])]).out.toString('utf8').split('\0').filter(Boolean)
       const list = []
       for (let i = 0; i < out.length; i++) {
         const e = out[i]
@@ -380,6 +393,9 @@ function gitOf(folders) {
       const spec = `${rev}:./${path}`
       const k = run(cwd, ['cat-file', '-t', spec], false)
       if (!k.ok) return null
+      if (text(k.out) !== 'blob') throw new Error(`“${path}” is a folder at that version`)
+      const size = Number(text(run(cwd, ['cat-file', '-s', spec]).out))
+      if (size > 16 << 20) throw new Error(`“${path}” is over 16 MB at that version`)
       const blob = run(cwd, ['cat-file', 'blob', spec]).out
       const max = Math.min(o.max > 0 ? o.max : 1 << 20, 4 << 20)
       return { text: blob.subarray(0, max).toString('utf8'), size: blob.length, truncated: blob.length > max }
@@ -388,7 +404,7 @@ function gitOf(folders) {
     commit: async (root, o = {}) => {
       const cwd = rootOf(root)
       need(cwd)
-      const paths = o.paths || []
+      const paths = (o.paths || []).map((x) => named(cwd, x))
       if (!paths.length) throw new Error('commit: 1 to 1,000 paths')
       if (!o.message || !String(o.message).trim()) throw new Error('a commit\'s message is plain text of 1 to 5000 characters')
       const who = ['-c', 'committer.name=Echo (obsidian)', '-c', `committer.email=obsidian${ECHO_MAIL}`, '-c', 'user.name=Sam Rivera', '-c', 'user.email=sam@acme.example', '-c', 'commit.gpgsign=false']
@@ -406,18 +422,24 @@ function markdownOf(pluginId) {
   const MAX = 1 << 20
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   const fits = (md) => { if (Buffer.byteLength(md) > MAX) throw new Error('ctx.markdown renders 1 MB of text at most') }
+  // `%XX` decoded, anything else kept (markdown.rs `decode`).
+  const decode = (x) => Buffer.from(x.replace(/%([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16))), 'latin1').toString('utf8')
+  // markdown.rs `allowed`: no whitespace, control character or backslash; an image only from the plugin's folder route
+  // (no `.`/`..` segment once decoded, no `?`/`#`); a link `https://<host>`, an `echo://` link Echo knows (links.rs
+  // `Link::parse`: its kinds, an id after them), or the plugin's own `#<id>:` / `#brain/<id>:` route.
+  const ECHO_KINDS = ['call', 'thread', 'project', 'client', 'person', 'task', 'prep', 'needs', 'mail', 'post']
   const allowed = (h, image) => {
-    if (/[\s\\]/.test(h) || /[\x00-\x1f]/.test(h)) return false
+    if ([...h].some((c) => /\s/.test(c) || /[\x00-\x1f\x7f-\x9f]/.test(c) || c === '\\')) return false
     if (image) {
-      const rest = h.replace(/^\//, '')
-      if (!rest.startsWith(`plugin/${pluginId}/folder/`)) return false
-      const tail = rest.slice(`plugin/${pluginId}/folder/`.length)
-      return tail !== '' && !/[?#]/.test(tail) && !decodeURIComponent(tail).split(/[/\\]/).some((x) => x === '.' || x === '..')
+      const rest0 = h.startsWith('/') ? h.slice(1) : h
+      if (!rest0.startsWith(`plugin/${pluginId}/folder/`)) return false
+      const rest = rest0.slice(`plugin/${pluginId}/folder/`.length)
+      return rest !== '' && !/[?#]/.test(rest) && !decode(rest).split(/[/\\]/).some((x) => x === '.' || x === '..')
     }
-    if (h.startsWith('https://')) return h.length > 8 && h[8] !== '/'
-    if (h.startsWith('echo://')) return /^echo:\/\/(call|thread|client|page)\//.test(h)
+    if (h.startsWith('https://')) { const host = h.slice(8); return host !== '' && !host.startsWith('/') }
+    if (h.startsWith('echo://')) { const [kind, ...id] = h.slice(7).split('?')[0].split('/'); return ECHO_KINDS.includes(kind) && id.join('/') !== '' }
     const route = h.startsWith('#brain/') ? h.slice(7) : h.startsWith('#') ? h.slice(1) : null
-    return route !== null && route.startsWith(`${pluginId}:`)
+    return route !== null && route.startsWith(pluginId) && route.slice(pluginId.length).startsWith(':')
   }
   // Lines outside fenced code, each with its inline code spans blanked (for finding links).
   const prose = (md) => {

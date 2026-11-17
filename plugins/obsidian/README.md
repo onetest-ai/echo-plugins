@@ -22,6 +22,8 @@ with it and what to leave alone. You correct the description, and from then on C
 - **Echo finds each vault's shape** when it is connected (or read again: `reread`) — where its pages are (a
   `knowledge/` folder, the folder with Obsidian's settings), its index (`CATALOG.md`…), its notes folder and naming, its
   templates, sources, taxonomies and skills — and indexes its pages folder. Nothing is written in the vault for it.
+  A vault from Obsidian vaults 0.8 keeps being indexed as before (its whole folder) until you confirm that shape
+  (`confirm_structure`) or set one of its folders.
 - **Pages, for Knowledge** (`echoctl plugin call obsidian page | tree | find | graph | checks | history | version |
   activity …`): a page as safe HTML with its links, backlinks and local graph; an edit saved only over the text it was
   opened with (a change made meanwhile comes back to compare, never overwritten; line endings kept); a new page from

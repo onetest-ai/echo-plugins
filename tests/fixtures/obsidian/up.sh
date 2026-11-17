@@ -5,7 +5,7 @@
 #   tests/fixtures/obsidian/down.sh <dir>
 # <dir> must not exist yet. It builds Echo's standard made-up data (Echo's tests/fixtures/make_data.py; its `claude` is
 # the test fake, which refuses every run: Claude's reading of a vault fails, and a case writes its description), makes
-# made-up vaults in <dir>/vaults (acme-wiki, home-notes; acme-twin, twin-shaped in a git repository), installs this checkout's plugin from a local marketplace
+# made-up vaults in <dir>/vaults (acme-wiki, home-notes; acme-twin, twin-shaped, and acme-history, both in git), installs this checkout's plugin from a local marketplace
 # (<dir>/market, a copy), and serves Echo's window at http://127.0.0.1:<port>. CLI steps run after `. <dir>/env`
 # (`echoctl` is then the debug build); a vault is connected with
 # `ECHOCTL_PICK_FOLDER=$VAULTS/<vault> echoctl plugin call obsidian add '{"wait":true}'`.
@@ -21,7 +21,8 @@ echo_repo="$(cd "${ECHO_REPO:?$usage}" && pwd)"
 bin="$echo_repo/target/debug/echoctl"
 [ -x "$bin" ] || { echo "build Echo first: (cd $echo_repo && cargo build)" >&2; exit 1; }
 
-python3 "$echo_repo/tests/fixtures/make_data.py" "$dir" --set standard > /dev/null
+# DATA_NOW (ISO local time) builds the data as of then — Echo's make_data refuses late in the evening without it.
+python3 "$echo_repo/tests/fixtures/make_data.py" "$dir" --set standard ${DATA_NOW:+--now "$DATA_NOW"} > /dev/null
 dir="$(cd "$dir" && pwd)"
 
 # Two made-up vaults: Markdown notes only.
@@ -30,6 +31,11 @@ mkdir -p "$v/acme-wiki/.obsidian" "$v/acme-wiki/Decisions" "$v/acme-wiki/People"
 printf -- '---\ntags: [decision]\n---\n# Rollout by region\n\nAcme rolls out by region, EU first. See [[Ada Lovelace]].\n' > "$v/acme-wiki/Decisions/Rollout by region.md"
 printf -- '---\nrole: QA lead\n---\n# Ada Lovelace\n\nQA lead at Acme.\n' > "$v/acme-wiki/People/Ada Lovelace.md"
 printf -- '# Lisbon\n\nThree days in May.\n' > "$v/home-notes/Trips/Lisbon.md"
+# home-notes also keeps an inbox of clippings and a templates folder: a vault from 0.8 indexes them until the user
+# confirms the shape Echo found; one connected in 1.0 leaves them out at once (TC-009, TC-020).
+mkdir -p "$v/home-notes/Inbox" "$v/home-notes/templates"
+printf -- '# A clipping\n\nA recipe to try.\n' > "$v/home-notes/Inbox/clip.md"
+printf -- '# {{title}}\n' > "$v/home-notes/templates/note.md"
 
 # A twin-shaped vault (Knowledge 1.0's cases, TC-008 on): its pages in knowledge/ (Obsidian's settings there), an index
 # CATALOG.md with a table per section, a tag taxonomy, dated notes, a page template, an image, a hostile page, a
@@ -50,12 +56,31 @@ printf '\x89PNG\r\n\x1a\n' > "$t/knowledge/img/chart.png"
 printf -- '%%PDF-1.4 made up\n' > "$t/raw_inbox/deck.pdf"
 printf -- '# Rules for agents\n' > "$t/AGENTS.md"
 printf -- '---\nname: ingest\ndescription: Adds a source to the vault\n---\n# Ingest\n' > "$t/.claude/skills/ingest/SKILL.md"
+# A folder linked inside the vault: `customers` is `clients` (TC-018).
+ln -s clients "$t/knowledge/customers"
 (
   cd "$t"
   export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
   git init -q --initial-branch=main
   git config user.name "Sam Rivera" && git config user.email "sam@acme.example" && git config commit.gpgsign false
   git add -A && git commit -q -m "The twin, made up"
+)
+# acme-history: a vault in git whose pages' older versions can't be restored by Echo — one not UTF-8, one over 2 MB
+# (TC-019). Its pages are its root.
+h="$v/acme-history"
+mkdir -p "$h"
+printf -- '# Caf\xe9 notes\n' > "$h/legacy.md"
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("# Archive\n" + "an old line of the archive\n" * 100000)' "$h/archive.md"
+printf -- '# Current\n' > "$h/current.md"
+(
+  cd "$h"
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
+  git init -q --initial-branch=main
+  git config user.name "Sam Rivera" && git config user.email "sam@acme.example" && git config commit.gpgsign false
+  git add -A && git commit -q -m "Old pages"
+  printf -- '# Café notes\n' > legacy.md
+  printf -- '# Archive\n\nTrimmed.\n' > archive.md
+  git commit -q -am "In UTF-8, trimmed"
 )
 
 printf 'export PATH="%s:$PATH"\nexport VAULTS="%s"\nexport MARKET="%s"\n' "$echo_repo/target/debug" "$v" "$dir/market" >> "$dir/env"

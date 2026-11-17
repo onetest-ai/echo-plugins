@@ -88,7 +88,7 @@
   },
   {
    "id": "F-OB-16",
-   "title": "In a vault in git: a save, a new page and a restore commit only the files Echo wrote when the vault's commit is on; a page's history, a version's text and changes; a restore never over changes git hasn't got, and is a new commit",
+   "title": "In a vault in git: a save, a new page and a restore commit only the files Echo wrote when the vault's commit is on; a page's history, a version's text and changes; a restore never over changes git hasn't got nor over a change made while git was asked, never of a version too large or not UTF-8, and is a new commit",
    "priority": "high",
    "check": "agent"
   },
@@ -120,6 +120,18 @@
    "id": "F-OB-21",
    "title": "Paths never leave the vault: no `..`, absolute path, drive, device name or link, and never a dot folder (.git, .obsidian), the sources or the templates as a page — read or written",
    "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-22",
+   "title": "A page is read, written, asked of git and committed by its real name: typed in another case, or reached through a folder linked inside the vault, it is that file — Echo's commit never takes the user's uncommitted edits along and restore's guard holds",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-23",
+   "title": "A vault from 0.8 keeps 0.8's index — its whole folder, sources and templates included — until the user confirms the shape Echo found (or sets one of its folders); a vault connected in 1.0 uses the shape at once",
+   "priority": "high",
    "check": "agent"
   }
  ]

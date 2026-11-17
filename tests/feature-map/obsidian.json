@@ -190,7 +190,7 @@
   },
   {
    "id": "F-OB-38",
-   "title": "Ask the vault opens Claude Code in Echo's panel, in its own tab Claude · Knowledge, in the vault (its pages folder the project), on the user's click only; nothing is typed into it",
+   "title": "Ask the vault opens Claude Code in Echo's panel, in its own tab Claude · Knowledge, in the vault as its own project at its root (its CLAUDE.md, AGENTS.md and .claude/skills), on the user's click only; nothing is typed into it",
    "priority": "critical",
    "check": "agent"
   },

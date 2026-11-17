@@ -310,13 +310,15 @@ export async function createKnowledge(ctx, hooks = {}) {
     for (const a of t.content.querySelectorAll('a[href^="https://"]')) a.setAttribute('data-ext', '')
     return t.innerHTML
   }
-  /** "Ask the vault": Claude Code in Echo's panel, in the vault as its own project — the user asks there; nothing is
-   *  typed in for them. Only on the user's click (Echo checks it). */
+  /** "Ask the vault": Claude Code in Echo's panel, in the vault as its own project — at its root, where its CLAUDE.md,
+   *  AGENTS.md and `.claude/skills` are — on the vault's AI profile; the user asks there, nothing is typed in for them.
+   *  Only on the user's click (Echo checks it). The header, Home's card, Settings, every *Ask about it* and a skill's
+   *  *Run in Claude* open it here. */
   function askVault() {
     const v = vault()
     if (!v) return
     st().menu = null
-    try { ctx.claude.session({ folder: v.root, path: (v.paths || {}).pages || '', ...(v.profile ? { profile: v.profile } : {}) }) } catch (e) { say(String(e.message || e)) }
+    try { ctx.claude.session({ folder: v.root, ...(v.profile ? { profile: v.profile } : {}) }) } catch (e) { say(String(e.message || e)) }
     render()
   }
   /** A page's path on the disk (Copy path). */

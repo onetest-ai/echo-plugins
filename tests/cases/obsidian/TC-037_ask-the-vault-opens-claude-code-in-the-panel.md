@@ -1,6 +1,6 @@
 ---
 id: TC-037
-title: "Ask the vault" opens Claude Code in Echo's panel, in the vault — its own tab "Claude · Knowledge" with the vault's pages folder as the project, the profile and permissions named; Echo types nothing into it
+title: "Ask the vault" opens Claude Code in Echo's panel, in the vault — its own tab "Claude · Knowledge" at the vault's root as its project, the profile and permissions named; Echo types nothing into it
 priority: critical
 type: functional
 requirements: [F-OB-38]
@@ -26,7 +26,7 @@ tags: [obsidian, knowledge, window, claude]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | Home → *Ask the vault* (the header's, Home's card, Settings → Ask, Health's *Ask about it*, the page menu's *Ask about it*, ⌘K *Ask the vault…*) | Echo's bottom panel opens on its tab "Claude · Knowledge": "Knowledge · Claude Code in <$T>/knowledge, as that folder's own project — it reads only; asks each time · <profile>"; with the test's fake Claude the session ends at once ("The session ended. Resume …") |
+| 1 | Home → *Ask the vault* (the header's, Home's card, Settings → Ask, Health's *Ask about it*, the page menu's *Ask about it*, ⌘K *Ask the vault…*) | Echo's bottom panel opens on its tab "Claude · Knowledge": "Knowledge · Claude Code in <$T>, as that folder's own project — it reads only; asks each time · <profile>"; with the test's fake Claude the session ends at once ("The session ended. Resume …") |
 | 2 | Never type into it | — |
 | 3 | ⌘K | "New conversation in Claude · Knowledge" and "Restart Claude · Knowledge" are there |
 | 4 | *Ask about it* on a page | The same tab, and the notice "Ask Claude in the panel about <title> (<path>)." |

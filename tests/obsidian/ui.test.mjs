@@ -299,6 +299,11 @@ test('Knowledge registers owned listeners and keeps the app globals behind ctx',
   assert.doesNotMatch(src, /ctx\.knowledge\b|api\/kn\/jobs|api\/kn\/pick|api\/kn-resume|\bsend\(\{|navigator\.clipboard|\bfetch\(/)
   assert.match(src, /ctx\.call\(/)
   assert.match(src, /ctx\.claude\.session\(/)
+  // Ask the vault: the vault's root is the project (its CLAUDE.md, AGENTS.md, .claude/skills), never a subfolder.
+  const sessions = [...src.matchAll(/ctx\.claude\.session\(\{([^)]*)\}\)/g)].map((m) => m[1])
+  assert.equal(sessions.length, 1, 'one place opens it')
+  assert.match(sessions[0], /folder: v\.root/)
+  assert.doesNotMatch(sessions[0], /\bpath\b/)
 })
 
 test('compare: the lines only in yours, only on disk, and the same ones folded', () => {

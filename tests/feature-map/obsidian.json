@@ -277,6 +277,12 @@
    "title": "The Knowledge activity's step-4 sheets work on the host's commands: a call's chip and save sheet save (call_knowledge without `later`), Ingest's queue and Add a source (a call, files, mail and Teams search, a web page said as not yet), a vault's Settings preview a call and save the past minutes, the New vault sheet makes a twin",
    "priority": "high",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-53",
+   "title": "The catch-up when Echo starts: the calls with minutes and Recall's mail since the last day seen go through the live events' routing (a call whose record has the vault isn't written again, a source the ledger has isn't queued again); the day moves only when both reads answered; the first start only notes it",
+   "priority": "high",
+   "check": "agent"
   }
  ]
 }

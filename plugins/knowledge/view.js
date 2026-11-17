@@ -744,7 +744,7 @@ export async function createKnowledge(ctx) {
     const isolated = knIsolatedCount(g, o.hideIndex, o.hidden, o.tags)
     const alone = o.hideIndex && (g.hubs || []).length ? 'Linked only from the index, or not at all.' : 'No links in or out. <a href="#" data-kn="tab" data-kn-tab="settings">See Checks</a>'
     const seg = (key, vals) => `<div class="seg" role="group">${vals.map(([v, l]) => `<button data-kn="gopt" data-key="${key}" data-val="${v}" aria-pressed="${String(o[key]) === String(v)}">${l}</button>`).join('')}</div>`
-    const sw = (key, label, sub) => `<div class="kn-gc-row"><span><b>${label}</b>${sub ? `<span class="set-sub">${sub}</span>` : ''}</span><button class="sw${o[key] ? ' on' : ''}" role="switch" aria-checked="${!!o[key]}" data-kn="gopt" data-key="${key}" data-val="${!o[key]}" aria-label="${esc(label)}"></button></div>`
+    const sw = (key, label, sub) => `<div class="kn-gc-row"><span><b>${label}</b>${sub ? `<span class="set-sub">${sub}</span>` : ''}</span><button class="sw${o[key] ? ' on' : ''}" role="switch" aria-checked="${!!o[key]}" data-kn="gopt" data-key="${key}" data-val="${!o[key]}" aria-label="${esc(key === 'isolated' ? 'Show isolated pages' : label)}"></button></div>`
     const sel = o.sel && g.nodes.find((n) => n.id === o.sel)
     const tags = sel && !sel.tag ? (sel.tags || []).slice(0, 8).map((t) => `<span class="tag">#${esc(t)}</span>`).join('') : ''
     const card = sel ? `<div class="kn-gcard"><div class="kn-gcard-h"><b>${esc(sel.title || sel.id)}</b><button class="icon-btn" data-kn="gsel" data-id="" aria-label="Close">${IC.close}</button></div><div class="set-sub"><code>${esc(sel.id)}</code></div>

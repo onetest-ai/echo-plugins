@@ -15,7 +15,7 @@ tags: [knowledge, plugins, migration]
 |---|---|
 | Build Echo and install Knowledge from this marketplace in an isolated synthetic environment. | Package checks pass; the permission sheet describes the native vault operations and guarded AI runs. |
 | Open Knowledge and connect the synthetic vault. | Home, Pages, Graph, Ask, Ingest, Health and Settings are available; connecting changes no vault files. |
-| Read/search a page, follow a link and inspect the graph. | Titles, links, backlinks and graph match the fixture; hostile content stays text. |
+| Read/search a page, follow a link and inspect the graph. Locate and toggle the switch named exactly `Show isolated pages`. | Titles, links, backlinks and graph match the fixture; hostile content stays text. The visible count badge remains, while the switch has a plain spoken label and toggles its checked state. |
 | Call the plugin's agent `read` command for tree/page/health; try direct and encoded m365, calls, preview, jobs and terminal-resume routes. | Vault views work. UI-only routes are refused as not agent-readable before dispatch; no mail/chat, call text or terminal command is returned. |
 | Open the vault's thread/client picker. | Existing choices show their names; the client context contains only project id/name/group and client id/name, with no notes, people, sources or briefs. |
 | Edit and save a page; change it externally before a second save. | The first save persists; the second offers conflict handling and preserves the external edit. |

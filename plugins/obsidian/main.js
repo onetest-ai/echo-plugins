@@ -517,7 +517,7 @@ const QUOTE_MIN_WORDS = 3
 const WORD_CHAR = /^[\p{Alphabetic}\p{N}_']$/u
 
 /** Lower-case, punctuation-free, single-spaced: the form quotes are compared in (`ledger::norm`). */
-export function norm(s) {
+export function normWords(s) {
   let out = ''
   let space = false
   for (const ch of s) {
@@ -538,21 +538,21 @@ const enoughWords = (q) => q.split(' ').filter((w) => w !== '').length >= QUOTE_
 
 /** Is `quote` in `text`: both normalised (`norm`), the quote at least three words, found as one run of whole words. */
 export function quoteFound(text, quote) {
-  const q = norm(quote)
+  const q = normWords(quote)
   if (!enoughWords(q)) return false
-  return ` ${norm(text)} `.includes(` ${q} `)
+  return ` ${normWords(text)} `.includes(` ${q} `)
 }
 
 /** The lines (1-based `[first, last]`) `quote` spans in `text` as `quoteFound` finds it — of several places, the one
  *  starting nearest line `near` (else the first). null when it isn't there. */
 export function quoteLines(text, quote, near = null) {
-  const q0 = norm(quote)
+  const q0 = normWords(quote)
   if (!enoughWords(q0)) return null
   const q = ` ${q0} `
   let all = ' '
   const starts = [] // [the space before the line's first word, its line]
   textLines(text).forEach((l, i) => {
-    const n = norm(l)
+    const n = normWords(l)
     if (n !== '') {
       starts.push([all.length - 1, i + 1])
       all += `${n} `

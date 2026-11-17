@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  fmSplit, fmParse, fmGet, propText, propItems, norm, quoteFound, quoteLines, isTextSource,
+  fmSplit, fmParse, fmGet, propText, propItems, normWords, quoteFound, quoteLines, isTextSource,
   diffLines, diffHunks, diffCounts, DIFF_MAX_LINES, catalogRow, catalogCell, catalogLink, catalogInsert, catalogInsertRow,
   tableOfRow, tableRowCount, percentDecode, normalizePath, withMd, pageStem, linkBare, makeResolver, linkEdges,
   linkBacklinks, linkGraph, tagLike, tagsInOrder, allowedTags, tagTaxonomy, meetingTag, runChecks, scanPage, textLines,
@@ -115,7 +115,7 @@ test('evidence: quotes in other scripts, punctuation and lines', () => {
   assert.ok(quoteFound(t2, 'ship it on friday'))
   assert.ok(quoteFound('first line ends here\nsecond line starts', 'ends here second line'), 'a quote may cross a newline')
   assert.ok(!quoteFound(t2, 'ship, it'), 'two words after punctuation is still two words')
-  assert.equal(norm('‘Smart’ “quotes” `tick` ΣΑΣ'), "'smart' 'quotes' 'tick' σασ", 'curly quotes are one quote; lowercased a char at a time')
+  assert.equal(normWords('‘Smart’ “quotes” `tick` ΣΑΣ'), "'smart' 'quotes' 'tick' σασ", 'curly quotes are one quote; lowercased a char at a time')
 })
 
 test('evidence: a quote is on the lines it spans', () => {

@@ -161,8 +161,45 @@ test('from 0.8: a store with no vaults gets no registry written; a broken regist
   assert.deepEqual(Object.keys(ctx.files), ['vaults.md'], 'only the (empty) catalog: no registry, no facts vault')
   const bad = ctx08({ store: { 'vaults.json': 'not json' } })
   apply(bad)
-  assert.equal(bad.files['vaults.json'], 'not json', 'left for the user — not overwritten until a vault changes')
+  assert.equal(bad.files['vaults.json'], 'not json', 'loading leaves it as it is')
   assert.deepEqual(bad.agentNow.part, { summary: null, entries: [] })
+})
+
+test('a broken registry is set aside before a change writes a new one', async () => {
+  const ctx = ctx08({ store: { 'vaults.json': '[{"id": "acme-wiki", "root"' } })
+  ctx.fs.list = () => []
+  ctx.fs.walk = async () => [{ path: 'a.md' }]
+  ctx.system = { pickFolder: async () => '/v/home' }
+  apply(ctx)
+  await ctx.run('add', { root: '/v/home' }).catch(() => {})
+  const aside = Object.keys(ctx.files).find((p) => p.startsWith('vaults.json.bad-'))
+  assert.ok(aside, Object.keys(ctx.files).join(' '))
+  assert.equal(ctx.files[aside], '[{"id": "acme-wiki", "root"')
+  assert.match(ctx.logs.join('\n'), /couldn't be read: kept as vaults\.json\.bad-/)
+})
+
+test('from 0.8: a vault of the user\'s own with the id `echo` keeps its description', () => {
+  const store = store08()
+  store['vaults.json'] = JSON.stringify([{ ...OLD, id: 'echo', name: 'Echo', root: '/v/echo' }])
+  store['vaults/echo/description.md'] = DESC
+  const ctx = ctx08({ store, folders: ['/v/echo'] })
+  apply(ctx)
+  assert.equal(ctx.files['vaults/echo/description.md'], DESC)
+  assert.deepEqual(ctx.agentNow.part.entries.map((e) => [e.name, e.summary]), [['echo', 'Decisions on Acme projects']])
+})
+
+test('a 1.0 record whose keys come in another order is not migrated again', () => {
+  const v = normalizeVault({ ...OLD, schema: 1 })
+  const shuffled = Object.fromEntries(Object.entries(v).reverse())
+  assert.equal(migrateVaults([shuffled]).changed, false)
+  const ctx = ctx08({ terminal: true, store: { 'vaults.json': JSON.stringify([shuffled]) } })
+  apply(ctx)
+  assert.equal(ctx.agentNow.sets, 0, 'a terminal\'s load publishes nothing')
+})
+
+test('overrides read from the registry are checked as `set` checks them', () => {
+  const v = normalizeVault({ ...OLD, schema: 1, overrides: { pages: '../../x', index: 'C:/x', notes: '/notes/', naming: '{title}.md' } })
+  assert.deepEqual(v.overrides, { notes: 'notes' })
 })
 
 test('the 0.8 facts commands are gone', () => {

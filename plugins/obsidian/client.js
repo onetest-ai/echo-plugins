@@ -232,7 +232,7 @@ export function apply(ctx) {
   }
 
   // ── the Knowledge activity: browse a vault as Obsidian shows it ──
-  const A = { base: 'obsidian:vaults', echoN: -1, browse: {}, notes: {}, opens: {}, tabs: {}, side: 'files', q: '', tag: '', folded: new Set(), gmode: 'links', color: 'folder', graph: {}, loading: {}, errors: {}, zoomed: new Set() }
+  const A = { base: 'obsidian:vaults', browse: {}, notes: {}, opens: {}, tabs: {}, side: 'files', q: '', tag: '', folded: new Set(), gmode: 'links', color: 'folder', graph: {}, loading: {}, errors: {}, zoomed: new Set() }
   // Open notes and the chosen tab, per vault.
   const opened = (vault) => (A.opens[vault] = A.opens[vault] || [])
   const PAL = ['#4fb3d9', '#9b78ff', '#e0a96d', '#3ccf91', '#e07fa3', '#5f8fe0', '#d9c84f', '#7fd0c0', '#f0a24a', '#b98cff']

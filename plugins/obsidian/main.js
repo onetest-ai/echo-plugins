@@ -111,7 +111,11 @@ export function normalizeVault(raw) {
   const m = r.minutes && typeof r.minutes === 'object' ? r.minutes : {}
   const ing = r.ingest && typeof r.ingest === 'object' ? r.ingest : {}
   const ov = {}
-  for (const k of OVERRIDES) if (r.overrides && typeof r.overrides[k] === 'string' && r.overrides[k] !== '') ov[k] = r.overrides[k]
+  for (const k of OVERRIDES) {
+    const x = r.overrides && r.overrides[k]
+    if (typeof x !== 'string' || !x) continue
+    try { const o = setVaultKey({ overrides: {} }, k, x).overrides[k]; if (o) ov[k] = o } catch { /* not a path in the vault: dropped */ }
+  }
   const v = {
     schema: SCHEMA,
     id: str(r.id, 60), name: str(r.name, 80) || str(r.id, 80) || 'Vault', root: str(r.root), added_at: str(r.added_at, 40),
@@ -144,8 +148,10 @@ export function normalizeVault(raw) {
 /** The registry as this version keeps it; `changed` when anything had to change (an earlier version's records). */
 export function migrateVaults(list) {
   const before = Array.isArray(list) ? list : []
-  const vaults = before.filter((r) => r && typeof r.id === 'string' && r.id && typeof r.root === 'string' && r.root).map(normalizeVault)
-  return { vaults, changed: JSON.stringify(vaults) !== JSON.stringify(before) }
+  const ok = before.filter((r) => r && typeof r.id === 'string' && r.id && typeof r.root === 'string' && r.root)
+  // Changed: a record of an earlier version (no `schema`), or one that can't be kept — never a record of this version
+  // whose keys only come in another order.
+  return { vaults: ok.map(normalizeVault), changed: ok.length !== before.length || ok.some((r) => r.schema !== SCHEMA) }
 }
 
 /** A vault's id: its name in lowercase words with dashes, `-2`, `-3`… past the ones taken. */
@@ -238,6 +244,14 @@ export function apply(ctx) {
   // them in place and gives back what the command answers.
   const change = (fn) => {
     let out
+    // A registry that isn't a list (broken by hand, cut short) is set aside before anything is written over it.
+    const text = ctx.store.read('vaults.json')
+    if (text != null && !(() => { try { return Array.isArray(JSON.parse(text)) } catch { return false } })()) {
+      const aside = `vaults.json.bad-${Date.now()}`
+      ctx.store.write(aside, text)
+      ctx.store.remove('vaults.json')
+      ctx.log(`vaults.json couldn't be read: kept as ${aside}, the list of vaults starts again`)
+    }
     ctx.store.update('vaults.json', (text) => {
       const vs = load.from(text)
       out = fn(vs)
@@ -265,10 +279,15 @@ export function apply(ctx) {
     if (text != null && migrateVaults(parseList(text)).changed) step('vaults', () => change(() => {}))
     const top = (() => { try { return ctx.store.list('') } catch { return [] } })()
     for (const old of ['vault', 'knowledge']) if (top.includes(old)) step(old, () => ctx.store.remove(old))
+    // A vault of the user's own with the id `echo` (Obsidian before 0.5 gave it) keeps its description: only the facts
+    // vault's index goes from its folder then.
+    const userEcho = load().some((v) => v.id === 'echo')
     for (const [dir, name] of [['vaults', 'echo'], ['runs', 'knowledge']]) {
       if (!top.includes(dir)) continue
       const inside = (() => { try { return ctx.store.list(dir) } catch { return [] } })()
-      if (inside.includes(name)) step(`${dir}/${name}`, () => ctx.store.remove(`${dir}/${name}`))
+      if (!inside.includes(name)) continue
+      if (dir === 'vaults' && userEcho) continue
+      step(`${dir}/${name}`, () => ctx.store.remove(`${dir}/${name}`))
     }
     return changed
   }
@@ -561,6 +580,8 @@ export function apply(ctx) {
     const v = find(load(), id)
     const known = {}
     if (key === 'profile') { try { known.profiles = (ctx.profiles().profiles || []).map((p) => p.id) } catch { /* an Echo without it */ } }
+    // The vault's skills as Echo found them (none found yet: any name is kept, checked when a run uses it).
+    if (key === 'ingest.skill' && v.detected && Array.isArray(v.detected.skills)) known.skills = v.detected.skills.filter((x) => x && x.kind !== 'agents').map((x) => x.name)
     let next = setVaultKey(v, key, value, known)
     if (OVERRIDES.includes(key) && key !== 'naming' && next.overrides[key]) {
       const st = ctx.fs.stat(v.root, next.overrides[key])

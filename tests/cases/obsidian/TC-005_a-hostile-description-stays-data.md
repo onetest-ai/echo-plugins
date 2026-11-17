@@ -14,7 +14,7 @@ tags: [obsidian, claude-code, untrusted-text]
 # TC-005: A hostile description stays data
 
 ## Preconditions
-- TC-004 done
+- TC-003 done (acme-wiki the only vault)
 
 ## Steps
 

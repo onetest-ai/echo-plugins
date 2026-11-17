@@ -32,10 +32,13 @@ else
   case "$echoctl" in
     */target/debug/echoctl)
       built="$("$echoctl" --version | awk '{print $2}')"
+      repo="${echoctl%/target/debug/echoctl}"
       for i in "${!folders[@]}"; do
         f="${folders[$i]}"
         want="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("echo","").lstrip(">="))' "$f/echo-plugin.json" 2> /dev/null || true)"
-        if [ -n "$want" ] && [ "$(printf '%s\n%s\n' "${built%%-*}" "$want" | sort -V | head -1)" != "$want" ]; then
+        # Only for a release not out yet: a released one (its tag in the build's repository) needs a build that new.
+        if [ -n "$want" ] && [ "$(printf '%s\n%s\n' "${built%%-*}" "$want" | sort -V | head -1)" != "$want" ] \
+          && [ -z "$(git -C "$repo" tag -l "v$want" 2> /dev/null)" ]; then
           cp -R "$f" "$ahead/"
           python3 -I -c 'import json,sys; p,b=sys.argv[1],sys.argv[2]; m=json.load(open(p)); m["echo"]=">="+b; json.dump(m,open(p,"w"),indent=2)' "$ahead/$(basename "$f")/echo-plugin.json" "${built%%-*}"
           folders[$i]="$ahead/$(basename "$f")"

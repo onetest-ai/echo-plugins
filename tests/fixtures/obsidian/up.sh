@@ -46,9 +46,9 @@ case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;;
     mkdir -p "$market"
     git -C "$plugins" archive 6481be6 echo-marketplace.json plugins | tar -x -C "$market"
   else
-    "$here/next.sh" "$dir" > /dev/null
+    "$here/next.sh" "$dir" >> "$dir/install.log"
   fi
-  "$here/next.sh" --echo-only "$dir" >> "$dir/install.log"
+  if [ "$from" = 0.8 ]; then "$here/next.sh" --echo-only "$dir" >> "$dir/install.log"; fi
   echoctl plugin marketplace add "$market" --name local > /dev/null
   echoctl plugin install obsidian --from local --yes >> "$dir/install.log"
   if [ "$from" = 0.8 ]; then
@@ -59,7 +59,8 @@ case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;;
     echoctl plugin call obsidian confirm '{"id":"acme-wiki"}' > /dev/null
     echoctl plugin set obsidian knowledge true > /dev/null
     s="$ECHOCTL_HOME/.echo/plugins/obsidian"
-    mkdir -p "$s/vault/Clients" "$s/vault/_echo" "$s/knowledge"
+    mkdir -p "$s/vault/Clients" "$s/vault/_echo" "$s/knowledge" "$s/runs/knowledge/2026-10-03"
+    printf -- 'Acme rolls out by region.\n' > "$s/runs/knowledge/2026-10-03/answer.md"
     printf -- '---\ntags: [type/client, client/acme]\n---\n# Acme\n\n- [what] Acme rolls out by region, EU first.\n' > "$s/vault/Clients/Acme.md"
     printf -- '# What this vault keeps\n' > "$s/vault/_echo/Rules.md"
     printf -- '- [[Acme]]\n' > "$s/vault/index.md"

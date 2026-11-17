@@ -20,12 +20,12 @@ if [ -z "$only" ]; then
 fi
 m="$market/plugins/obsidian/echo-plugin.json"
 built="$(echoctl --version | awk '{print $2}')"
-want="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("echo","").lstrip(">="))' "$m")"
+want="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("echo","").lstrip(">="))' "$m")"
 if [ -n "$want" ] && [ "$(printf '%s\n%s\n' "$built" "$want" | sort -V | head -1)" != "$want" ]; then
-  python3 -c 'import json,sys; p,b=sys.argv[1],sys.argv[2]; m=json.load(open(p)); m["echo"]=">="+b; json.dump(m,open(p,"w"),indent=2)' "$m" "$built"
+  python3 -I -c 'import json,sys; p,b=sys.argv[1],sys.argv[2]; m=json.load(open(p)); m["echo"]=">="+b; json.dump(m,open(p,"w"),indent=2)' "$m" "$built"
   echo "Echo $built from source (the plugin asks for $want): the marketplace's copy says echo >=$built"
 fi
 if [ -z "$only" ] && echoctl plugin marketplace list 2> /dev/null | grep -q '"local"'; then
   echoctl plugin marketplace update local > /dev/null
 fi
-echo "$market: $(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m["name"], m["version"])' "$m")"
+echo "$market: $(python3 -I -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m["name"], m["version"])' "$m")"

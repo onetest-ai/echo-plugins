@@ -760,6 +760,8 @@ button.kn-h-chg:hover .tt b { color: var(--accent-ink); }
 /* A vault from 0.8 whose shape isn't confirmed yet: said above its Structure. */
 .kn-structure-b { margin: 0 0 10px; align-items: center; }
 .kn-structure-b code { font-family: var(--mono); font-size: 11.5px; }
+/* On a call's header (Echo's `call.header` box sits at its right end) the chip's menu opens towards the page. */
+.plug-head .kn-chip-menu, .plug-head .kn-pop { left: auto; right: 0; }
 /* Home's Ask card: Ask the vault opens Claude Code in Echo's panel. */
 .kn-h-asklead { margin: 0 0 10px; line-height: 1.5; }
 .kn-h-asklead code { font-family: var(--mono); font-size: 11.5px; }

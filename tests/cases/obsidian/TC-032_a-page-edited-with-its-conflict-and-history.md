@@ -30,7 +30,7 @@ tags: [obsidian, knowledge, window, pages, git]
 | 1 | acme.md → *Edit*, type a line at the end | "Editing clients/acme.md · not saved"; the preview beside follows within a second, its `[[links]]` as links; *Message* "Edit clients/acme.md"; "Save writes the file and commits only this file on main." |
 | 2 | Wait 3 s (Echo redraws meanwhile) | The typed text, the caret and the scroll stay |
 | 3 | *Save* | "Saved and committed (<id>)."; the reader shows the line; `git -C "$T" log -1 --format=%s` "Edit clients/acme.md" |
-| 4 | *Edit* again, type a line; then `printf '\nA line added outside Echo.\n' >> "$T/knowledge/clients/acme.md"`; *Save* | The banner "This page changed on disk while you were editing (<time now>). Your text isn't saved yet." with *Compare*, *Take theirs*, *Keep mine*; *Save* off; the typed text still there |
+| 4 | *Edit* again, type a line; then `printf '\nA line added outside Echo.\n' >> "$T/knowledge/clients/acme.md"`; wait 2 s (or *Save* at once) | The banner "This page changed on disk while you were editing (<time now>). Your text isn't saved yet." with *Compare*, *Take theirs*, *Keep mine* — within Knowledge's 2 s look at the vault, or on *Save*; *Save* off then; the typed text still there |
 | 5 | *Compare* | The line diff: "− only in your text · + only on disk", the typed line −, the outside line + |
 | 6 | *Keep mine* → *Save mine* | Saved over the change; "Saved. Not committed: …" (the file had changes git hasn't got) — said once |
 | 7 | History rail | Two versions; click the older one: "version of <date>", its diff, *Restore this version* |

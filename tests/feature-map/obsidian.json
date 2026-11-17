@@ -271,6 +271,12 @@
    "title": "Sources the user adds: files handed over (picked or dropped) copied as they are under a safe name, never over a file, (2) for a taken one or one the ledger or log.md knows; the folder made with the preset's README; a call (another profile only \"anyway\"); a web page only by Echo's own reader; the first open's question; a skip with a note",
    "priority": "medium",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-52",
+   "title": "The Knowledge activity's step-4 sheets work on the host's commands: a call's chip and save sheet save (call_knowledge without `later`), Ingest's queue and Add a source (a call, files, mail and Teams search, a web page said as not yet), a vault's Settings preview a call and save the past minutes, the New vault sheet makes a twin",
+   "priority": "high",
+   "check": "agent"
   }
  ]
 }

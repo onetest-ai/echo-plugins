@@ -22,7 +22,7 @@ tags: [obsidian, knowledge, minutes, conflicts]
 | # | Action | Expected Result |
 |---|--------|----------------|
 | 1 | `printf '\nMy own line.\n' >> "$N"`; `cksum "$N"` | The user changed Echo's note: its checksum K |
-| 2 | `echoctl plugin emit minutes_written --from $C`; after 3 s `cksum "$N"`; `grep -o '"state": "[a-z]*"' "$S/calls/$C.json"` | K again: not written over; the record says `"state": "kept"` |
+| 2 | `echoctl plugin emit minutes_written --from $C`; after 3 s `cksum "$N"`; `grep -o '"state": "[a-z]*"' "$S/calls/${C:0:17}.json"` | K again: not written over; the record says `"state": "kept"` |
 | 3 | `obs save_minutes "{\"call\":\"$C\",\"vault\":\"my-twin\"}" \| grep state` | `"state": "kept"` — the user's command too, unless they say how |
 | 4 | `obs call_state "{\"call\":\"$C\"}" \| python3 -c 'import json,sys; print(json.load(sys.stdin)["kept"])'` | `['my-twin']` |
 | 5 | `obs save_minutes "{\"call\":\"$C\",\"vault\":\"my-twin\",\"replace\":true}" \| grep state`; `grep -c 'My own line' "$N"` | `"state": "updated"`; `0`: replaced on the user's word |

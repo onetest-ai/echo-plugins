@@ -184,11 +184,25 @@ export function apply(ctx) {
     }
     return out
   }
-  const draftOf = (r) => ({ ...r, ...fromSchedule(r.schedule), deliver: [...(r.deliver || [])], mail_to: [...(r.mail_to || [])], mailOthers: !!(r.mail_to && r.mail_to.length) })
+  // The model: the profile's own, one of Claude's three by its alias, or any name (Other…). Stored as one string.
+  const MODELS = [['haiku', 'Haiku'], ['sonnet', 'Sonnet'], ['opus', 'Opus']]
+  const pickOf = (m) => (!m ? '' : MODELS.some(([v]) => v === m) ? m : 'other')
+  const modelName = (m) => (MODELS.find(([v]) => v === m) || [m, m])[1]
+  const draftOf = (r) => ({ ...r, ...fromSchedule(r.schedule), modelPick: pickOf(r.model || ''), otherModel: pickOf(r.model || '') === 'other' ? r.model : '', deliver: [...(r.deliver || [])], mail_to: [...(r.mail_to || [])], mailOthers: !!(r.mail_to && r.mail_to.length) })
   const readForm = () => {
     const v = (id) => (document.getElementById(id) || {}).value
     if (!edit) return
-    for (const [k, id] of [['name', 'sch-name'], ['prompt', 'sch-prompt'], ['profile', 'sch-profile'], ['model', 'sch-model'], ['time', 'sch-time']]) if (v(id) != null) edit[k] = v(id)
+    for (const [k, id] of [['name', 'sch-name'], ['prompt', 'sch-prompt'], ['profile', 'sch-profile'], ['time', 'sch-time']]) if (v(id) != null) edit[k] = v(id)
+    const other = v('sch-model')
+    if (other != null && edit.modelPick === 'other') edit.model = other.trim()
+    const pick = v('sch-model-pick')
+    if (pick != null) {
+      // Leaving Other… keeps its name for a way back; coming to it brings that name, never a listed alias.
+      if (edit.modelPick === 'other' && pick !== 'other') edit.otherModel = edit.model
+      if (pick === 'other' && edit.modelPick !== 'other') edit.model = edit.otherModel || ''
+      edit.modelPick = pick
+      if (pick !== 'other') edit.model = pick
+    }
     const to = v('sch-mailto')
     if (to != null) edit.mail_to = to.split(/[,;\s]+/).map((a) => a.trim()).filter(Boolean)
     const hrs = v('sch-hours')
@@ -214,7 +228,7 @@ export function apply(ctx) {
       const max = Math.max(0.01, ...r.runs.map((x) => x.cost || 0))
       const spark = r.runs.slice(0, 12).reverse().map((x) => `<i class="${x.state === 'failed' ? 'f' : ''}" style="height:${Math.max(2, Math.round(((x.cost || 0) / max) * 16))}px"></i>`).join('')
       return `<div class="sch-tr${sel === r.id ? ' sel' : ''}" role="row" data-sch-sel="${esc(r.id)}">
-        <div><div class="sch-nm${r.enabled ? '' : ' off'}">${esc(r.name)}</div><div class="sch-sub">${esc(r.when)} · ${perm(r.tools)}</div></div>
+        <div><div class="sch-nm${r.enabled ? '' : ' off'}">${esc(r.name)}</div><div class="sch-sub">${esc(r.when)} · ${perm(r.tools)}${r.model ? ` · ${esc(modelName(r.model))}` : ''}</div></div>
         <div class="sch-num" style="font-size:12px">${r.enabled ? esc(when(r.next)) : '<span class="sch-sub">Off</span>'}</div>
         <div><div class="sch-st"><span class="sch-dot ${cls}"></span>${esc(txt)}</div><div class="sch-sub sch-num">${lastMeta}</div></div>
         <div>${sends(r)}</div>
@@ -251,7 +265,7 @@ export function apply(ctx) {
       <div style="display:flex;gap:6px;flex-wrap:wrap">${r.running ? '<button class="btn" disabled>Running…</button>' : `<button class="btn primary" data-sch-run="${esc(r.id)}">Run now</button>`}<button class="btn" data-sch-edit="${esc(r.id)}">Edit</button></div>
       <div class="sch-kv"><span>Sends to</span><div>${(r.deliver || []).map((k) => (k === 'mail' && r.mail_to.length ? `Mail — ${esc(r.mail_to.join(', '))}` : k === 'mail' ? 'Mail — you' : esc(label(k)))).join(', ') || 'Nowhere'}</div>
         <span>Permissions</span><div>${esc(perm(r.tools).replace(/^./, (c) => c.toUpperCase()))}</div>
-        <span>AI</span><div>${esc(profileName(r.profile))}${r.model ? ` · ${esc(r.model)}` : ''}</div>
+        <span>AI</span><div>${esc(profileName(r.profile))}${r.model ? ` · ${esc(modelName(r.model))}` : ''}</div>
         <span>Prompt</span><div class="sch-sub" style="color:var(--text-2)">${esc(r.prompt.replace(/\s+/g, ' ').slice(0, 140))}${r.prompt.length > 140 ? '…' : ''}</div></div>
       ${runs.length ? `<div style="display:flex;flex-direction:column;gap:6px"><div style="display:flex;align-items:baseline;gap:8px"><h4 class="sch-h4" style="flex:1">Last ${runs.length} run${runs.length === 1 ? '' : 's'}</h4><span class="sch-sub sch-num">${avg != null ? `avg ${money(avg)} · ${secs(avgT)}` : ''}</span></div><div class="sch-bars" aria-label="Cost of each run, oldest first">${bars}</div></div><div>${list}</div>` : '<span class="sch-sub">No runs yet.</span>'}
     </div>`
@@ -324,7 +338,9 @@ export function apply(ctx) {
           <div class="sch-f"><label class="sch-lbl" for="sch-name">Name</label><input class="sch-in" id="sch-name" value="${esc(e.name || '')}" placeholder="Plan for the day"></div>
           <div class="sch-f"><label class="sch-lbl" for="sch-prompt">What Claude should do</label><textarea class="sch-in" id="sch-prompt" placeholder="What do I owe this week, and what is waiting for others? Group by client.">${esc(e.prompt || '')}</textarea>
             <span class="sch-sub">Claude reads your calls, threads, tasks and the Brain. It writes the answer you get; it can’t send anything itself.</span></div>
-          <div class="sch-f"><span class="sch-lbl">AI profile</span><div style="display:flex;gap:8px"><select class="sch-in" id="sch-profile" aria-label="AI profile" style="flex:1"><option value=""${!e.profile ? ' selected' : ''}>${esc(profileName(''))}</option>${P.profiles.map((p) => `<option value="${esc(p.id)}"${e.profile === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select><input class="sch-in" id="sch-model" aria-label="Model" value="${esc(e.model || '')}" placeholder="model: its minutes model" style="width:170px"></div></div>
+          <div class="sch-f"><span class="sch-lbl">AI profile</span><div style="display:flex;gap:8px"><select class="sch-in" id="sch-profile" aria-label="AI profile" style="flex:1"><option value=""${!e.profile ? ' selected' : ''}>${esc(profileName(''))}</option>${P.profiles.map((p) => `<option value="${esc(p.id)}"${e.profile === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select><select class="sch-in" id="sch-model-pick" aria-label="Model" style="width:170px">${[['', 'Profile’s default'], ...MODELS, ['other', 'Other…']].map(([v, l]) => `<option value="${v}"${(e.modelPick || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+            ${e.modelPick === 'other' ? `<input class="sch-in" id="sch-model" aria-label="Other model" value="${esc(e.model || '')}" placeholder="a model’s name, e.g. claude-sonnet-4-5">` : ''}
+            ${e.modelPick === 'other' ? '<span class="sch-sub">Any name Claude Code takes with --model: a full model id, or one your company’s gateway names. Empty: the profile’s default.</span>' : !e.modelPick ? '<span class="sch-sub">Profile’s default: the model the profile writes minutes with.</span>' : ''}</div>
         </div>
         <div class="sch-col">
           <div class="sch-f"><span class="sch-lbl">When</span><div class="sch-chips" role="group" aria-label="Repeat">${modes.map(([m, l]) => `<button class="sch-chip${e.mode === m ? ' on' : ''}" data-sch-mode="${m}" aria-pressed="${e.mode === m}">${l}</button>`).join('')}</div>${timeRow}
@@ -407,7 +423,12 @@ export function apply(ctx) {
     if ('schConnect' in d) return ctx.go(d.schConnect ? `settings/${d.schConnect}:main` : 'settings/plugins')
   })
   listen('input', (ev) => { if (page === 'edit' && ev.target && ev.target.id === 'sch-hours') readForm() })
-  listen('change', (ev) => { if (page === 'edit' && ev.target && ['sch-time', 'sch-hours'].includes(ev.target.id)) { readForm(); ctx.render() } })
+  listen('change', (ev) => {
+    if (page === 'edit' && ev.target && ['sch-time', 'sch-hours', 'sch-model-pick'].includes(ev.target.id)) {
+      readForm(); ctx.render()
+      if (ev.target.id === 'sch-model-pick' && edit.modelPick === 'other') { const o = document.getElementById('sch-model'); if (o) o.focus() }
+    }
+  })
 
   load()
 }

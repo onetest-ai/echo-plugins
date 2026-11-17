@@ -8,6 +8,9 @@ the answer in Telegram, Teams or mail.
   Claude did.
 - **Routines** are files in its folder of your data folder (`.echo/plugins/scheduler/routines/<id>.md`): a little
   frontmatter (schedule, profile, model, permissions, where to send) and your prompt.
+- **A model per routine**: the profile's default, Haiku, Sonnet or Opus — or any other name Claude Code takes with
+  `--model` (a full id, a model your company's gateway names). A light routine on Haiku, a heavy one on Opus; the
+  routine's row shows its model when one is set.
 - **Templates** to start from: `templates/` (Plan for the day, Monday asks, Meeting prep, Friday wrap-up).
 - **Permissions are yours to pick** per routine: read only (Echo's guard), your Echo folder session's, or none asked.
 - **Claude in Echo knows your routines**: what runs when, what a run answered or cost, why one failed — and helps you

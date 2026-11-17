@@ -25,7 +25,14 @@ import { execFileSync } from 'node:child_process'
  *  the real git in those folders, isolated from the user's settings (jshost/git.rs's shapes); `markdown`: true for
  *  `ctx.markdown(md, {breaks, links, images})` and `ctx.markdown.links` — a small stand-in for Echo's writer that keeps
  *  its rules for links and images (plugins/markdown.rs `allowed`), not its whole Markdown. `ctx.crypto.sha256` is there. */
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false, profiles, disk = false, git = false, gitStrict = true, markdown = false, storeUnreadable = [] } = {}) {
+/** `events`: the events it may hear (`uses.events.on`) — `ctx.on`, and `fire(event, payload)` runs its handlers as Echo
+ *  does (awaited here). `echo`: each kind a value, or a function `(arg, opts)` for `source`, `calls`, `sources`… —
+ *  `echo.read(kind, arg, opts)` as Echo's. `clientValues`: `ctx.clients` ({client: {key: value}}). `m365`: {search,
+ *  mailThread, chat} (async, `m365Log` lists the asks). `pkg`: a folder whose files `ctx.package.read/list` give (the
+ *  plugin's own). `pickFolder`: what the folder picker answers (it is given to the plugin: added to `folders`);
+ *  `pickFiles`: the paths the file picker answers, as handles {file, name, size}; `run(name, args, {files})` passes
+ *  handles (`handle(path)` makes one) as a window's `ctx.call` does. `web`: `ctx.web` (an Echo that has it). */
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false, profiles, disk = false, git = false, gitStrict = true, markdown = false, storeUnreadable = [], events, clientValues, m365, pkg, pickFolder, pickFiles, web } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
   const ctx = {
@@ -107,22 +114,77 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   if (sessions) ctx.sessions = { skills: (list) => { sessionsNow.skills = JSON.parse(JSON.stringify(list || [])) }, read: (dirs) => { sessionsNow.read = [...(dirs || [])] } }
   ctx.crypto = { sha256: (text) => sha256(String(text)) }
   const fsLog = []
-  if (folders !== undefined) ctx.fs = disk ? diskFs(folders, fsLog) : { folders: () => [...folders] }
+  const handlesMap = new Map()
+  if (folders !== undefined) ctx.fs = disk ? diskFs(folders, fsLog, (f) => handlesMap.get(typeof f === 'object' && f ? f.file : f)) : { folders: () => [...folders] }
   if (git) ctx.git = gitOf(folders || [], gitStrict)
   if (markdown) ctx.markdown = markdownOf(id)
   if (profiles !== undefined) ctx.profiles = () => JSON.parse(JSON.stringify(profiles))
-  if (echo !== undefined) ctx.echo = { read: (kind) => JSON.parse(JSON.stringify(echo[kind] || [])) }
+  if (echo !== undefined) {
+    ctx.echo = {
+      read: (kind, arg, opts) => {
+        const x = echo[kind]
+        if (typeof x === 'function') return JSON.parse(JSON.stringify(x(arg, opts) ?? null))
+        return JSON.parse(JSON.stringify(x === undefined ? [] : x))
+      },
+    }
+  }
+  const handlers = {}
+  if (events !== undefined) {
+    ctx.on = (event, fn) => {
+      if (!events.includes(event)) return Promise.reject(new Error(`${event} isn't in uses.events.on`))
+      ;(handlers[event] = handlers[event] || []).push(fn)
+      return Promise.resolve(true)
+    }
+  }
+  if (clientValues !== undefined) {
+    ctx.clients = {
+      get: (client, key) => ((clientValues[client] || {})[key] ?? null),
+      set: (client, key, value) => {
+        if (String(key).includes('.')) throw new Error('a client value\'s key has no dot')
+        if (value === null) { if (clientValues[client]) delete clientValues[client][key] } else { (clientValues[client] = clientValues[client] || {})[key] = JSON.parse(JSON.stringify(value)) }
+      },
+      list: (key) => Object.entries(clientValues).filter(([, v]) => v[key] != null).map(([client, v]) => ({ client, value: v[key] })),
+    }
+  }
+  const m365Log = []
+  if (m365 !== undefined) {
+    ctx.m365 = Object.fromEntries(['search', 'mailThread', 'chat'].map((k) => [k, async (...a) => {
+      m365Log.push([k, ...a])
+      if (!m365[k]) throw new Error(`${k}: this plugin didn't ask to read that`)
+      return JSON.parse(JSON.stringify(await m365[k](...a)))
+    }]))
+  }
+  if (pkg !== undefined) {
+    // jshost `package.read` / `package.list`: a file's text or null; a folder's names, sorted ([] for none).
+    const inPkg = (rel) => { const r = String(rel).replace(/^\.\//, ''); if (!r || npath.isAbsolute(r) || r.split('/').some((c) => c === '..' || c === '.' || c === '')) throw new Error(`“${r}” isn't a file inside the plugin`); return npath.join(pkg, r) }
+    ctx.package = {
+      read: (rel) => { try { const f = inPkg(rel); return nfs.statSync(f).isFile() ? nfs.readFileSync(f, 'utf8') : null } catch { return null } },
+      list: (dir) => { const d = dir ? inPkg(dir) : pkg; if (!nfs.existsSync(d) || !nfs.statSync(d).isDirectory()) throw new Error(`${dir} isn't in the plugin`); return nfs.readdirSync(d).sort() },
+    }
+  }
+  // File handles (jshost/files.rs): {file, name, size}, the id the plugin's alone; the path never given.
+  const handle = (path) => { const h = { file: `h${handlesMap.size + 1}`, name: npath.basename(path), size: nfs.statSync(path).size }; handlesMap.set(h.file, path); return h }
+  if (pickFolder !== undefined || pickFiles !== undefined || disk) {
+    ctx.system = {
+      pickFolder: async () => { const f = typeof pickFolder === 'function' ? pickFolder() : pickFolder; if (!f) return null; if (folders && !folders.includes(f)) folders.push(f); return nfs.realpathSync.native(f) },
+      pickFiles: async (prompt, o = {}) => { const list = (typeof pickFiles === 'function' ? pickFiles() : pickFiles) || []; return (o.multiple ? list : list.slice(0, 1)).map(handle) },
+    }
+    ctx.files = { read: (file, o = {}) => { const p = handlesMap.get(typeof file === 'object' ? file.file : file); if (!p) throw new Error('that file isn\'t there'); return nfs.readFileSync(p, 'utf8').slice(0, Math.min(o.max || 1 << 20, 4 << 20)) } }
+  }
+  if (web !== undefined) ctx.web = web
   const inboxNow = {}
   if (inbox) ctx.inbox = { set: (key, item) => { inboxNow[key] = item }, clear: (key) => { delete inboxNow[key] } }
   return Object.assign(ctx, {
     // What the tests look at.
-    commands, providers, timers, pushed, logs, requests, signins, fsLog, keptNow, files, settingsNow: settings, threadsNow: threads, workState, hintsNow, agentNow, sessionsNow, inboxNow,
+    commands, providers, timers, pushed, logs, requests, signins, fsLog, keptNow, files, settingsNow: settings, threadsNow: threads, clientsNow: clientValues, workState, hintsNow, agentNow, sessionsNow, inboxNow, m365Log, handle,
+    /** Tell its handlers an event, as Echo does, and wait for them. */
+    fire: async (event, payload) => { for (const fn of handlers[event] || []) await fn(JSON.parse(JSON.stringify(payload))) },
     /** Ask its work rows as Echo does. */
     rows: async (ask) => JSON.parse(JSON.stringify(await workState.provider(ask))),
     /** Run a command as Echo does: JSON in, JSON out. */
-    run: async (name, args = {}) => {
+    run: async (name, args = {}, extra = { files: [] }) => {
       if (!commands[name]) throw new Error(`no command “${name}”`)
-      return JSON.parse(JSON.stringify((await commands[name](JSON.parse(JSON.stringify(args)))) ?? null))
+      return JSON.parse(JSON.stringify((await commands[name](JSON.parse(JSON.stringify(args)), { files: (extra && extra.files) || [] })) ?? null))
     },
     /** Ask a widget's provider as Today does. */
     widget: async (wid, ask = {}) => {
@@ -167,7 +229,7 @@ const sha256 = (data) => createHash('sha256').update(data).digest('hex')
 const secs = (st) => Math.floor(st.mtimeMs / 1000)
 const DEVICE_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i
 
-function diskFs(folders, fsLog) {
+function diskFs(folders, fsLog, handlePath = () => null) {
   const granted = () => folders.map((f) => nfs.realpathSync.native(f))
   const rootOf = (root) => {
     let r
@@ -302,6 +364,21 @@ function diskFs(folders, fsLog) {
     },
     append: (root, rel, text) => { const f = writable(root, rel); nfs.mkdirSync(npath.dirname(f), { recursive: true }); nfs.appendFileSync(f, text.endsWith('\n') ? text : `${text}\n`); fsLog.push(['append', rel]) },
     mkdir: (root, rel) => { nfs.mkdirSync(writable(root, rel), { recursive: true }); fsLog.push(['mkdir', rel]) },
+    // jshost/files.rs `copy_in`: a handle's bytes as they are (50 MB at most), checked as `write`; never over a file
+    // unless `createNew: false`.
+    copyIn: async (file, root, rel, o = {}) => {
+      const src = handlePath(file)
+      if (!src) throw new Error('that file isn\'t there (handed to another plugin, or over an hour ago)')
+      const size = nfs.statSync(src).size
+      if (size > 50 << 20) throw new Error(`${npath.basename(src)} is ${Math.round(size / (1 << 20))} MB — 50 MB at most`)
+      const f = writable(root, rel)
+      if (nfs.existsSync(f) && nfs.statSync(f).isDirectory()) throw new Error(`“${rel}” is a folder`)
+      nfs.mkdirSync(npath.dirname(f), { recursive: true })
+      if (o.createNew === false) nfs.copyFileSync(src, f)
+      else { try { nfs.copyFileSync(src, f, nfs.constants.COPYFILE_EXCL) } catch (e) { if (e.code === 'EEXIST') throw new Error(`“${rel}” is there already`); throw e } }
+      fsLog.push(['copyIn', rel])
+      return { path: rel, size }
+    },
   }
 }
 

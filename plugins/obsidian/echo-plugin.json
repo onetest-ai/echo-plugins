@@ -17,7 +17,11 @@
     "echo": {
       "read": [
         "clients",
-        "threads"
+        "threads",
+        "source",
+        "sources",
+        "calls",
+        "me"
       ]
     },
     "sessions": {
@@ -36,8 +40,28 @@
         "unresolved",
         "rename_plan"
       ]
+    },
+    "events": {
+      "on": [
+        "minutes_written",
+        "sources_changed"
+      ]
+    },
+    "m365": {
+      "read": [
+        "mail"
+      ]
     }
   },
+  "settings": [
+    {
+      "key": "skills",
+      "label": "Where the twin preset puts its skills",
+      "type": "string",
+      "default": "vault",
+      "help": "vault: the vault’s own .claude/skills; global: your ~/.claude/skills, for every Claude Code session"
+    }
+  ],
   "main": "main.js",
   "client": "client.js"
 }

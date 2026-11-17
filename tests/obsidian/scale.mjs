@@ -16,18 +16,23 @@ export async function scale(n, kb, commands = COMMANDS, say = () => {}) {
   const num = (p) => Number(p.replace(/^p|\.md$/g, ''))
   // A stand-in for sha256: the same for the same text (enough to tell a read page is UTF-8, as the plugin checks).
   const sha = (t) => { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return (h >>> 0).toString(16).padStart(64, '0') }
+  // The longest stretch of JavaScript between two awaits of Echo's services (Echo stops a plugin's call after 5 s).
+  let sliceAt = Date.now(), slice = 0
+  const tick = () => { slice = Math.max(slice, Date.now() - sliceAt) }
+  const host = async (v) => { tick(); await Promise.resolve(); sliceAt = Date.now(); return v }
   const cmds = {}
   const ctx = {
     id: 'obsidian', terminal: true, log: () => {}, command: (name, fn) => { cmds[name] = fn },
     store: {
       read: (p) => store.get(p) ?? null, write: (p, t) => { store.set(p, String(t)) },
       update: (p, f) => { const r = f(store.get(p) ?? null); if (r != null) store.set(p, String(r)); return store.get(p) ?? null },
-      path: (p = '') => `/data/.echo/plugins/obsidian/${p}`, remove: (p) => { store.delete(p) }, list: () => [],
+      path: (p = '') => `/data/.echo/plugins/obsidian/${p}`, remove: (p) => { store.delete(p) },
+      list: (d = '') => [...new Set([...store.keys()].filter((k) => k.startsWith(`${d}/`)).map((k) => k.slice(d.length + 1).split('/')[0]))].sort(),
     },
     fs: {
       folders: () => ['/v'], forget: () => true, list: () => [],
-      walk: async () => files.slice(),
-      readMany: async (root, ps) => ps.map((p) => body(num(p))),
+      walk: () => host(files.slice()),
+      readMany: (root, ps) => host(ps.map((p) => body(num(p)))),
       read: (root, p) => body(num(p)),
       stat: (root, p, o = {}) => (/^p\d+\.md$/.test(p) && num(p) < n ? { kind: 'file', size: body(num(p)).length, mtime: 1, real: p, ...(o.sha ? { sha: sha(body(num(p))) } : {}) } : null),
       search: async () => [],
@@ -43,10 +48,16 @@ export async function scale(n, kb, commands = COMMANDS, say = () => {}) {
   const out = {}
   for (const c of commands) {
     const t0 = Date.now()
+    sliceAt = t0
+    slice = 0
     const r = await cmds[c](args)
-    out[c] = { ms: Date.now() - t0, bytes: JSON.stringify(r).length }
-    say(`${c}: ${out[c].ms} ms, answer ${(out[c].bytes / 1e6).toFixed(2)} MB`)
+    tick()
+    out[c] = { ms: Date.now() - t0, slice, bytes: JSON.stringify(r).length }
+    say(`${c}: ${out[c].ms} ms (longest slice ${slice} ms), answer ${(out[c].bytes / 1e6).toFixed(2)} MB`)
   }
-  out.indexBytes = (store.get('vaults/v/index.json') || '').length
+  // The stored index: its head and parts (the largest part is the most written at once).
+  const parts = [...store.keys()].filter((k) => k.startsWith('vaults/v/index'))
+  out.indexBytes = parts.reduce((n, k) => n + store.get(k).length, 0)
+  out.largestWrite = Math.max(...parts.map((k) => store.get(k).length))
   return out
 }

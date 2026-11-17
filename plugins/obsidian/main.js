@@ -233,8 +233,9 @@ export function setVaultKey(v, key, value, known = {}) {
       break
     default: {
       if (!OVERRIDES.includes(key)) throw new Error(`no setting “${key}”`)
-      // The user set the vault's shape themselves: it is theirs now (`structure`).
-      out.structure = 'confirmed'
+      // The user set where the pages, sources or templates are: the vault's shape is theirs now (`structure`); the index,
+      // notes folder and naming don't change what is a page.
+      if (STRUCTURE.includes(key)) out.structure = 'confirmed'
       const p = text.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
       if (!p) { delete out.overrides[key]; break }
       if (key === 'naming') {
@@ -1048,177 +1049,270 @@ export function linkGraph(pages, indexPage, mode) {
   return { nodes, edges, hubs }
 }
 
-// ── scan.rs `page`: one page read as Obsidian reads it ──
-// Unlike Rust, a page keeps at most these many links, tags and headings: every one is an object in the 64 MB QuickJS
-// heap all plugins share, and a 2 MB page of `[[a]]` would fill it. A link's destination is looked for in the next
-// 4096 units only (a hostile `[](((…` line would make every `](` scan to its end).
+// ── scan.rs `page`: one page read as Obsidian reads it — by Obsidian vaults 0.8's rules ──
+// The vaults are Obsidian vaults: backlinks, tags, the graph and the checks must match what Obsidian (and 0.8) shows,
+// so a page's links and tags are read as 0.8's `parseNote` read them, not as #677's scan.rs did. Where it departs from
+// #677 (each also 0.8's rule):
+// - nothing is a link or a tag inside `%%…%%`, `<!-- … -->` or `$$…$$` (also across lines), nor in a code span of any
+//   number of backticks (`` ``[[x]]`` ``);
+// - a heading's links and `#tags` count; a heading is `#`…`######` at the very start of a line;
+// - frontmatter tags come from `tags:` or `tag:`, split at commas and spaces, `#` and a trailing `/` dropped
+//   (`tags: one, two #three` is three tags);
+// - an inline tag follows a space or the line's start only (`(#p)` and `[w](#h)` are no tags); tags are kept once each
+//   as written;
+// - a Markdown link's address is `<…>` or has no space or `)` (`[x](a b.md)` is no link), with an optional title;
+//   it may follow a wikilink (`[[w]](b.md)` links b.md too); a link's text may hold one `[…]`.
+// Every rule runs in linear time (no regular expression that can backtrack over a hostile line), and a page keeps at
+// most these many links, tags and headings: every one is an object in the 64 MB QuickJS heap all plugins share.
 export const PAGE_MAX_LINKS = 5000
 export const PAGE_MAX_TAGS = 1000
 export const PAGE_MAX_HEADINGS = 2000
-const DEST_MAX = 4096
-// And a line's scan for destinations is budgeted (units looked at, with the line's own length eight times over): a
-// line of `](` that never close stops being read for Markdown links rather than taking seconds.
-const DEST_BUDGET = (line) => 65536 + 8 * line.length
 
-/** The line's text outside inline code spans (`` `…` ``), each char of a span (and its backticks) a space. */
-function outsideCode(line) {
-  if (!line.includes('`')) return line
-  // By slices, not a char at a time (a 2 MB line would be millions of strings in the shared heap). A span's units are
-  // spaces (Rust: its chars; only where links and tags are looked for, so the count doesn't matter).
-  const parts = []
+/** `[[target#subpath|alias]]`'s parts (a table writes its bar as `\|`): `{t, h, a}`. */
+export function parseWiki(inner) {
+  const bar = inner.search(/\\?\|/)
+  const ref = bar < 0 ? inner : inner.slice(0, bar)
+  const alias = bar < 0 ? '' : inner.slice(bar).replace(/^\\?\|/, '')
+  const hash = ref.indexOf('#')
+  return { t: (hash < 0 ? ref : ref.slice(0, hash)).trim(), h: hash < 0 ? '' : ref.slice(hash + 1).trim(), a: alias.trim() }
+}
+
+/** `[text](path#subpath)`'s address: `{t, h}` inside the vault, or null (a scheme, or only an anchor). */
+export function parseMd(target) {
+  let t = target.startsWith('<') ? target.slice(1, -1) : target
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t) || t.startsWith('#')) return null
+  const hash = t.indexOf('#')
+  const h = hash < 0 ? '' : t.slice(hash + 1)
+  t = hash < 0 ? t : t.slice(0, hash)
+  try { t = decodeURIComponent(t) } catch { /* as written */ }
+  return { t, h }
+}
+
+const unquote08 = (s) => s.replace(/^["']|["']$/g, '')
+/** 0.8's frontmatter: `{props: {key: text | [items]}, body, fm: its lines, start: the body's first line}` (values as
+ *  0.8 kept them: a `#` in a plain value stays). */
+export function frontmatter08(text) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(text)
+  if (!m) return { props: {}, body: text, fm: [], start: 1 }
+  const props = {}
+  const fm = m[1].split(/\r?\n/)
+  let key = null
+  for (const line of fm) {
+    const kv = /^([^\s#:-][^:]*):(?:[ \t]+(.*)|[ \t]*)$/.exec(line)
+    if (kv) {
+      key = kv[1].trim()
+      let v = (kv[2] || '').trim()
+      if (/^\[.*\]$/.test(v) && !v.startsWith('[[')) v = v.slice(1, -1).split(',').map((x) => unquote08(x.trim())).filter(Boolean)
+      else v = unquote08(v)
+      props[key] = v === '' ? [] : v
+    } else if (key && /^\s*-(\s|$)/.test(line)) {
+      if (!Array.isArray(props[key])) props[key] = props[key] ? [props[key]] : []
+      const item = unquote08(line.replace(/^\s*-\s*/, '').trim())
+      if (item) props[key].push(item)
+    }
+  }
+  return { props, body: text.slice(m[0].length), fm, start: fm.length + 3 }
+}
+
+const blankOut = (s) => s.replace(/[^\n]/g, ' ')
+/** Each `open…close` span (the first close after each open, across lines) blanked, every position kept. */
+function blankSpans(t, open, close) {
+  if (!t.includes(open)) return t
+  const out = []
   let at = 0
-  let inCode = false
   for (;;) {
-    const k = line.indexOf('`', at)
-    const end = k < 0 ? line.length : k
-    parts.push(inCode ? ' '.repeat(end - at) : line.slice(at, end))
-    if (k < 0) break
-    parts.push(' ')
-    inCode = !inCode
-    at = k + 1
+    const a = t.indexOf(open, at)
+    if (a < 0) break
+    const b = t.indexOf(close, a + open.length)
+    if (b < 0) break
+    out.push(t.slice(at, a), blankOut(t.slice(a, b + close.length)))
+    at = b + close.length
   }
-  return parts.join('')
+  out.push(t.slice(at))
+  return out.join('')
 }
-
-/** `[[…]]` and `![[…]]` in a line. */
-function wikilinksIn(line, n, out) {
+/** A line's code spans blanked: a run of backticks, at least one character, and the same run again (the longest run
+ *  that closes, as 0.8's pattern takes it) — in linear time. */
+function blankCode(line) {
+  if (!line.includes('`')) return line
+  const n = line.length
+  // The longest run of backticks at or after each position (a run cut at it counts from there).
+  const run = new Int32Array(n + 1)
+  const most = new Int32Array(n + 2)
+  for (let i = n - 1; i >= 0; i--) { run[i] = line[i] === '`' ? run[i + 1] + 1 : 0; most[i] = Math.max(run[i], most[i + 1]) }
+  const out = []
   let at = 0
-  while (out.length < PAGE_MAX_LINKS) {
-    const i = line.indexOf('[[', at)
-    if (i < 0) break
-    const embed = i > at && line[i - 1] === '!'
-    const j = line.indexOf(']]', i + 2)
-    if (j < 0) break
-    const target = rsTrim(line.slice(i + 2, j))
-    if (target !== '' && !target.includes('\n')) out.push({ target, line: n, wiki: true, embed })
-    at = j + 2
+  let i = line.indexOf('`')
+  while (i >= 0 && i < n) {
+    const len = run[i]
+    const k = i + len < n ? Math.min(len, most[i + len + 1]) : 0
+    if (k > 0) {
+      const close = line.indexOf('`'.repeat(k), i + len + 1)
+      const from = i + len - k
+      out.push(line.slice(at, from), ' '.repeat(close + k - from))
+      at = close + k
+      i = line.indexOf('`', at)
+    } else i = line.indexOf('`', i + len)
   }
+  out.push(line.slice(at))
+  return out.join('')
+}
+/** 0.8's mask: a body with its code (fenced blocks, code spans), comments (`%%…%%`, `<!-- -->`) and math (`$$…$$`)
+ *  blanked, every character kept in its place so lines and positions stay the text's. */
+export function mask08(body) {
+  const lines = body.split('\n')
+  let fence = null
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]
+    if (fence === null) {
+      const m = /^[ \t]*(`{3,}|~{3,})/.exec(l)
+      // An opening line needs a line after it.
+      if (m && i < lines.length - 1) { fence = m[1]; lines[i] = blankOut(l) }
+    } else {
+      const closes = l.replace(/^[ \t]*/, '').startsWith(fence)
+      lines[i] = blankOut(l)
+      if (closes) fence = null
+    }
+  }
+  let t = lines.join('\n')
+  t = blankSpans(t, '%%', '%%')
+  t = blankSpans(t, '<!--', '-->')
+  t = blankSpans(t, '$$', '$$')
+  return t.split('\n').map(blankCode).join('\n')
 }
 
-function mdLinksIn(line, n, out, withText = false) {
-  let i = 0
-  let budget = DEST_BUDGET(line)
-  // The last `[` before `i` (Rust: `line[..i].rfind('[')`), kept as `i` moves forward — searched back from each `](` it
-  // would be quadratic on a line of `](` with no `[`.
-  let lastOpen = -1
-  let seen = 0
-  while (i < line.length && out.length < PAGE_MAX_LINKS && budget > 0) {
-    if (line[i] === ']' && line[i + 1] === '(') {
-      for (; seen < i; seen++) if (line[seen] === '[') lastOpen = seen
-      const open = lastOpen // the `[` that opens this text (not one of a wikilink)
-      if (open < 0 || (open > 0 && line[open - 1] === '[')) { i++; continue }
-      const embed = open > 0 && line[open - 1] === '!'
-      const rest = line.slice(i + 2, i + 2 + DEST_MAX)
-      let dest
-      let used
-      if (rest.startsWith('<')) {
-        const r = rest.slice(1)
-        const k = r.indexOf('>')
-        budget -= k < 0 ? r.length : k
-        if (k < 0 || !r.slice(k + 1).startsWith(')')) { i++; continue }
-        dest = `<${r.slice(0, k)}>`
-        used = k + 3
-      } else {
-        // Balanced parentheses inside the destination; a title after a space ends it.
-        let depth = 0
-        let end = -1
-        for (let k = 0; k < rest.length; k++) {
-          budget--
-          if (rest[k] === '(') depth++
-          else if (rest[k] === ')') {
-            if (depth === 0) { end = k; break }
-            depth--
-          }
-        }
-        if (end < 0) { i++; continue }
-        dest = rsTrim(rest.slice(0, end).split(' "')[0])
-        used = end + 1
+export const WIKI08 = /(!?)\[\[([^\[\]\n]+?)\]\]/g
+export const MD08 = /(!?)\[((?:[^\[\]\n]|\[[^\]\n]*\])*)\]\((<[^>\n]+>|[^)\s]+)(?:[ \t]+["'][^"'\n]*["'])?\)/g
+const TAG08 = /(^|\s)#([\p{L}\p{N}_\/-]+)/gu
+const tagOk08 = (t) => /[^\d\/]/u.test(t)
+
+/** 0.8's Markdown links of one line (`MD08`'s matches, in order), found in linear time: `[{at, end, embed, text,
+ *  target}]`. */
+function mdLinks08(line, max) {
+  const n = line.length
+  const out = []
+  if (!line.includes('](')) return out
+  const nextOf = (pred) => { const a = new Int32Array(n + 2).fill(-1); for (let i = n - 1; i >= 0; i--) a[i] = pred(line[i]) ? i : a[i + 1]; return a }
+  const nBr = nextOf((c) => c === '[' || c === ']')
+  const nClose = nextOf((c) => c === ']')
+  const nGt = nextOf((c) => c === '>')
+  const nStop = nextOf((c) => c === ')' || /\s/.test(c))
+  const nQuote = nextOf((c) => c === '"' || c === "'")
+  // After an address ending at `p`: `)`, or spaces, a quoted title and `)` → the match's end, or -1.
+  const tail = (p) => {
+    if (line[p] === ')') return p + 1
+    let q = p
+    while (line[q] === ' ' || line[q] === '\t') q++
+    if (q === p || (line[q] !== '"' && line[q] !== "'")) return -1
+    const r = nQuote[q + 1]
+    return r >= 0 && line[r + 1] === ')' ? r + 2 : -1
+  }
+  let budget = 65536 + 8 * n
+  let pos = 0
+  while (pos < n && out.length < max && budget > 0) {
+    const s = line.indexOf('[', pos)
+    if (s < 0) break
+    let end = -1, textEnd = -1, target = ''
+    // Its text: plain characters and `[…]` pairs, up to a `]`.
+    let j = s + 1
+    for (;;) {
+      budget--
+      const b = nBr[j]
+      if (b < 0) break
+      if (line[b] === ']') { textEnd = b; break }
+      const c = nClose[b + 1]
+      if (c < 0) break
+      j = c + 1
+    }
+    if (textEnd >= 0 && line[textEnd + 1] === '(') {
+      const d = textEnd + 2
+      if (line[d] === '<') {
+        const e = nGt[d + 1]
+        if (e > d + 1) { const t = tail(e + 1); if (t >= 0) { end = t; target = line.slice(d, e + 1) } }
       }
-      const bare = dest.replace(/^<+/, '')
-      const c = bare.indexOf(':')
-      const scheme = c > 1 && /^[A-Za-z0-9+.-]+$/.test(bare.slice(0, c))
-      if (dest !== '' && !dest.startsWith('#') && !scheme) out.push(withText ? { target: dest, line: n, wiki: false, embed, text: line.slice(open + 1, i) } : { target: dest, line: n, wiki: false, embed })
-      i += 2 + used
-      continue
+      if (end < 0) {
+        const stop = nStop[d] < 0 ? n : nStop[d]
+        if (stop > d) { const t = tail(stop); if (t >= 0) { end = t; target = line.slice(d, stop) } }
+      }
     }
-    i++
+    if (end < 0) { pos = s + 1; continue }
+    out.push({ at: s, end, embed: s - 1 >= pos && line[s - 1] === '!', text: line.slice(s + 1, textEnd), target })
+    pos = end
   }
+  return out
 }
 
-/** Inline `#tags` in a line (not headings, not inside words, not all digits). */
-function inlineTagsIn(line, out) {
-  // By index, a code point at a time (no array of the line's chars: a 2 MB line would fill the shared heap).
-  const at = (k) => String.fromCodePoint(line.codePointAt(k))
-  let prev = ''
-  let i = 0
-  while (i < line.length && out.length < PAGE_MAX_TAGS) {
-    const c = at(i)
-    if (c === '#' && (i === 0 || WS.test(prev) || prev === '(')) {
-      let j = i + 1
-      let d
-      while (j < line.length && (ALNUM.test(d = at(j)) || d === '_' || d === '-' || d === '/')) j += d.length
-      const tag = line.slice(i + 1, j)
-      if (tag !== '' && !/^[0-9]+$/.test(tag)) out.push(tag)
-      prev = j > i + 1 ? at(j - 1 - (isSurrogate(line.charCodeAt(j - 1)) ? 1 : 0)) : c
-      i = j
-      continue
-    }
-    prev = c
-    i += c.length
-  }
+/** A heading on a (masked) line, 0.8's way — `#`…`######`, a space or tab, then something: its level, or 0. */
+function headingLevel(l) {
+  let h = 0
+  while (h < l.length && l[h] === '#') h++
+  if (h < 1 || h > 6 || (l[h] !== ' ' && l[h] !== '\t')) return 0
+  // `[ \t]+(.+?)`: at least one character after the first space, which may be a space itself.
+  return l.length - h >= 2 ? h : 0
+}
+/** A heading's text from its raw line: its marks and a closing run of `#` dropped, trimmed (linear). */
+function headingText(raw) {
+  let a = 0
+  while (raw[a] === '#') a++
+  while (raw[a] === ' ' || raw[a] === '\t') a++
+  // 0.8's `[ \t]+#*[ \t]*$` ends at the line's end: a `\r` there keeps the closing marks (then trimmed away).
+  if (raw.endsWith('\r')) return raw.slice(a).trim()
+  let e1 = raw.length
+  while (e1 > a && (raw[e1 - 1] === ' ' || raw[e1 - 1] === '\t')) e1--
+  let e2 = e1
+  while (e2 > a && raw[e2 - 1] === '#') e2--
+  let e3 = e2
+  while (e3 > a && (raw[e3 - 1] === ' ' || raw[e3 - 1] === '\t')) e3--
+  const cut = e2 < e1 && e3 < e2 ? e3 : e1
+  return raw.slice(a, cut).trim()
 }
 
 /** Read one page from its text: `{path, title, props, has_props, tags, headings: [[level, text]], links, size, mtime}`.
- *  A link's `line` counts the frontmatter's lines; links in code are skipped; tags come from the frontmatter and the
- *  text outside code and headings. `opts.mdText`: a Markdown link keeps its text too (`text`; the index's record). */
+ *  A link is `{target, line, wiki, embed}` as written (a wikilink's inside, a Markdown link's address), its `line`
+ *  counting the frontmatter's lines; links and tags as 0.8 read them (see above). The title: the `title` property, else
+ *  the first `# heading`, else the file's name. `opts.full` (the index's record) adds a Markdown link's `text` and a
+ *  property link's `prop`, and `outline` [[level, text, line]], `blocks` [[id, line]], `tasks` [[line, status, text]]
+ *  and `props08` (0.8's properties). */
 export function scanPage(path, text, size = 0, mtime = 0, opts = {}) {
+  const full = !!opts.full
   const [raw] = fmSplit(text)
   const props = raw !== null ? fmParse(raw) : []
-  const fmLines = raw !== null ? textLines(raw).length + 2 : 0
-  const tagProp = fmGet(props, 'tags')
-  const tags = (tagProp ? propItems(tagProp) : []).map((t) => rsTrim(t.replace(/^#+/, ''))).filter((t) => t !== '')
-  const headings = []
-  const links = []
-  let fence = null
-  textLines(text).forEach((line, k) => {
-    const n = k + 1
-    if (n <= fmLines) {
-      wikilinksIn(line, n, links) // properties may link: `client: "[[Acme Corp]]"`
-      return
-    }
-    const t = rsTrimStart(line)
-    if (fence !== null) {
-      if (t.startsWith(fence)) fence = null
-      return
-    }
-    if (t.startsWith('```') || t.startsWith('~~~')) {
-      fence = t.slice(0, 3)
-      return
-    }
-    const hashes = /^#*/.exec(t)[0].length
-    if (hashes >= 1 && hashes <= 6 && t.slice(hashes).startsWith(' ')) {
-      const h = rsTrim(trimEndOf(rsTrim(t.slice(hashes)), '#'))
-      if (h !== '' && headings.length < PAGE_MAX_HEADINGS) headings.push([hashes, h])
-      return
-    }
-    const plain = outsideCode(line)
-    wikilinksIn(plain, n, links)
-    mdLinksIn(plain, n, links, !!opts.mdText)
-    inlineTagsIn(plain, tags)
-  })
+  const f8 = frontmatter08(text)
+  const tags = []
   const seen = new Set()
-  const uniqueTags = tags.filter((t) => {
-    const l = t.toLowerCase()
-    if (seen.has(l)) return false
-    seen.add(l)
-    return true
+  const addTag = (c) => { if (c && tagOk08(c) && !seen.has(c) && tags.length < PAGE_MAX_TAGS) { seen.add(c); tags.push(c) } }
+  for (const x of [].concat(f8.props.tags || f8.props.tag || [])) for (const t of String(x).split(/[,\s]+/)) addTag(t.replace(/^#/, '').replace(/\/+$/, ''))
+  const links = []
+  const outline = [], blocks = [], tasks = []
+  const addLink = (target, line, wiki, embed, more) => {
+    if (links.length >= PAGE_MAX_LINKS) return
+    if (wiki) { const w = parseWiki(target); if (!w.t && !w.h) return } else { const d = parseMd(target); if (!d || !d.t) return }
+    links.push(full ? { target, line, wiki, embed, ...more } : { target, line, wiki, embed })
+  }
+  // Links in the properties (`company: "[[Acme]]"`), as Obsidian counts them.
+  f8.fm.forEach((line, i) => { for (const m of line.matchAll(WIKI08)) addLink(m[2], i + 2, true, !!m[1], { prop: true }) })
+  const rawLines = f8.body.split('\n')
+  const masked = mask08(f8.body).split('\n')
+  masked.forEach((line, i) => {
+    const at = f8.start + i
+    if (line.includes('[[')) for (const m of line.matchAll(WIKI08)) addLink(m[2], at, true, !!m[1])
+    if (line.includes('](')) for (const m of mdLinks08(line, PAGE_MAX_LINKS)) addLink(m.target, at, false, m.embed, { text: m.text })
+    if (line.includes('#')) for (const m of line.matchAll(TAG08)) addTag(m[2].replace(/\/+$/, ''))
+    const h = line[0] === '#' ? headingLevel(line) : 0
+    if (h && outline.length < PAGE_MAX_HEADINGS) outline.push([h, headingText(rawLines[i]), at])
+    if (full) {
+      if (line.includes('^')) { const b = /(?:^|\s)\^([A-Za-z0-9-]+)[ \t]*\r?$/.exec(line); if (b) blocks.push([b[1], at]) }
+      if (line.includes('[')) { const t = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[(.)\][ \t]+/.exec(line); if (t) tasks.push([at, t[1], rawLines[i].slice(t[0].length).trim().slice(0, 300)]) }
+    }
   })
+  const headings = outline.map(([l, t]) => [l, t])
   const stem = path.split('/').pop().replace(/(\.md)+$/, '').replace(/(\.MD)+$/, '')
   const titleProp = fmGet(props, 'title')
   const fromProp = titleProp ? propText(titleProp) : ''
   const h1 = headings.find(([l]) => l === 1)
   const title = rsTrim(fromProp) !== '' ? fromProp : h1 ? h1[1] : stem
-  return { path, title, props, has_props: raw !== null, tags: uniqueTags, headings, links, size, mtime }
+  const out = { path, title, props, has_props: raw !== null, tags, headings, links, size, mtime }
+  return full ? Object.assign(out, { outline, blocks, tasks, props08: f8.props }) : out
 }
 
 // ── checks.rs: a vault's health, read-only and deterministic ──
@@ -2148,100 +2242,28 @@ export function apply(ctx) {
   // QuickJS with 64 MB shared by every plugin, so nothing is kept twice and nothing is an object per link:
   //   {p: path, s: size, m: mtime (s), T: title (scanPage's), hp: 1 when it has properties,
   //    fp: [key, kind (0 text, 1 list, 2 raw), value, …] its properties (fmParse), tg: its tags,
-  //    ln: [target as written, line × 8 + flags, …] its links (scanPage's), lt: [link number, text, …] a Markdown link's text,
+  //    ln: its links' targets as written, one string joined by NUL (no page holds one), lf: each link's line × 8 + flags
+  //    (an Int32Array; a list in the store), lt: its Markdown links' texts, in order, joined by NUL,
   //    hd: [level, text, line, …] headings, bk: [block id, line, …], tk: [line, status, text, …] tasks}
   // lines counted from 1 in the whole file; link flags: 1 an embed, 2 a Markdown link, 4 in the properties.
-  const IX_VERSION = 3
+  const IX_VERSION = 4
+  const IX_PART = 250 // records a part of the stored index holds
   const READ_MAX = 2 << 20
   const EMBED = 1, MDLINK = 2, INPROPS = 4
   const ixPath = (id) => `vaults/${id}/index.json`
   const indexes = new Map() // vault id → the index, held while the plugin runs
   const lc = (x) => String(x == null ? '' : x).toLowerCase()
-  const unquote = (s) => s.replace(/^["']|["']$/g, '')
   const dirOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
   const baseOf = (p) => p.split('/').pop()
   const nameOf = (p) => baseOf(p).replace(/\.md$/i, '')
   const norm = (p) => { const out = []; for (const s of p.split('/')) { if (s === '..') out.pop(); else if (s && s !== '.') out.push(s) } return out.join('/') }
 
-  const parseFrontmatter = (text) => {
-    const m = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(text)
-    if (!m) return { props: {}, body: text, fm: [], start: 1 }
-    const props = {}
-    const fm = m[1].split(/\r?\n/)
-    let key = null
-    for (const line of fm) {
-      const kv = /^([^\s#:-][^:]*):(?:[ \t]+(.*)|[ \t]*)$/.exec(line)
-      if (kv) {
-        key = kv[1].trim()
-        let v = (kv[2] || '').trim()
-        if (/^\[.*\]$/.test(v) && !v.startsWith('[[')) v = v.slice(1, -1).split(',').map((x) => unquote(x.trim())).filter(Boolean)
-        else v = unquote(v)
-        props[key] = v === '' ? [] : v
-      } else if (key && /^\s*-(\s|$)/.test(line)) {
-        if (!Array.isArray(props[key])) props[key] = props[key] ? [props[key]] : []
-        const item = unquote(line.replace(/^\s*-\s*/, '').trim())
-        if (item) props[key].push(item)
-      }
-    }
-    // The body's first line: after the two fences and the lines between them.
-    return { props, body: text.slice(m[0].length), fm, start: fm.length + 3 }
-  }
-  // Code, comments (%%…%%, <!-- -->) and math hold no links or tags, as in Obsidian: blanked, every character kept
-  // in its place (so positions and lines stay those of the text).
-  const blank = (s) => s.replace(/[^\n]/g, ' ')
-  const mask = (body) => body
-    .replace(/^([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\2[^\n]*$|(?![\s\S]))/gm, blank)
-    .replace(/%%[\s\S]*?%%/g, blank)
-    .replace(/<!--[\s\S]*?-->/g, blank)
-    .replace(/\$\$[\s\S]*?\$\$/g, blank)
-    .replace(/(`+)[^`\n][^\n]*?\1/g, blank)
-  const WIKI = /(!?)\[\[([^\[\]\n]+?)\]\]/g
-  const MD = /(!?)\[((?:[^\[\]\n]|\[[^\]\n]*\])*)\]\((<[^>\n]+>|[^)\s]+)(?:[ \t]+["'][^"'\n]*["'])?\)/g
-  // `[[target#subpath|alias]]` (a table writes its bar as `\|`).
-  const parseWiki = (inner) => {
-    const bar = inner.search(/\\?\|/)
-    const ref = bar < 0 ? inner : inner.slice(0, bar)
-    const alias = bar < 0 ? '' : inner.slice(bar).replace(/^\\?\|/, '')
-    const hash = ref.indexOf('#')
-    return { t: (hash < 0 ? ref : ref.slice(0, hash)).trim(), h: hash < 0 ? '' : ref.slice(hash + 1).trim(), a: alias.trim() }
-  }
-  // `[text](path#subpath)`: inside the vault only (no scheme, not just an anchor).
-  const parseMd = (target) => {
-    let t = target.startsWith('<') ? target.slice(1, -1) : target
-    if (/^[a-z][a-z0-9+.-]*:/i.test(t) || t.startsWith('#')) return null
-    const hash = t.indexOf('#')
-    const h = hash < 0 ? '' : t.slice(hash + 1)
-    t = hash < 0 ? t : t.slice(0, hash)
-    try { t = decodeURIComponent(t) } catch { /* as written */ }
-    return { t, h }
-  }
-  const TAG = /(^|\s)#([\p{L}\p{N}_\/-]+)/gu
-  const tagOk = (t) => /[^\d\/]/u.test(t)
-  const parseNote = (path, text, size, mtime) => {
-    const { props, body, fm, start } = parseFrontmatter(text)
-    const tags = new Set()
-    for (const x of [].concat(props.tags || props.tag || [])) for (const t of String(x).split(/[,\s]+/)) { const c = t.replace(/^#/, '').replace(/\/+$/, ''); if (c && tagOk(c)) tags.add(c) }
-    const al = props.aliases != null ? props.aliases : props.alias
-    const aliases = (Array.isArray(al) ? al : String(al || '').split(/,\s*/)).map((a) => String(a).trim()).filter(Boolean)
-    const ln = [], hd = [], bk = [], tk = []
-    // Links in the properties (`company: "[[Acme]]"`), as Obsidian counts them.
-    fm.forEach((line, i) => { for (const m of line.matchAll(WIKI)) { const w = parseWiki(m[2]); if (w.t || w.h) ln.push([w.t, i + 2, INPROPS | (m[1] ? EMBED : 0), w.h, w.a]) } })
-    const raw = body.split('\n'), masked = mask(body).split('\n')
-    masked.forEach((line, i) => {
-      const at = start + i
-      for (const m of line.matchAll(WIKI)) { const w = parseWiki(m[2]); if (w.t || w.h) ln.push([w.t, at, m[1] ? EMBED : 0, w.h, w.a]) }
-      for (const m of line.matchAll(MD)) { const d = parseMd(m[3]); if (d && d.t) ln.push([d.t, at, MDLINK | (m[1] ? EMBED : 0), d.h, m[2]]) }
-      for (const m of line.matchAll(TAG)) { const c = m[2].replace(/\/+$/, ''); if (tagOk(c)) tags.add(c) }
-      const h = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line)
-      if (h) hd.push([h[1].length, raw[i].replace(/^#{1,6}[ \t]+/, '').replace(/[ \t]+#*[ \t]*$/, '').trim(), at])
-      const b = /(?:^|\s)\^([A-Za-z0-9-]+)[ \t]*\r?$/.exec(line)
-      if (b) bk.push([b[1], at])
-      const t = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[(.)\][ \t]+/.exec(line)
-      if (t) tk.push([at, t[1], raw[i].slice(t[0].length).trim().slice(0, 300)])
-    })
-    const name = nameOf(path)
-    return { p: path, s: size, m: mtime, t: typeof props.title === 'string' && props.title ? props.title : name, props, al: aliases, tg: [...tags], hd, bk, ln, tk }
-  }
+  // 0.8's reading of a page is the module's (`frontmatter08`, `mask08`, `WIKI08`, `MD08`, `parseWiki`, `parseMd`), the
+  // same one `scanPage` reads every page with.
+  const parseFrontmatter = frontmatter08
+  const mask = mask08
+  const WIKI = WIKI08
+  const MD = MD08
 
   // Where a link leads, as Obsidian finds it: a path (from the note's folder, then from the vault's root), else a
   // name — the end of a note's path; of several, the one in the same folder, then the shortest path.
@@ -2268,34 +2290,42 @@ export function apply(ctx) {
   // is kept once).
   const intern = (pool, x) => { const have = pool.get(x); if (have !== undefined) return have; pool.set(x, x); return x }
   const noteRecord = (path, text, size, mtime, pool = new Map()) => {
-    const sp = scanPage(path, text, size, mtime, { mdText: true })
-    const [raw] = fmSplit(text)
-    const fmLines = raw !== null ? textLines(raw).length + 2 : 0
+    const sp = scanPage(path, text, size, mtime, { full: true })
     const r = { p: path, s: size, m: mtime, T: sp.title }
     if (sp.has_props) r.hp = 1
     if (sp.props.length) r.fp = sp.props.flatMap(([k, x]) => [k, KINDS3.indexOf(x.t), x.v])
+    // 0.8's properties only where they differ from the engine's (a plain value with ` #…`, a list 0.8 split itself).
+    const same = JSON.stringify(sorted08(props08Of(r.fp))) === JSON.stringify(sorted08(sp.props08))
+    if (!same) r.op = sp.props08
     if (sp.tags.length) r.tg = sp.tags.map((t) => intern(pool, t))
     if (sp.links.length) {
-      r.ln = []
-      sp.links.forEach((l, i) => {
-        r.ln.push(intern(pool, l.target), l.line * 8 + ((l.embed ? EMBED : 0) | (l.wiki ? 0 : MDLINK) | (l.line <= fmLines ? INPROPS : 0)))
-        if (!l.wiki && l.text) (r.lt || (r.lt = [])).push(i, l.text)
-      })
+      // Not an array slot per link (16 bytes each in QuickJS): one string of the targets, the numbers in an Int32Array.
+      r.ln = sp.links.map((l) => l.target).join('\0')
+      r.lf = Int32Array.from(sp.links, (l) => l.line * 8 + ((l.embed ? EMBED : 0) | (l.wiki ? 0 : MDLINK) | (l.prop ? INPROPS : 0)))
+      const texts = sp.links.filter((l) => !l.wiki).map((l) => l.text || '')
+      if (texts.some((t) => t !== '')) r.lt = texts.join('\0')
     }
-    const n = parseNote(path, text, size, mtime)
-    if (n.hd.length) r.hd = n.hd.flat()
-    if (n.bk.length) r.bk = n.bk.flat()
-    if (n.tk.length) r.tk = n.tk.flat()
+    if (sp.outline.length) r.hd = sp.outline.flat()
+    if (sp.blocks.length) r.bk = sp.blocks.flat()
+    if (sp.tasks.length) r.tk = sp.tasks.flat()
     return r
   }
+  const sorted08 = (o) => Object.keys(o).sort().map((k) => [k, o[k]])
+  // 0.8's properties as derived from the engine's (`fp`): a list as its items, an empty text as [].
+  const props08Of = (fp) => { const o = {}; for (const [k, t, v] of triples(fp)) if (k) o[k] = KINDS3[t] === 'text' && v === '' ? [] : v; return o }
   // Each link of a record: fn(target, line, flags, link number).
-  const eachLink = (r, fn) => { const ln = r.ln || NONE; for (let i = 0; i + 1 < ln.length; i += 2) if (fn(ln[i], Math.floor(ln[i + 1] / 8), ln[i + 1] % 8, i / 2) === false) return }
+  const eachLink = (r, fn) => {
+    if (!r.ln && r.ln !== '') return
+    const ts = r.ln.split('\0')
+    const lf = r.lf
+    for (let i = 0; i < ts.length; i++) if (fn(ts[i], lf[i] >> 3, lf[i] & 7, i) === false) return
+  }
   const triples = (a, k = 3) => { const out = []; for (let i = 0; i + k <= (a || NONE).length; i += k) out.push(a.slice(i, i + k)); return out }
   const propsOf = (r) => triples(r.fp).map(([k, t, v]) => [k, { t: KINDS3[t], v }])
   // 0.8's view of a record (Claude's commands, the 0.8 browser): made when asked, each part when first read.
   class Note08 {
     constructor(r) { this.r = r; this.p = r.p; this.s = r.s; this.m = r.m }
-    get props() { if (!this._props) { const o = {}; for (const [k, x] of propsOf(this.r)) if (k) o[k] = x.t === 'text' && x.v === '' ? [] : x.v; this._props = o } return this._props }
+    get props() { return this._props || (this._props = this.r.op || props08Of(this.r.fp)) }
     get t() { const x = this.props.title; return typeof x === 'string' && x ? x : nameOf(this.p) }
     get al() { const x = this.props.aliases != null ? this.props.aliases : this.props.alias; return (Array.isArray(x) ? x : String(x || '').split(/,\s*/)).map((a) => String(a).trim()).filter(Boolean) }
     get tg() { return this.r.tg || NONE }
@@ -2307,9 +2337,10 @@ export function apply(ctx) {
   }
   const links08 = (r) => {
     const out = []
-    const texts = new Map(triples(r.lt, 2))
-    eachLink(r, (target, line, flags, num) => {
-      if (flags & MDLINK) { const d = parseMd(target); if (d && d.t) out.push([d.t, line, flags, d.h, texts.get(num) || '']) }
+    const texts = r.lt ? r.lt.split('\0') : NONE
+    let md = 0
+    eachLink(r, (target, line, flags) => {
+      if (flags & MDLINK) { const text = texts[md++] || ''; const d = parseMd(target); if (d && d.t) out.push([d.t, line, flags, d.h, text]) }
       else { const w = parseWiki(target); if (w.t || w.h) out.push([w.t, line, flags, w.h, w.a]) }
     })
     return out
@@ -2377,19 +2408,43 @@ export function apply(ctx) {
   // A note's links' places as paths (null: nowhere), aligned with its 0.8 links; its backlinks as [[from, line, link
   // number]]; how many — each made when asked.
   const outOf = (ix, p) => { const o = ix.outs.get(p); return o ? Array.from(o, (j) => (j < 0 ? null : ix.all[j])) : [] }
-  const backOf = (ix, p) => {
+  // Each backlink of `p`, in place (a hub's thousands of backlinks never made into arrays): fn(from, line, link number).
+  const eachBack = (ix, p, fn) => {
     const i = ix.idOf.get(p)
-    const out = []
-    if (i === undefined) return out
-    for (let k = ix.bStart[i]; k < ix.bStart[i + 1]; k++) out.push([ix.all[ix.bFrom[k]], ix.bLine[k], ix.bNum[k]])
-    return out
+    if (i === undefined) return
+    for (let k = ix.bStart[i]; k < ix.bStart[i + 1]; k++) if (fn(ix.all[ix.bFrom[k]], ix.bLine[k], ix.bNum[k]) === false) return
+  }
+  // The notes linking to `p`, each once, in order, with the line of its first link (at most `max`); and how many.
+  const backFrom = (ix, p, max = Infinity) => {
+    const first = new Map()
+    const all = new Set()
+    eachBack(ix, p, (from, line) => { all.add(from); if (!first.has(from) && first.size < max) first.set(from, line) })
+    return { first, count: all.size }
   }
   const backN = (ix, p) => { const i = ix.idOf.get(p); return i === undefined ? 0 : ix.bStart[i + 1] - ix.bStart[i] }
+  // The stored index: a head (`index.json`: its version, folder, pages folder, revision, the other files and its parts'
+  // names) and its records in parts of IX_PART (`index/<stamp>-<n>.json`) — never one string of the whole index in the
+  // 64 MB heap, written or read. A part missing or broken: the index is built again.
   const stored = (v, pf) => {
     try {
       const j = JSON.parse(ctx.store.read(ixPath(v.id)) || 'null')
-      return j && j.v === IX_VERSION && j.root === v.root && j.pages === pf ? { recs: new Map(j.notes.map((n) => [n.p, n])), files: j.files || [] } : null
+      if (!j || j.v !== IX_VERSION || j.root !== v.root || j.pages !== pf || !Array.isArray(j.parts)) return null
+      const recs = new Map()
+      for (const part of j.parts) for (const n of JSON.parse(ctx.store.read(`vaults/${v.id}/index/${part}`) || 'null')) recs.set(n.p, n)
+      return { recs, files: j.files || [] }
     } catch { return null }
+  }
+  const save = (v, ix, pf, files) => {
+    const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const parts = []
+    let chunk = []
+    const flush = () => { if (!chunk.length) return; const name = `${stamp}-${parts.length}.json`; ctx.store.write(`vaults/${v.id}/index/${name}`, JSON.stringify(chunk)); parts.push(name); chunk = [] }
+    for (const r of ix.recs.values()) { chunk.push(r.lf ? { ...r, lf: Array.from(r.lf) } : r); if (chunk.length >= IX_PART) flush() }
+    flush()
+    ctx.store.write(ixPath(v.id), JSON.stringify({ v: IX_VERSION, root: v.root, pages: pf, rev: ix.rev, built_at: new Date().toISOString(), files, parts }))
+    // The parts of earlier builds (this process's or another's): gone once the head names the new ones.
+    const keep = new Set(parts)
+    for (const old of (() => { try { return ctx.store.list(`vaults/${v.id}/index`) } catch { return [] } })()) if (!keep.has(old)) { try { ctx.store.remove(`vaults/${v.id}/index/${old}`) } catch { /* another build's */ } }
   }
   const building = new Map() // vault id → the index being built (one at a time)
   const index = (v) => {
@@ -2428,7 +2483,7 @@ export function apply(ctx) {
       const prev = old.recs.get(f.path)
       if (prev && prev.m === f.mtime && prev.s === f.size && 'T' in prev) {
         // Read back from the store: its link targets and tags shared again.
-        if (prev.ln) for (let k = 0; k < prev.ln.length; k += 2) prev.ln[k] = intern(pool, prev.ln[k])
+        if (prev.lf && !(prev.lf instanceof Int32Array)) prev.lf = Int32Array.from(prev.lf)
         if (prev.tg) prev.tg = prev.tg.map((t) => intern(pool, t))
         recs.set(f.path, prev)
       }
@@ -2449,7 +2504,7 @@ export function apply(ctx) {
     ix.rev = revOf(mds)
     indexes.set(v.id, ix)
     if (todo.length || recs.size !== old.recs.size || files.join('\n') !== old.files.join('\n')) {
-      try { ctx.store.write(ixPath(v.id), JSON.stringify({ v: IX_VERSION, root: v.root, pages: pf, rev: ix.rev, built_at: new Date().toISOString(), files, notes: [...sorted.values()] })) } catch (e) { ctx.log(`index ${v.id}: ${(e && e.message) || e}`) }
+      try { save(v, ix, pf, files) } catch (e) { ctx.log(`index ${v.id}: ${(e && e.message) || e}`) }
     }
     return ix
   }
@@ -2578,7 +2633,7 @@ export function apply(ctx) {
       return `⟦${marker}:${wl.length - 1}⟧`
     })).join('')
     // Backlinks with their line (the first one in each note).
-    const back = backOf(ix, path).filter((b, i, all) => all.findIndex((x) => x[0] === b[0]) === i).slice(0, 200)
+    const back = [...backFrom(ix, path, 200).first]
     const wanted = new Map(back.map((b) => [b[0], [b[1]]]))
     const lines = await linesAt(v, wanted)
     const backlinks = back.map(([p, l]) => ({ path: p, title: ix.notes.get(p).t, line: asText(lines.get(`${p}:${l}`) || '') }))
@@ -3004,9 +3059,20 @@ export function apply(ctx) {
     const v = vaultOf(id)
     // What is on the disk first: the write below is only over this (M3 — stat, then git, then the write).
     const { page, rel, st } = checkedPage(v, path, { sha: true })
-    const { shown } = await versionOf(v, rel, rev)
+    // Over 64 MB Echo gives no sha: then nothing could be written only over what was read.
+    if (!st.sha) throw new Error(`${page} is too large to restore in Echo`)
+    const { c, then, shown: seen } = await versionOf(v, rel, rev)
+    if (seen.truncated) throw new Error(`that version of ${page} is too large to restore in Echo`)
+    // The version's bytes as text, or a refusal: Echo's strict read where it has one (onetest-ai/echo#763, it throws
+    // "not UTF-8"); an older Echo reads lossily, so its length and any U+FFFD tell instead.
+    let shown
+    try { shown = await ctx.git.show(v.root, c.rev, then, { max: EDIT_MAX, strict: true }) } catch (e) {
+      if (/not UTF-8/i.test(String(e && e.message))) throw new Error(`that version of ${page} isn't UTF-8 text, so Echo doesn't restore it`)
+      throw e
+    }
+    if (!shown) throw new Error('that version can\'t be read')
     if (shown.truncated) throw new Error(`that version of ${page} is too large to restore in Echo`)
-    if (utf8Len(shown.text) !== shown.size) throw new Error(`that version of ${page} isn't UTF-8 text, so Echo doesn't restore it`)
+    if (utf8Len(shown.text) !== shown.size || shown.text.includes('\uFFFD')) throw new Error(`that version of ${page} isn't UTF-8 text, so Echo doesn't restore it`)
     const dirty = await dirtyOf(v, [rel])
     if (dirty.paths.has(rel)) throw new Error(`${page} has changes that are not committed — commit them first, or copy what you need from this version`)
     const cur = ctx.fs.read(v.root, rel, EDIT_MAX)
@@ -3139,7 +3205,7 @@ export function apply(ctx) {
       ...brief(n), ...pg(v), aliases: n.al, props: n.props, tags: n.tg,
       headings: n.hd.map(([level, text, line]) => ({ level, text, line })), blocks: n.bk.map(([id, line]) => ({ id, line })),
       links_to: [...new Set(out.filter((x) => x && x !== p))], unresolved: [...new Set(n.ln.filter((_, i) => !out[i]).map((l) => l[0]))],
-      backlinks: new Set(backOf(ix, p).map((b) => b[0])).size,
+      backlinks: backFrom(ix, p, 0).count,
       tasks: { open: n.tk.filter((t) => t[1] === ' ').length, done: n.tk.filter((t) => t[1] !== ' ').length },
     }
   })
@@ -3153,13 +3219,13 @@ export function apply(ctx) {
     const v = vaultArg(vault)
     const ix = await index(v)
     const p = noteArg(ix, note, v)
-    const all = backOf(ix, p)
     const max = Math.min(500, limit || 100)
     const wanted = new Map()
-    for (const [from, line] of all) { if (!wanted.has(from) && wanted.size >= max) continue; (wanted.get(from) || wanted.set(from, []).get(from)).push(line) }
+    const froms = new Set()
+    eachBack(ix, p, (from, line) => { froms.add(from); if (!wanted.has(from) && wanted.size >= max) return; const ls = wanted.get(from) || wanted.set(from, []).get(from); if (ls.length < 1000) ls.push(line) })
     const lines = await linesAt(v, wanted)
     return {
-      note: p, ...pg(v), notes: new Set(all.map((b) => b[0])).size,
+      note: p, ...pg(v), notes: froms.size,
       links: [...wanted].map(([from, ls]) => ({ ...brief(ix.notes.get(from)), lines: [...new Set(ls)].map((l) => ({ line: l, text: (lines.get(`${from}:${l}`) || '').trim().slice(0, 300) })) })),
     }
   })
@@ -3279,7 +3345,7 @@ export function apply(ctx) {
     const others = (ix.byName.get(lc(newName)) || []).filter((p) => p !== from)
     const warnings = []
     if (others.length) warnings.push(`other notes are named “${newName}” too (${others.slice(0, 5).join(', ')}): links by name alone are written with the path`)
-    const files = new Set(backOf(ix, from).map((b) => b[0]))
+    const files = new Set(backFrom(ix, from).first.keys())
     files.add(from)
     const list = [...files]
     const texts = await readTexts(v, list, 4000000)

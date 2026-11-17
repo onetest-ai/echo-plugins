@@ -9,7 +9,7 @@ const say = typeof print !== 'undefined' ? print : console.log
 const [n = '5000', kb = '1', ...cmds] = argv
 try {
   const r = await scale(Number(n), Number(kb), cmds.length ? cmds : COMMANDS, say)
-  say(`${n} pages of ${kb} KB: index.json ${(r.indexBytes / 1e6).toFixed(1)} MB — ok`)
+  say(`${n} pages of ${kb} KB: stored index ${(r.indexBytes / 1e6).toFixed(1)} MB, its largest write ${(r.largestWrite / 1e6).toFixed(2)} MB — ok`)
 } catch (e) {
   say(`FAILED: ${(e && e.message) || e}`)
 }

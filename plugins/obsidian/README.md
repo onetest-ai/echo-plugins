@@ -16,6 +16,8 @@ with it and what to leave alone. You correct the description, and from then on C
   connected, and gets no made-up description — you write it, or Echo reads it again once it has notes.
 - **Echo indexes each vault as Obsidian does** — links and where they lead, backlinks, tags, properties, aliases,
   headings, block ids, tasks — whether or not Obsidian is open, kept in the plugin's own folder (never in the vault).
+  Links and tags are read by Obsidian's rules (none in comments, math or code; a heading's count), the same for
+  Claude's commands, pages, the graph and the checks.
   Claude asks it through the plugin's commands (`echoctl plugin call obsidian search | info | backlinks | links |
   resolve | tags | where | tasks | unresolved | rename_plan`), all of which only read; `rename_plan` gives every line
   to change so a renamed or moved note keeps its links.

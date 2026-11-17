@@ -133,6 +133,12 @@
    "title": "A vault from 0.8 keeps 0.8's index — its whole folder, sources and templates included — until the user confirms the shape Echo found (or sets one of its folders); a vault connected in 1.0 uses the shape at once",
    "priority": "high",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-24",
+   "title": "Links and tags are read as Obsidian (and 0.8) reads them, by one reader for Claude's commands, pages, the graph and the checks: none inside %%…%%, <!-- -->, $$…$$ or any code span; a heading's links and #tags count; tags from tags: or tag:, split at commas and spaces; no tag after ( ; no Markdown link with a space in its bare address",
+   "priority": "high",
+   "check": "agent"
   }
  ]
 }

@@ -512,7 +512,8 @@ test('limits: a code span still hides its links and tags; tags beside wide chars
   const p = scanPage('a.md', 'see `[[no]] #no` and [[yes]] #yes 😀 #also\n')
   assert.deepEqual(p.links.map((l) => l.target), ['yes'])
   assert.deepEqual(p.tags, ['yes', 'also'])
-  assert.deepEqual(scanPage('a.md', '😀#no (#ok\n').tags, ['ok'])
+  // 0.8's (and Obsidian's) rule, not #677's: an inline tag follows a space or the line's start, never `(`.
+  assert.deepEqual(scanPage('a.md', '😀#no (#ok #yes\n').tags, ['yes'])
 })
 
 test('limits: the diff\'s table is capped at 4M cells — past it, all removed and all added', () => {
@@ -533,5 +534,6 @@ test('limits: a line of `](` with no usable `[` is read in linear time', () => {
     assert.deepEqual(scanPage('a.md', line).links, [])
     assert.ok(Date.now() - t < 1000, `${line.slice(0, 4)}…: ${Date.now() - t} ms`)
   }
-  assert.deepEqual(scanPage('a.md', '[x](a.md) [[w]](b.md) [y](c.md)').links.map((l) => l.target), ['w', 'a.md', 'c.md'])
+  // 0.8's rule, not #677's: a Markdown link may follow a wikilink (`[[w]](b.md)` links b.md too); wikilinks first.
+  assert.deepEqual(scanPage('a.md', '[x](a.md) [[w]](b.md) [y](c.md)').links.map((l) => l.target), ['w', 'a.md', 'b.md', 'c.md'])
 })

@@ -40,9 +40,9 @@ function twin(root) {
 
 /** The plugin over one vault at `root` (its record as Knowledge keeps it), detected as `add` does. */
 /** `from08`: a vault from 0.8 (its structure not confirmed); else as `add` connects one in 1.0. */
-async function vault(root, { commit = false, terminal = true, git = false, id = 'twin', detect = true, storeUnreadable = [], from08 = false } = {}) {
+async function vault(root, { commit = false, terminal = true, git = false, gitStrict = true, id = 'twin', detect = true, storeUnreadable = [], from08 = false } = {}) {
   const rec = { schema: 1, id, name: 'Twin', root, state: 'ready', confirmed: true, added_at: '2026-11-01T09:00:00.000Z', commit, ...(from08 ? {} : { structure: 'confirmed' }) }
-  const ctx = fakeCtx({ id: 'obsidian', terminal, folders: [root], disk: true, git, markdown: true, store: { 'vaults.json': JSON.stringify([rec]) }, storeUnreadable, echo: { clients: [], threads: [] } })
+  const ctx = fakeCtx({ id: 'obsidian', terminal, folders: [root], disk: true, git, gitStrict, markdown: true, store: { 'vaults.json': JSON.stringify([rec]) }, storeUnreadable, echo: { clients: [], threads: [] } })
   apply(ctx)
   if (detect) await ctx.run('reread', { id })
   return ctx
@@ -56,6 +56,8 @@ const snapshot = (root) => {
   walk(root)
   return out
 }
+/** The stored index as one object: its head (`index.json`) with the records of its parts as `notes`. */
+const keptIndex = (ctx, id = 'twin') => { const h = JSON.parse(ctx.files[`vaults/${id}/index.json`]); return { ...h, notes: h.parts.flatMap((p) => JSON.parse(ctx.files[`vaults/${id}/index/${p}`])) } }
 const acts = (ctx) => activityRecent(ctx.files['vaults/twin/activity.jsonl'] || '').reverse()
 
 // ── detect (detect.rs) ──
@@ -161,13 +163,14 @@ test('scan: an edit outside Echo changes the revision and the index; the index i
   await new Promise((r) => setTimeout(r, 2100)) // past the index's 2 s of sharing
   const t = await ctx.run('tree', { id: 'twin' })
   assert.equal(t.pages.find((p) => p.path === 'clients/acme.md').title, 'Acme Corporation')
-  const kept = JSON.parse(ctx.files['vaults/twin/index.json'])
-  assert.equal(kept.v, 3)
+  const kept = keptIndex(ctx)
+  assert.equal(kept.v, 4)
+  assert.ok(kept.parts.length >= 1 && !('notes' in JSON.parse(ctx.files['vaults/twin/index.json'])), 'a head and its parts, never one string of all')
   assert.equal(kept.pages, 'knowledge')
   assert.ok(kept.notes.some((n) => n.p === 'clients/acme.md' && n.T === 'Acme Corporation'))
   const acme = kept.notes.find((n) => n.p === 'notes/2026-01-01-a.md')
-  assert.deepEqual(Object.keys(acme).sort(), ['T', 'fp', 'hd', 'hp', 'ln', 'lt', 'm', 'p', 's', 'tg'], 'one compact record a page')
-  assert.deepEqual(acme.ln, ['../clients/acme.md', 8 * 8 + 2], 'links as a flat list: target, line × 8 + flags')
+  assert.deepEqual(Object.keys(acme).sort(), ['T', 'fp', 'hd', 'hp', 'lf', 'ln', 'lt', 'm', 'p', 's', 'tg'], 'one compact record a page')
+  assert.deepEqual([acme.ln, acme.lf, acme.lt], ['../clients/acme.md', [8 * 8 + 2], 'Acme'], 'links: the targets in one string, line × 8 + flags in a list, Markdown texts in one string')
 })
 
 test('scan: links out of the vault are not pages, and a page that is one is never read', { skip: process.platform === 'win32' }, async () => {
@@ -190,7 +193,7 @@ test('scan: a huge page is read up to the cap, and isn\'t edited or rendered', a
   const ctx = await vault(root)
   const p = (await ctx.run('tree', { id: 'twin' })).pages.find((x) => x.path === 'big.md')
   assert.equal(p.title, 'Big')
-  const kept = JSON.parse(ctx.files['vaults/twin/index.json']).notes.find((n) => n.p === 'big.md')
+  const kept = keptIndex(ctx).notes.find((n) => n.p === 'big.md')
   assert.ok(kept.s > 2 << 20)
   assert.ok(kept.ln.length / 3 < big.split('\n').length, 'only the first 2 MB were read')
   const page = await ctx.run('page', { id: 'twin', path: 'big.md' })
@@ -800,4 +803,44 @@ test('small things: a folder name of the vault goes into Claude\'s guide only as
   await assert.rejects(ctx.run('new_page', { id: 'twin', folder: 'topics', title: 'Bell\u0007' }), /one line/)
   assert.equal(withLineEndings('a\r\nb\r\nc\n', 'x\ny\n'), 'x\r\ny\r\n', 'mostly CRLF: CRLF')
   assert.equal(withLineEndings('a\nb\nc\nd\r\n', 'x\ny\n'), 'x\ny\n', 'mostly LF: as handed back')
+})
+
+test('restore: a version not UTF-8 is refused by Echo\'s strict read, or on an older Echo by its length; one holding U+FFFD too', { skip: !hasGit && 'git is not available' }, async () => {
+  for (const gitStrict of [true, false]) {
+    const root = twin(tmp())
+    nfs.writeFileSync(npath.join(root, 'knowledge/latin.md'), Buffer.from([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]))
+    write(root, 'knowledge/odd.md', '# Has a � in it\n')
+    repo(root)
+    write(root, 'knowledge/latin.md', '# Cafe\n')
+    write(root, 'knowledge/odd.md', '# Clean\n')
+    sh(root, 'commit', '-qam', 'Now')
+    const ctx = await vault(root, { git: true, gitStrict })
+    const oldest = async (p) => { const v = (await ctx.run('history', { id: 'twin', path: p })).versions; return v[v.length - 1].rev }
+    await assert.rejects(ctx.run('restore', { id: 'twin', path: 'latin.md', rev: await oldest('latin.md') }), /isn't UTF-8 text, so Echo doesn't restore it/, `strict ${gitStrict}`)
+    await assert.rejects(ctx.run('restore', { id: 'twin', path: 'odd.md', rev: await oldest('odd.md') }), /isn't UTF-8 text/, `U+FFFD, strict ${gitStrict}`)
+    assert.equal(read(root, 'knowledge/odd.md'), '# Clean\n')
+  }
+})
+
+test('restore: a page Echo gives no sha for (over 64 MB) is refused, never written without one', { skip: !hasGit && 'git is not available' }, async () => {
+  const root = twin(tmp())
+  repo(root)
+  const ctx = await vault(root, { git: true })
+  const first = (await ctx.run('history', { id: 'twin', path: 'clients/acme.md' })).versions[0].rev
+  const stat = ctx.fs.stat
+  ctx.fs.stat = (r, p, o) => { const x = stat(r, p, o); if (x) delete x.sha; return x }
+  const writes = ctx.fsLog.length
+  await assert.rejects(ctx.run('restore', { id: 'twin', path: 'clients/acme.md', rev: first }), /too large to restore/)
+  assert.equal(ctx.fsLog.length, writes)
+})
+
+test('0.8 vaults: only a pages, sources or templates folder set confirms the shape; the index, notes or naming don\'t', async () => {
+  const root = twin(tmp())
+  const ctx = await vault(root, { from08: true })
+  for (const [key, value] of [['index', 'knowledge/CATALOG.md'], ['notes', 'knowledge/notes'], ['naming', '{date} {title}.md']]) {
+    assert.equal((await ctx.run('set', { id: 'twin', key, value })).structure, null, key)
+  }
+  assert.equal((await ctx.run('tree', { id: 'twin' })).vault.pages, '')
+  assert.equal((await ctx.run('set', { id: 'twin', key: 'sources', value: 'raw_inbox' })).structure, 'confirmed')
+  assert.equal((await ctx.run('tree', { id: 'twin' })).vault.pages, 'knowledge')
 })

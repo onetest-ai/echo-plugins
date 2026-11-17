@@ -25,7 +25,7 @@ import { execFileSync } from 'node:child_process'
  *  the real git in those folders, isolated from the user's settings (jshost/git.rs's shapes); `markdown`: true for
  *  `ctx.markdown(md, {breaks, links, images})` and `ctx.markdown.links` — a small stand-in for Echo's writer that keeps
  *  its rules for links and images (plugins/markdown.rs `allowed`), not its whole Markdown. `ctx.crypto.sha256` is there. */
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false, profiles, disk = false, git = false, markdown = false, storeUnreadable = [] } = {}) {
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false, profiles, disk = false, git = false, gitStrict = true, markdown = false, storeUnreadable = [] } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
   const ctx = {
@@ -108,7 +108,7 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   ctx.crypto = { sha256: (text) => sha256(String(text)) }
   const fsLog = []
   if (folders !== undefined) ctx.fs = disk ? diskFs(folders, fsLog) : { folders: () => [...folders] }
-  if (git) ctx.git = gitOf(folders || [])
+  if (git) ctx.git = gitOf(folders || [], gitStrict)
   if (markdown) ctx.markdown = markdownOf(id)
   if (profiles !== undefined) ctx.profiles = () => JSON.parse(JSON.stringify(profiles))
   if (echo !== undefined) ctx.echo = { read: (kind) => JSON.parse(JSON.stringify(echo[kind] || [])) }
@@ -308,7 +308,7 @@ function diskFs(folders, fsLog) {
 // ── ctx.git by the real git (jshost/git.rs's answers), never the user's settings ──
 
 const ECHO_MAIL = '@plugins.echo.invalid'
-function gitOf(folders) {
+function gitOf(folders, gitStrict = true) {
   const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_LITERAL_PATHSPECS: '1', LC_ALL: 'C' }
   const rootOf = (root) => {
     const r = nfs.realpathSync.native(String(root))
@@ -397,6 +397,9 @@ function gitOf(folders) {
       const size = Number(text(run(cwd, ['cat-file', '-s', spec]).out))
       if (size > 16 << 20) throw new Error(`“${path}” is over 16 MB at that version`)
       const blob = run(cwd, ['cat-file', 'blob', spec]).out
+      // `strict` (Echo #763): a version that isn't UTF-8 is refused, never read lossily. `gitStrict: false` fakes an
+      // Echo from before it, which ignores the option.
+      if (o.strict && gitStrict) { try { new TextDecoder('utf-8', { fatal: true }).decode(blob) } catch { throw new Error(`“${path}” is not UTF-8 text at that version`) } }
       const max = Math.min(o.max > 0 ? o.max : 1 << 20, 4 << 20)
       return { text: blob.subarray(0, max).toString('utf8'), size: blob.length, truncated: blob.length > max }
     },

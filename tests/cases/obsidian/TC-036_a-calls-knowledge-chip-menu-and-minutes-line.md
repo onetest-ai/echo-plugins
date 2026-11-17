@@ -1,9 +1,9 @@
 ---
 id: TC-036
-title: A call's page shows Knowledge in Echo's generic slots — its chip says where its minutes go and its menu chooses (call.header), the ⋯ menu's Save to Knowledge… opens the save sheet over the call (call.menu, ctx.ui.sheet), and the minutes' line while they come (call.minutes)
+title: A call's page shows Knowledge in Echo's generic slots — its chip says where its minutes go and its menu chooses (call.header), the ⋯ menu's Save to Knowledge… opens the save sheet over the call (call.menu, ctx.ui.sheet) and saves, and the minutes' line while they come names the vault (call.minutes)
 priority: high
 type: functional
-requirements: [F-OB-39, F-OB-41]
+requirements: [F-OB-39, F-OB-41, F-OB-43]
 module: obsidian
 run: agent
 platform: any
@@ -26,10 +26,11 @@ tags: [obsidian, knowledge, window, call]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `#call/<a call with minutes, e.g. today's "Acme weekly sync">/notes` | On its header, before My notes and ⋯: "Knowledge: saving minutes comes in a later version" — not a button, no menu; its tooltip "Saving minutes into a vault isn't in this version of Knowledge yet" |
-| 2 | `obs call_knowledge '{"call":{"name":"<the call>","threads":[],"client":null,"profile":null}}'` | `later` "Saving minutes into a vault isn't in this version of Knowledge yet"; `vaults` acme-twin and acme-wiki; `targets` acme-twin (where they would go: the default vault, automatic, the call's profile) |
-| 3 | ⋯ of the call | Knowledge's group after a separator, above Delete: *Save to Knowledge…* |
-| 4 | *Save to Knowledge…* | Echo's sheet over the call: "Save the minutes to Knowledge", the vault acme-twin, "Saving minutes into a vault isn't in this version of Knowledge yet"; Esc closes it; nothing in `$T` |
-| 5 | A call whose minutes are coming (today's "Globex standup" in the standard data) | Echo's box says they are coming; no Knowledge line in it |
-| 6 | `obs call_choice '{"call":"<the call>","vault":"none"}'`, then the same call renamed (its folder's stamp kept): `obs call_knowledge` with the new name | `record.choice` "none" for both — a call is known by its stamp; `$ECHOCTL_HOME/.echo/plugins/obsidian/calls.json` keyed by the stamp |
-| 7 | `obs call_knowledge '{"call":{"name":"<the call>","threads":[],"client":null,"profile":"<another profile>"}}'` | `targets` [] — a call on another AI profile never goes by itself |
+| 1 | `#call/<a call with minutes, e.g. 2026-11-16_143000-guest-call-7>/notes` (its threads have no vault: the default, acme-twin) | On its header, before My notes and ⋯: a chip "Minutes → acme-twin ▾" |
+| 2 | `obs call_knowledge '{"call":{"name":"<the call>","threads":["initech-hiring","internal-tooling"],"client":null,"profile":null,"notes":true}}'` | No `later`; `vaults` acme-twin and acme-wiki (each with its mode and profile); `targets` acme-twin (the default vault, automatic, the call's profile); `record` `{saved: [], choice: null}`; `stale` []; `failure` null |
+| 3 | The chip | Its menu: "Save this call's minutes to", acme-twin checked ("automatically"), acme-wiki, "Don't save this call" |
+| 4 | ⋯ of the call → *Save to Knowledge…* (Knowledge's group, after a separator, above Delete) | Echo's sheet over the call: "Save the minutes to Knowledge", the vault acme-twin, *As* `knowledge/notes/` + the call's dated name, its index row as it will be written, Minutes / Transcript / Chat, "Commits only this note and the index row on `main`" |
+| 5 | *Save* | The chip reads "In acme-twin ↗"; the note is in `$T/knowledge/notes/`, a row in `$T/knowledge/CATALOG.md`, one commit `Echo: minutes of "<title>" (<date>) → knowledge/notes/` |
+| 6 | A call whose minutes are coming (today's "Globex standup" in the standard data) | Echo's box says they are coming, with Knowledge's line "Then saved to **acme-twin**, with a row in the index." |
+| 7 | `obs call_choice '{"call":"<the call>","vault":"none"}'`, then `obs call_knowledge` with the same call renamed (its folder's stamp kept) | `record.choice` "none" for both — a call is known by its stamp: `$ECHOCTL_HOME/.echo/plugins/obsidian/calls/<stamp>.json` |
+| 8 | `obs call_knowledge '{"call":{"name":"<the call>","threads":[],"client":null,"profile":"other","notes":false}}'` | `targets` [] — a call on another AI profile never goes by itself |

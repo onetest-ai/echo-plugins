@@ -39,14 +39,29 @@ with it and what to leave alone. You correct the description, and from then on C
   a vault's Home (what changed, its health, where to start reading), Pages (read, edit, conflicts, history), Graph,
   Ingest, Health (the code checks' findings and the score) and Settings — with "What Claude knows" (the description
   above and whom the vault is for). *Ask the vault* opens Claude Code in Echo's panel, in the vault as its own project:
-  you ask there. A call's page shows where its minutes go (its chip, its ⋯ items, the line while they come). Ingest,
-  Health's fixes and AI checks, saving minutes into a vault and a new vault from the twin starter come in later
-  versions: until then they say so. Settings → From plugins → Knowledge lists the vaults and opens them.
+  you ask there. A call's page shows where its minutes go (its chip, its ⋯ items, the line while they come). Ingest
+  runs, Health's fixes and AI checks come in a later version: until then they say so. Settings → From plugins → Knowledge lists the vaults and opens them.
+- **Your calls' minutes into your vaults** — each call goes to the vault set on its thread, else its client's, else
+  the default vault (a call in two threads with two vaults goes into both); set it on a thread's or client's Profile
+  ("Knowledge vault": inherited, a vault, or none) with that vault's Auto / Ask / Off. Auto saves the note as soon as
+  Echo has written the minutes; Ask and Off only when you say (`save_minutes`). The note is Echo's minutes as they are
+  — its properties (people, client, threads, summary), the vault's notes folder and naming, a row in its index and a
+  line in its `log.md` — never over a note you changed (kept; replaced or a new one beside it only on your word), and
+  never into a vault read by another AI profile than the call's unless you say "anyway". Echo commits its notes once
+  after two quiet minutes, only its own files. `past_minutes` saves the calls since a day in one commit.
+- **Sources for Ingest** — a vault's sources folder (`raw_inbox/`): files you hand over (copied as they are, never over
+  a file), a call's minutes, a mail thread from Microsoft 365, a web page (once Echo reads web pages). New calls and
+  mail of a vault's threads are queued by its rule (`ingest.calls`, `ingest.mail`: off, add, prepare) with nothing
+  written into the vault; `prepare_sources` writes them, reading a mail's own text only then.
+- **A new vault from the twin preset** (`new_vault`): the structure of a personal knowledge twin — rules for agents, an
+  index with a table per section, tags and terms, a profile to fill, templates — in a new or empty folder, in git when
+  you like. Echo doesn't let a plugin write hidden files, so the preset's `.claude/skills`, `.gitignore` and Obsidian
+  settings are left out and said so.
 - **From Obsidian vaults 0.8**: your vaults, their descriptions and Claude's entries stay; each vault takes a call's
   minutes only when you ask. Echo's own facts vault of 0.8 (the Knowledge switch, Knowledge → Notes) is gone.
 - Removing a vault from Echo takes all of this back; the folder stays as it is.
 
 Needs Echo 0.9.15 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
 entries; `client.js` wires the Knowledge activity (`view.js`, `model.js`, `knowledge.css`, through `seam.js` to the
-host half's commands) into Echo's slots. Part of the
+host half's commands) into Echo's slots; `rows.js` the "Knowledge vault" row of a thread's and a client's Profile; `starter/twin/` is the twin preset. Part of the
 [Echo plugins](../../README.md) marketplace.

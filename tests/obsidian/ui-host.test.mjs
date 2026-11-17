@@ -64,7 +64,7 @@ test('kn: each vault as the activity draws it — its paths, its folder there, i
   assert.ok('description' in v && 'proposed' in v)
 })
 
-test('vault_settings: its skills, the meeting tag, the index\'s size, its templates; past minutes and the twin\'s global copy wait', async () => {
+test('vault_settings: its skills, the meeting tag, the index\'s size, its templates and the past minutes it would save; the twin\'s global copy waits', async () => {
   const root = twin(tmp())
   write(root, 'knowledge/templates/page.md', '# {{title}}\n')
   const ctx = await vault(root)
@@ -75,7 +75,7 @@ test('vault_settings: its skills, the meeting tag, the index\'s size, its templa
   assert.ok(x.index_bytes > 100)
   assert.deepEqual(x.templates, ['page.md'])
   assert.equal(x.tags, 3)
-  assert.equal(x.past, null)
+  assert.deepEqual(x.past, { count: 0, first: [] }, 'no call with minutes: none to save')
 })
 
 test('preview: the editor\'s text as the page reads, nothing written', async () => {
@@ -143,34 +143,10 @@ test('home: what changed (Echo\'s writes, git\'s commits), the Health card, wher
   assert.equal(h.vault.pages_root, 'knowledge')
 })
 
-test('call_knowledge: the vaults a call may go to; by itself only a vault for its thread (else its client, else the default) that takes minutes automatically on the call\'s profile; the user\'s choice kept', async () => {
-  const ctx = await vault(twin(tmp()), { rec: { belongs: [{ thread: 'acme-rollout' }], minutes: { mode: 'auto' } } })
-  const call = { name: '2026-11-17-acme-sync', threads: ['acme-rollout'], client: 'acme', profile: null, notes: true }
-  const k = await ctx.run('call_knowledge', { call })
-  assert.deepEqual(k.vaults.map((v) => [v.id, v.mode, v.available]), [['twin', 'auto', true]])
-  assert.deepEqual(k.targets, [{ id: 'twin', name: 'Twin' }])
-  assert.equal((await ctx.run('call_knowledge', { call: { ...call, threads: [], client: null } })).targets.length, 0, 'not its thread or client, and no default')
-  assert.equal((await ctx.run('call_knowledge', { call: { ...call, profile: 'p2' } })).targets.length, 0, 'another AI profile: never by itself')
-  assert.match(k.later, /Saving minutes into a vault isn't in this version/, 'minutes aren\'t saved yet: the window promises nothing')
-  await ctx.run('call_choice', { call: call.name, vault: 'none' })
-  const off = await ctx.run('call_knowledge', { call })
-  assert.equal(off.record.choice, 'none')
-  assert.equal((await ctx.run('call_knowledge', { call: { ...call, name: '2026-11-17-acme-weekly-sync-renamed' } })).record.choice, null, 'another call')
-  const stamped = { ...call, name: '2026-11-17_180000-acme-weekly-sync' }
-  await ctx.run('call_choice', { call: stamped.name, vault: 'none' })
-  assert.equal((await ctx.run('call_knowledge', { call: { ...stamped, name: '2026-11-17_180000-acme-pricing-sync' } })).record.choice, 'none', 'a retitled call (its folder renamed) keeps its choice by its stamp')
-  ctx.files['calls.json'] = JSON.stringify({ '2020-01-01_090000': { vault: 'none' }, ...JSON.parse(ctx.files['calls.json']) })
-  await ctx.run('call_choice', { call: stamped.name, vault: 'twin' })
-  assert.ok(!('2020-01-01_090000' in JSON.parse(ctx.files['calls.json'])), 'choices of calls over 180 days old are dropped')
-  await ctx.run('call_choice', { call: call.name, vault: '' })
-  assert.equal((await ctx.run('call_knowledge', { call })).record.choice, null, 'back to the vaults\' rules')
-  await assert.rejects(ctx.run('call_choice', { call: call.name, vault: 'nope' }), /no such vault/)
-})
-
-test('the later steps say so and do nothing: Ingest, Health\'s fixes and AI checks, minutes into a vault, a new vault, the twin', async () => {
+test('the later step says so and does nothing: Ingest\'s runs, Health\'s fixes and AI checks', async () => {
   const root = twin(tmp())
   const ctx = await vault(root)
-  for (const [c, word] of [['ingest_queue', 'Ingest'], ['source_add', 'Ingest'], ['ingest_go', 'Ingest'], ['fix', 'fixes and AI checks'], ['lint', 'fixes and AI checks'], ['save_minutes', 'minutes into a vault'], ['minutes_preview', 'minutes into a vault'], ['new_vault', 'twin starter'], ['twin', 'twin skill']]) {
+  for (const [c, word] of [['ingest_go', 'Ingest'], ['ingest_apply', 'Ingest'], ['fix', 'fixes and AI checks'], ['lint', 'fixes and AI checks']]) {
     await assert.rejects(ctx.run(c, { id: 'twin' }), new RegExp(`${word}.* in this version of Knowledge yet`), c)
   }
   assert.deepEqual(acts(ctx), [], 'nothing written')

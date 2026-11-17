@@ -28,6 +28,8 @@ export async function apply(ctx) {
   await ctx.ui.stylesheet('knowledge.css')
   const { createKnowledge } = await import(`./view.js${v1}`)
   const { knParseRoute, KN_BASE } = await import(`./model.js${v1}`)
+  const { applyRows } = await import(`./rows.js${v1}`)
+  applyRows(ctx)
 
   // ── the call the window shows, and each call's Knowledge (the host half's `call_knowledge`) ──
   const calls = new Map()

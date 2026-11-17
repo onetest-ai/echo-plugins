@@ -1858,7 +1858,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st(), x = s.sheet, d = st().data || {}
     // As the app names the folder (recorder::slugify): letters and digits kept, the rest a dash.
     const slug = String(x.name || 'my-twin').toLowerCase().replace(/[^\p{Alphabetic}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'vault'
-    const folder = x.picked ? x.picked.path : `${d.home || '~/echo/knowledge'}/${slug}`
+    const folder = x.picked ? x.picked.path : 'no folder yet'
     const tree = `my-vault/
 ├── AGENTS.md · CLAUDE.md      <em>the rules: structure, page format, index, tags</em>
 ├── README.md                  <em>getting started</em>
@@ -1875,8 +1875,8 @@ export async function createKnowledge(ctx, hooks = {}) {
     └── templates/             <em>meeting note, page</em>`.replace('my-vault', esc(x.picked ? (x.picked.name || 'vault') : slug))
     const noGit = !d.git
     const body = `<div class="kn-field"><span>Name</span><input class="search kn-in" id="kn-name" value="${esc(x.name || '')}" placeholder="My twin" aria-label="The vault's name"></div>
-      <div class="kn-field"><span>Folder</span><div class="kn-inline"><span class="kn-path" title="${esc(folder)}"><code><bdi>${esc(short(folder))}</bdi></code></span><button class="btn" data-kn="pick-new"${x.picking ? ' disabled' : ''}>${x.picking ? 'Choosing…' : 'Choose…'}</button>${x.picked ? '<button class="btn ghost sm" data-kn="pick-default">Echo\'s data folder</button>' : ''}</div></div>
-      <p class="set-sub kn-indent">${x.picked ? (x.picked.refused ? `<span class="warn">${esc(x.picked.refused)}</span>` : x.picked.empty ? 'An empty folder — the vault goes in it.' : '<span class="warn">This folder isn\'t empty — choose a new or empty one.</span>') : 'In Echo\'s data folder unless you choose another. It must be empty or new.'}</p>
+      <div class="kn-field"><span>Folder</span><div class="kn-inline"><span class="kn-path" title="${esc(folder)}"><code><bdi>${esc(short(folder))}</bdi></code></span><button class="btn" data-kn="pick-new"${x.picking ? ' disabled' : ''}>${x.picking ? 'Choosing…' : 'Pick or make a folder…'}</button></div></div>
+      <p class="set-sub kn-indent">${x.picked ? (x.picked.refused ? `<span class="warn">${esc(x.picked.refused)}</span>` : x.picked.empty ? 'An empty folder — the vault goes in it.' : '<span class="warn">This folder isn\'t empty — choose a new or empty one.</span>') : 'Pick or make a folder — an empty one, or a new one made in the picker (New Folder).'}</p>
       <div><div class="kn-lbl">What Echo puts in it</div><pre class="kn-tree-pre">${tree}</pre></div>
       <label class="kn-check"><input type="checkbox" data-kn-form="git"${x.git && !noGit ? ' checked' : ''}${noGit ? ' disabled' : ''}><span><b>Make it a git repository</b> <span class="set-sub">${noGit ? '— git isn\'t installed; a plain folder works the same, without history.' : '— one first commit, and Echo commits what it saves here (a switch in Settings). Add a remote later to back it up.'}</span></span></label>
       <label class="kn-check"><input type="checkbox" data-kn-form="auto"${x.auto ? ' checked' : ''}><span><b>Save my meeting minutes here automatically</b></span></label>
@@ -2176,7 +2176,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st()
     if (!shown()) go(home())
     s.switcher = false
-    s.sheet = { kind: 'connect', step: 1, picked: null, minutes: 'ask', commit: false, name: '' }
+    s.sheet = { kind: 'connect', step: 1, picked: null, minutes: 'auto', commit: false, name: '' }
     render()
   }
   async function doPick(forNew) {
@@ -2211,6 +2211,8 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st(), x = s.sheet
     const name = ((document.getElementById('kn-name') || {}).value || '').trim()
     if (!name) { x.error = 'A vault needs a name.'; s.focus = 'kn-name'; return render() }
+    // Echo gives a plugin only the folders the user picks: the vault goes in one picked (or made) in the picker.
+    if (!x.picked || x.picked.refused || !x.picked.empty) { x.error = 'Pick or make a folder for the vault first.'; return render() }
     try {
       const r = await run('kn_new', { name, pick: x.picked ? x.picked.path : undefined, git: !!x.git, minutes: x.auto ? 'auto' : 'ask' }, 'new')
       s.sheet = null

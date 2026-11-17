@@ -99,7 +99,7 @@ export function agentPart(vaults) {
 //  profile: AI profile id | null (the default), detected: {…} | null (found by `detect`),
 //  overrides: {pages, index, notes, naming, templates, sources},
 //  structure: 'confirmed' | null — whether the detected pages, sources and templates folders apply (see `vaultPath`),
-//  minutes: {mode: auto | ask | off, tag, transcript, chat}, commit, ingest: {skill, calls: off | add | prepare},
+//  minutes: {mode: auto | ask | off, tag, transcript, chat}, commit, ingest: {skill, calls, mail: off | add | prepare},
 //  template: "twin@1" | null}
 
 export const SCHEMA = 1
@@ -145,7 +145,7 @@ export function normalizeVault(raw) {
       transcript: bool(m.transcript), chat: bool(m.chat),
     },
     commit: bool(r.commit),
-    ingest: { skill: typeof ing.skill === 'string' && ing.skill ? ing.skill : null, calls: CALLS.includes(ing.calls) ? ing.calls : 'off' },
+    ingest: { skill: typeof ing.skill === 'string' && ing.skill ? ing.skill : null, calls: CALLS.includes(ing.calls) ? ing.calls : 'off', mail: CALLS.includes(ing.mail) ? ing.mail : 'off' },
     template: typeof r.template === 'string' && r.template ? r.template : null,
   }
   // What the description's reading found (kept as 0.8 had it).
@@ -230,6 +230,10 @@ export function setVaultKey(v, key, value, known = {}) {
     case 'ingest.calls':
       if (!CALLS.includes(text)) throw new Error('new calls: off, add or prepare')
       out.ingest.calls = text
+      break
+    case 'ingest.mail':
+      if (!CALLS.includes(text)) throw new Error('new mail: off, add or prepare')
+      out.ingest.mail = text
       break
     default: {
       if (!OVERRIDES.includes(key)) throw new Error(`no setting “${key}”`)
@@ -1845,6 +1849,385 @@ export function activityRecent(text, sinceMs = 0) {
 /** A commit label as the savers give it (`<id>`, `off`, `skipped: …`) → the id, if there is one. */
 export const commitId = (label) => (label && label !== 'off' && label !== 'pending' && !label.startsWith('skipped') ? label : null)
 
+// ── export.rs: a call's minutes as a note of a vault — Echo's minutes as they are, no model (Knowledge 1.0 step 4) ──
+// The note's shape is #677's (`export::note_text`); what goes in it is what Echo gives (`echo.read('source')`, the
+// `minutes_written` event): the minutes' body without Echo's header, its summary, the call's facts, people and routing.
+
+/** The platform a call's `app` names, as the note's `meeting:` says it. */
+export const PLATFORMS = { teams: 'MS Teams', zoom: 'Zoom', meet: 'Google Meet', 'google-meet': 'Google Meet', slack: 'Slack', webex: 'Webex' }
+
+/** A value made one line for a property: control characters (`\r`, `\n`, tab, NEL) and the line and paragraph
+ *  separators (U+2028/2029) become spaces — none can start another key. */
+export const yamlFlat = (s) => String(s == null ? '' : s).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, ' ')
+/** A YAML value as Echo's notes write it (export.rs `quoted`): double-quoted, `\` and `"` escaped, one line. */
+export const yamlQuoted = (s) => `"${yamlFlat(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+/** An item of a YAML flow list (`[a, b]`): plain only when it holds none of the list's own marks. */
+export const yamlItem = (s) => { const v = yamlValue(s); return v.startsWith('"') || !/[,[\]{}]/.test(v) ? v : yamlQuoted(s) }
+
+/** A YAML value as Echo's notes write it (export.rs `yaml`): plain when that reads back the same, else quoted. */
+export function yamlValue(s) {
+  const t = yamlFlat(s)
+  const plain = t !== '' && !/^[[\]{}&*!|>'"%@`#,?:-]/.test(t) && !isWs(t[0]) && !isWs(t[t.length - 1]) && !t.includes(': ') &&
+    !t.includes(' #') && !t.endsWith(':') && !/[\n"']/.test(t) && !['true', 'false', 'yes', 'no', 'null', 'on', 'off', '~'].includes(asciiLower(t))
+  return plain ? t : yamlQuoted(t)
+}
+
+/** One line of a summary (export.rs `summary`, over the text Echo gives as the minutes' summary): its first paragraph,
+ *  or its first list with the items joined by "; ", whitespace made single spaces, 300 characters at most. */
+export function summaryLine(text) {
+  const items = [], para = []
+  for (const l of textLines(String(text || ''))) {
+    const t = rsTrim(l)
+    if (t.startsWith('#')) break
+    if (t === '') { if (para.length || items.length) break; continue }
+    const m = /^(- \[ \] |- \[x\] |- |\* )/.exec(t)
+    if (m && !para.length) items.push(rsTrim(t.slice(m[0].length)))
+    else if (items.length) break
+    else para.push(t)
+  }
+  return cutChars(rsWords(items.length ? items.join('; ') : para.join(' ')).join(' '), 300)
+}
+
+/** `s` at most `n` characters, a longer one cut at `n - 1` with "…". */
+const cutChars = (s, n) => { const cs = Array.from(s); return cs.length > n ? `${rsTrimEnd(cs.slice(0, n - 1).join(''))}…` : s }
+
+/** The summary a note's properties and its index row carry: Echo's summary of the minutes, else the first section of
+ *  their body (as #677 fell back to the first `##` section). */
+export function noteSummary(minutes) {
+  const m = minutes || {}
+  if (typeof m.summary === 'string' && rsTrim(m.summary) !== '') return summaryLine(m.summary)
+  const body = textLines(String(m.body || ''))
+  const at = body.findIndex((l) => l.startsWith('## '))
+  return at < 0 ? '' : summaryLine(body.slice(at + 1).join('\n'))
+}
+
+/** What the note's `meeting:` says: "Memo" for a memo, else the title with its platform. */
+export function meetingOf(title, app, memo) {
+  if (memo) return 'Memo'
+  const p = PLATFORMS[String(app || '')]
+  return p ? `${title} (${p})` : title
+}
+
+const BAD_NAME = /[/\\:*?"<>|#\x00-\x1f\x7f-\x9f]/g
+const trimDotsWs = (s) => { let a = 0, b = s.length; while (a < b && (s[a] === '.' || isWs(s[a]))) a++; while (b > a && (s[b - 1] === '.' || isWs(s[b - 1]))) b--; return s.slice(a, b) }
+
+/** The note's file name in the vault's naming (export.rs `file_name`): `stem` as the user typed it (made safe), else
+ *  `{date}-{slug}.md` or `{date} {title}.md`. */
+export function noteFileName(naming, date, title, stem) {
+  const s = stem == null ? '' : rsTrim(String(stem))
+  if (s) {
+    let clean = rsTrim(s.replace(BAD_NAME, '-'))
+    while (asciiLower(clean).endsWith('.md')) clean = rsTrim(clean.slice(0, -3))
+    clean = trimDotsWs(clean)
+    // As a source's name is made safe: no device name, short enough for both systems, never a lone dot.
+    const safe = safeName(`${clean || 'note'}.md`)
+    return safe === '.md' || safe.startsWith('.') ? 'note.md' : safe
+  }
+  if (naming === DATE_TITLE) {
+    const t = Array.from(String(title).replace(BAD_NAME, '-')).slice(0, 80).join('')
+    return `${date} ${rsTrim(t).replace(/^\.+|\.+$/g, '')}.md`
+  }
+  const slug = slugify(String(title))
+  return `${date}-${slug || 'call'}.md`
+}
+
+/** `b` relative to the folder of `a` (both vault-relative; export.rs `relative_to`). */
+export function relativeTo(a, b) {
+  const i = a.lastIndexOf('/')
+  const dir = i < 0 ? [] : a.slice(0, i).split('/')
+  const target = b.split('/')
+  let common = 0
+  while (common < dir.length && common < target.length && dir[common] === target[common]) common++
+  return [...Array(dir.length - common).fill('..'), ...target.slice(common)].join('/')
+}
+
+/** The index row's description: `46m Title — the summary`, 300 characters at most (export.rs `row_desc`). */
+export function rowDesc(minutes, title, summary) {
+  const head = minutes > 0 ? `${minutes}m ${title}` : title
+  return cutChars(summary ? `${head} — ${summary}` : head, 300)
+}
+
+/** A call's transcript as the note's `## Transcript` holds it: its own header lines left out (export.rs). */
+export function transcriptPart(t) {
+  const lines = textLines(String(t || ''))
+  let k = 0
+  while (k < lines.length && (lines[k].startsWith('# ') || lines[k].startsWith('- **') || rsTrim(lines[k]) === '')) k++
+  return rsTrim(lines.slice(k).join('\n'))
+}
+
+/** A call's meeting chat (`[{at, from, text}]`, as Echo gives it) as lines `- **from**: text`; '' when nothing was said. */
+export function chatPart(chat) {
+  return (Array.isArray(chat) ? chat : []).map((m) => {
+    const text = rsTrim(String((m && m.text) || ''))
+    return text ? `- **${(m && m.from) || 'Someone'}**: ${text.replace(/\n/g, ' ')}` : null
+  }).filter((x) => x !== null).join('\n')
+}
+
+/** A person of Echo's (`participants[].person`) as a link Echo opens. */
+export const personLink = (key) => `echo://person/${String(key).replace(/%/g, '%25').replace(/ /g, '%20')}`
+
+/** The note (export.rs `note_text`): Echo's properties, then `# Title — date` and the minutes' body as Echo gives it
+ *  (without its header), then the transcript and the chat when the vault asks for them. `f`: {title, date, meeting,
+ *  tag, participants: [{name, person}], duration, client (a wikilink or a name), threads: [names], link, call,
+ *  summary, body, transcript, chat}. */
+export function noteText(f) {
+  const fm = [`title: ${yamlQuoted(f.title)}`, `date: ${f.date}`, `meeting: ${yamlQuoted(f.meeting)}`, `tags: [${yamlItem(f.tag)}]`]
+  const names = []
+  for (const p of f.participants || []) { const n = rsTrim(String((p && p.name) || '')); if (n && !names.includes(n)) names.push(n) }
+  if (names.length) fm.push(`participants: ${yamlValue(names.join(', '))}`)
+  const people = [...new Set((f.participants || []).map((p) => p && p.person).filter((k) => typeof k === 'string' && k))]
+  if (people.length) fm.push(`people: [${people.map((k) => yamlQuoted(personLink(k))).join(', ')}]`)
+  if (f.duration > 0) fm.push(`duration: ${f.duration}m`)
+  if (f.client) fm.push(`client: ${yamlQuoted(f.client)}`)
+  if ((f.threads || []).length) fm.push(`threads: [${f.threads.map(yamlQuoted).join(', ')}]`)
+  fm.push(`source: ${yamlQuoted(f.link)}`, 'origin: echo', `echo_call: ${yamlQuoted(f.call)}`, `summary: ${yamlQuoted(f.summary || '')}`)
+  let text = `---\n${fm.join('\n')}\n---\n\n# ${oneLine(f.title)} — ${f.date}\n\n${rsTrim(String(f.body || ''))}\n`
+  if (f.transcript != null) text += `\n## Transcript\n\n${transcriptPart(f.transcript)}\n`
+  if (f.chat) text += `\n## Chat\n\n${rsTrim(f.chat)}\n`
+  return text
+}
+
+/** Where a call's minutes go (the user's decision, 2026-11-17): the vaults set on its threads; else its client's
+ *  (each of its threads' clients); else the default vault. A value of `none` is the user's "no vault here"; a value
+ *  naming a vault that isn't there any more is taken as not set. `threads`: [{id, name, client, client_name}];
+ *  `look`: {thread(id), client(id)} → a vault id | 'none' | null, `def` (the default vault's id or null), `has(id)`.
+ *  → {vaults: [{id, from: 'thread' | 'client' | 'default', by}], from, gone: [ids]}. */
+export function routeCall(threads, look) {
+  const gone = []
+  const pick = (list, from) => {
+    const out = []
+    let said = false
+    for (const [val, by] of list) {
+      if (val == null) continue
+      if (val !== 'none' && !look.has(val)) { if (!gone.includes(val)) gone.push(val); continue }
+      said = true
+      if (val !== 'none' && !out.some((x) => x.id === val)) out.push({ id: val, from, by })
+    }
+    return said ? out : null
+  }
+  const ts = (threads || []).filter((t) => t && t.id)
+  const byThread = pick(ts.map((t) => [look.thread(t.id), t.name || t.id]), 'thread')
+  if (byThread) return { vaults: byThread, from: byThread.length ? 'thread' : 'none', gone }
+  const clients = []
+  for (const t of ts) if (t.client && !clients.some((c) => c.id === t.client)) clients.push({ id: t.client, name: t.client_name || t.client })
+  const byClient = pick(clients.map((c) => [look.client(c.id), c.name]), 'client')
+  if (byClient) return { vaults: byClient, from: byClient.length ? 'client' : 'none', gone }
+  if (look.def && look.has(look.def)) return { vaults: [{ id: look.def, from: 'default', by: null }], from: 'default', gone }
+  return { vaults: [], from: 'none', gone }
+}
+
+// ── sources.rs: Ingest's sources, as they came, in the vault's sources folder ──
+
+/** `s` on one line: each run of whitespace and control characters one space (sources.rs `one_line`). */
+export const oneLine = (s) => String(s == null ? '' : s).split(/[\p{White_Space}\p{Cc}]+/u).filter((w) => w !== '').join(' ')
+
+/** Text that stays text in Markdown (extract.rs `md_text`): `\ < [ ] !` escaped, so it never becomes HTML, a link or an
+ *  image. */
+export const mdText = (s) => String(s).replace(/[\\<[\]!]/g, (c) => `\\${c}`)
+
+/** The most a source's name may be, in UTF-8 bytes and in UTF-16 units, with room for ` (999)`. */
+export const NAME_MAX = 200
+
+/** `stem`, cut at a character so that it, `ext` and ` (999)` fit NAME_MAX bytes and UTF-16 units (sources.rs `fit`). */
+export function fitName(stem, ext) {
+  const room = NAME_MAX - ' (999)'.length - utf8Len(ext)
+  let out = '', bytes = 0, units = 0
+  for (const c of stem) {
+    const b = utf8Len(c)
+    if (bytes + b > room || units + c.length > room) break
+    out += c; bytes += b; units += c.length
+  }
+  return out
+}
+
+/** A file name safe on macOS and Windows (sources.rs `safe_name`): no `\ / : * ? " < > |` or control characters, no
+ *  dot or space at either end, not a Windows device name (`_` in front), short enough for both. */
+export function safeName(name) {
+  const s = trimDotsWs(String(name).replace(/[\\/:*?"<>|\x00-\x1f\x7f-\x9f]/g, '-'))
+  const i = s.lastIndexOf('.')
+  const [stem0, ext] = i > 0 && utf8Len(s.slice(i)) <= 12 ? [s.slice(0, i), s.slice(i)] : [s, '']
+  let stem = fitName(stem0, ext)
+  { let b = stem.length; while (b > 0 && (stem[b - 1] === '.' || isWs(stem[b - 1]))) b--; stem = stem.slice(0, b) }
+  if (!stem) stem = 'file'
+  const first = stem.split('.')[0].toUpperCase()
+  const device = ['CON', 'PRN', 'AUX', 'NUL'].includes(first) || (first.length === 4 && /^(COM|LPT)[0-9]$/.test(first))
+  return `${device ? '_' : ''}${stem}${ext}`
+}
+
+/** `<date>-<slug>.md` of `title`, else of `fallback` (sources.rs `dated_name`). */
+export function datedName(date, title, fallback) {
+  const slug = slugify(String(title || ''))
+  return `${fitName(`${date}-${slug || fallback}`, '.md').replace(/-+$/, '')}.md`
+}
+
+/** The paths a vault's `log.md` calls processed: `- <date> · processed · <path> → <page>` (the starter's format). */
+export function processedPaths(logText) {
+  const out = new Set()
+  for (const l of String(logText || '').split('\n')) {
+    // Only a line of its own in the starter's format: never `processed` inside another line's words.
+    const m = /^- \d{4}-\d{2}-\d{2} · processed · /.exec(l)
+    if (!m) continue
+    let p = l.slice(m[0].length).split('→')[0]
+    p = p.split(' -> ')[0]
+    p = rsTrim(rsTrim(p).replace(/^`+|`+$/g, ''))
+    if (p) out.add(p)
+  }
+  return out
+}
+
+/** A source's state (sources.rs `state_of`): skipped or done by the ledger, done when `log.md` processed it, else the
+ *  ledger's waiting, else new. */
+export function sourceState(entry, processed) {
+  const s = entry && entry.state
+  if (s === 'skipped') return 'skipped'
+  if (s === 'done') return 'done'
+  if (processed) return 'done'
+  if (s === 'waiting') return 'waiting'
+  return 'new'
+}
+
+/** A local day and time as a source's sections say it: `YYYY-MM-DD HH:MM`. */
+export function localTime(at) {
+  const d = new Date(String(at || ''))
+  if (Number.isNaN(d.getTime())) return String(at || '')
+  return `${ymd(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+/** A call's minutes as a source (sources.rs `add_call`, §5.5): its properties, `# <title> — minutes` and the minutes
+ *  as Echo wrote them; the transcript and the chat only when asked. `note`: the call's note in this vault, if any. */
+export function callSourceText({ title: t0, date, memo, participants, duration, link, note, text, transcript, chat }) {
+  const title = oneLine(t0) || 'Call'
+  const fm = [`title: ${yamlValue(title)}`, `date: ${date}`, `kind: ${memo ? 'memo' : 'call'}`]
+  const names = []
+  for (const p of participants || []) { const n = rsTrim(String((p && p.name) || '')); if (n && !names.includes(n)) names.push(n) }
+  if (names.length) fm.push(`participants: ${yamlValue(oneLine(names.join(', ')))}`)
+  if (duration > 0) fm.push(`duration: ${duration}m`)
+  fm.push(`source: ${yamlQuoted(link)}`)
+  if (note) fm.push(`note: ${yamlValue(note)}`)
+  fm.push('origin: echo')
+  let out = `---\n${fm.join('\n')}\n---\n\n# ${mdText(title)} — minutes\n\n${rsTrimEnd(String(text || ''))}\n`
+  if (transcript != null && rsTrim(String(transcript)) !== '') out += `\n## Transcript\n\n${rsTrim(String(transcript))}\n`
+  if (chat) out += `\n## Chat\n\n${rsTrim(chat)}\n`
+  return { title, text: out }
+}
+
+/** A mail thread as a source (sources.rs `add_thread`), from what `ctx.m365.mailThread` gives: `{subject, picked,
+ *  messages: [{id, subject?, from: {name, email}, to, at, text, url, files, files_error?}]}` (oldest first). One
+ *  `### <name> · <date time>` section a message, its attachments named, never downloaded. → {title, date, text}. */
+export function mailSourceText(thread) {
+  const messages = (thread && thread.messages) || []
+  if (!messages.length) throw new Error('that thread has no messages Echo can read')
+  const subject = oneLine(messages[0].subject || thread.subject || '')
+  const title = subject || '(no subject)'
+  const times = messages.map((m) => Date.parse(m.at)).filter(Number.isFinite)
+  const date = times.length ? ymd(new Date(Math.max(...times))) : ymd(new Date())
+  const nameOf = (p) => oneLine((p && (rsTrim(String(p.name || '')) ? p.name : p.email)) || '')
+  const people = []
+  for (const m of messages) for (const p of [m.from, ...(m.to || [])]) { const n = nameOf(p); if (n && !people.includes(n)) people.push(n) }
+  const picked = messages.find((m) => m.id === thread.picked) || messages[0]
+  const fm = [`title: ${yamlValue(title)}`, `date: ${date}`, 'kind: mail']
+  if (people.length) fm.push(`people: ${yamlValue(people.join(', '))}`)
+  const url = oneLine(picked.url || '')
+  if (url) fm.push(`source: ${yamlValue(url)}`)
+  fm.push('origin: echo')
+  let text = `---\n${fm.join('\n')}\n---\n\n# ${mdText(title)}\n`
+  for (const m of messages) {
+    text += `\n### ${mdText(nameOf(m.from) || 'Someone')} · ${localTime(m.at)}\n\n`
+    const body = rsTrim(String(m.text || ''))
+    if (body) text += `${body}\n`
+    const files = (m.files || []).map((f) => mdText(oneLine(f))).filter((f) => f)
+    if (files.length) text += `\nAttachments: ${files.join(', ')}\n`
+    else if (m.files_error) text += `\nAttachments: Echo couldn't list them (${mdText(oneLine(m.files_error))})\n`
+  }
+  return { title, date, subject, text }
+}
+
+/** A Teams chat's messages as a source (sources.rs `add_chat_messages`), from what `ctx.m365.chat` gives: `{id, topic,
+ *  members, url, since, until, messages: [{at, from, text, files}]}` (oldest first). → {title, name, until, text}. */
+export function chatSourceText(chat) {
+  const msgs = (chat && chat.messages) || []
+  if (chat && chat.since && chat.until && chat.since > chat.until) throw new Error('the days end before they start')
+  const name = oneLine(chat.topic || '') || (chat.members || []).map((m) => oneLine(m.name || '')).filter(Boolean).join(', ') || 'Teams chat'
+  if (!msgs.length) throw new Error(`nothing was written in ${name} from ${chat.since} to ${chat.until}`)
+  const people = []
+  for (const m of msgs) { const n = oneLine(m.from || ''); if (n && !people.includes(n)) people.push(n) }
+  const fm = [`title: ${yamlValue(name)}`, `date: ${chat.until}`, 'kind: teams', `since: ${chat.since}`, `until: ${chat.until}`]
+  if (people.length) fm.push(`people: ${yamlValue(people.join(', '))}`)
+  if (oneLine(chat.url || '')) fm.push(`source: ${yamlValue(oneLine(chat.url))}`)
+  fm.push('origin: echo')
+  let text = `---\n${fm.join('\n')}\n---\n\n# ${mdText(name)}\n`
+  for (const m of msgs) {
+    text += `\n### ${mdText(oneLine(m.from || '') || 'Someone')} · ${localTime(m.at)}\n\n`
+    const body = rsTrim(String(m.text || ''))
+    if (body) text += `${body}\n`
+    const files = (m.files || []).map((f) => mdText(oneLine(f))).filter(Boolean)
+    if (files.length) text += `\nAttachments: ${files.join(', ')}\n`
+  }
+  return { title: name, name, until: chat.until, text }
+}
+
+/** The vault's twin skill for use from any folder (starter.rs `twin_skill_text`): named `name`, marked as Echo's copy
+ *  of vault `v.id` (`echo_vault:`), its paths made absolute to the vault. */
+export function twinSkillText(text, v, name) {
+  const root = String(v.root).replace(/\\/g, '/')
+  const [raw, body0] = fmSplit(String(text))
+  const lines = (raw || '').split('\n').filter((l) => l !== '' && !l.startsWith('name:') && !l.startsWith('echo_vault:'))
+  let body = body0
+  for (const p of ['knowledge/', 'raw_inbox/', 'AGENTS.md', 'log.md', '.claude/']) body = body.split(`\`${p}`).join(`\`${root}/${p}`)
+  body = body.split('Paths below are relative to the vault\'s root folder.').join(`The vault is \`${root}\` (${v.name}); work there, wherever Claude Code was started.`)
+  return `---\n${[`name: ${name}`, ...lines, `echo_vault: ${v.id}`].join('\n')}\n---\n${body}`
+}
+
+/** A web page as a source (sources.rs `add_page`): its title and Markdown as Echo read them. */
+export function webSourceText(url, title0, md, date, fetched) {
+  const title = oneLine(title0) || url
+  const fm = [`title: ${yamlValue(title)}`, `date: ${date}`, 'kind: web', `url: ${yamlValue(url)}`, `fetched: ${fetched}`, 'origin: echo']
+  return { title, text: `---\n${fm.join('\n')}\n---\n\n# ${mdText(title)}\n\n${rsTrim(String(md || ''))}\n` }
+}
+
+/** The Graph id of the message an Outlook link opens (`…?ItemID=<id>…`), or null: Recall keeps a mail's link, not the
+ *  message's id (`ctx.m365.mailThread` takes the id). */
+export function messageIdOf(url) {
+  const m = /[?&]ItemID=([^&#]+)/i.exec(String(url || ''))
+  if (!m) return null
+  try { return decodeURIComponent(m[1]) } catch { return null }
+}
+
+// ── starter.rs: the twin preset ──
+
+/** The template the twin preset's vaults are made from. */
+export const TWIN = 'twin@1'
+/** The twin preset's files in the package (`starter/twin/…`); `gitignore` is written as `.gitignore`. */
+export const twinTarget = (p) => (p === 'gitignore' ? '.gitignore' : p)
+/** A starter file's text with the vault's name, owner and day filled in; Obsidian's own `{{title}}`/`{{date}}` stay.
+ *  In the properties each filled value stays one value (a quoted one escaped, a plain one quoted when it must be); in
+ *  the text it is one line of Markdown text. */
+export function fillStarter(text, { name, owner, date }) {
+  const fill = (s, f) => s.split('{{vault.name}}').join(f(name)).split('{{vault.owner}}').join(f(owner)).split('{{vault.date}}').join(date)
+  const [raw, body] = fmSplit(String(text))
+  const inBody = (x) => mdText(oneLine(x))
+  if (raw === null) return fill(String(text), inBody)
+  const lines = raw.split('\n').map((l) => {
+    if (!l.includes('{{vault.')) return l
+    const m = /^([A-Za-z_][\w-]*):[ \t]*(.*)$/.exec(l)
+    if (!m) return fill(l, oneLine)
+    const v = m[2]
+    if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) return `${m[1]}: "${fill(v.slice(1, -1), (x) => yamlFlat(x).replace(/\\/g, '\\\\').replace(/"/g, '\\"'))}"`
+    return `${m[1]}: ${yamlValue(fill(v, oneLine))}`
+  })
+  return `---\n${lines.join('\n')}\n---\n${fill(body, inBody)}`
+}
+/** Words Echo writes into a vault's `log.md` line: one line, no ` · ` of the log's own (a title can't fake a line). */
+export const logText = (s) => oneLine(s).replace(/·/g, '-')
+/** A call's key in the store (`calls/<key>.json`): its folder's stamp `YYYY-MM-DD_HHMMSS`, which a retitle keeps (Echo
+ *  opens a retitled call by it); a folder without one by its name when that is plain ASCII, else by its sha. */
+export const callKey = (call, sha) => {
+  const s = String(call || '')
+  const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(s)
+  if (m) return m[1]
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/.test(s) ? s : `x-${sha(s).slice(0, 24)}`
+}
+
 export function apply(ctx) {
   const running = new Set() // vaults being read now (one analysis per vault at a time)
   const parseList = (text) => { try { const j = JSON.parse(text || '[]'); return Array.isArray(j) ? j : [] } catch { return [] } }
@@ -3141,8 +3524,7 @@ export function apply(ctx) {
   // What the later steps of Knowledge 1.0 bring answers that it isn't here yet (`LATER` below).
   const HEALTH_LATER = 'Health\'s fixes and AI checks aren\'t in this version of Knowledge yet'
   const INGEST_LATER = 'Ingest isn\'t in this version of Knowledge yet'
-  const MINUTES_LATER = 'Saving minutes into a vault isn\'t in this version of Knowledge yet'
-  const gitNow = async (v) => {
+    const gitNow = async (v) => {
     try {
       const i = await ctx.git.info(v.root)
       if (!i.repo) return { git: null, installed: true }
@@ -3221,7 +3603,7 @@ export function apply(ctx) {
       vault: { id: v.id }, skills, has_twin: skills.some((k) => k.name === 'twin' && k.kind !== 'agents'), global_twin: null, global_twin_name: 'twin',
       tags: taxText != null ? allowedTags(taxText).length : null, terms: null, tag_file: tagTax, meeting_tag: meetingTag(v.minutes.tag, taxText),
       index_bytes: ist && ist.kind === 'file' ? ist.size : 0, pages: typeof d.md_files === 'number' ? d.md_files : null, cache_bytes: null,
-      past: null, templates, in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
+      past: (() => { try { return pastCountOf(v) } catch { return null } })(), templates, in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
     }
   })
   // The editor's preview: the text as the page would read, nothing written.
@@ -3458,62 +3840,13 @@ export function apply(ctx) {
     }
   })
 
-  // A call's Knowledge (the chip on its page, its ⋯ items, the minutes' line): the vaults it may go to, those its minutes
-  // would go to by themselves — the vaults for its threads, else its client, else the default, each on the call's AI
-  // profile and taking minutes automatically — and the user's choice for this call (`calls.json`). Minutes aren't saved
-  // into a vault in this version (step 4): `later` says so, and the window promises nothing.
-  // A call is known by its stamp (its folder's `YYYY-MM-DD_HHMMSS`, which a retitle keeps — Echo opens a retitled
-  // call by it): Echo gives a plugin no other id that survives a rename. Choices of calls over 180 days old are dropped.
-  const callKey = (name) => { const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(String(name || '')); return m ? m[1] : String(name || '') }
-  const CHOICE_DAYS = 180
-  const choicesFrom = (text) => { try { const j = JSON.parse(text || '{}'); return j && typeof j === 'object' && !Array.isArray(j) ? j : {} } catch { return {} } }
-  const choiceOf = (j, name) => { const x = j[callKey(name)]; return x && typeof x === 'object' ? x.vault : typeof x === 'string' ? x : null }
-  const choiceFresh = (key, now) => { const d = Date.parse(`${key.slice(0, 10)}T00:00:00Z`); return isNaN(d) || now - d <= CHOICE_DAYS * 864e5 }
-  ctx.command('call_knowledge', ({ call }) => {
-    const c = call && typeof call === 'object' ? call : {}
-    const name = String(c.name || '')
-    if (!name) throw new Error('call: the call as its page has it')
-    const prof = profilesNow()
-    const callProfile = c.profile || prof.default
-    const vs = load()
-    const vaults = vs.map((v) => ({ id: v.id, name: v.name, available: folderThere(v), profile: v.profile || prof.default, mode: v.minutes.mode }))
-    const mine = (b) => vs.filter((v) => (v.belongs || []).some(b))
-    const threads = Array.isArray(c.threads) ? c.threads : []
-    let routed = mine((b) => b.thread && threads.includes(b.thread))
-    if (!routed.length && c.client) routed = mine((b) => b.client === c.client)
-    if (!routed.length && prefs().default) routed = vs.filter((v) => v.id === prefs().default)
-    const choice = choiceOf(choicesFrom(ctx.store.read('calls.json')), name)
-    const targets = routed.filter((v) => v.minutes.mode === 'auto' && (v.profile || prof.default) === callProfile).map((v) => ({ id: v.id, name: v.name }))
-    return { vaults, targets: choice && choice !== 'none' ? vaults.filter((v) => v.id === choice).map((v) => ({ id: v.id, name: v.name })) : targets, record: { saved: [], choice }, stale: [], failure: null, profile: c.profile || null, later: MINUTES_LATER }
-  })
-  ctx.command('call_choice', ({ call, vault }) => {
-    const name = String(call || '')
-    if (!name) throw new Error('call: the call\'s name')
-    if (vault != null && vault !== '' && vault !== 'none') find(load(), vault)
-    const now = Date.now()
-    ctx.store.update('calls.json', (text) => {
-      const j = choicesFrom(text)
-      for (const k of Object.keys(j)) if (!choiceFresh(k, now)) delete j[k]
-      const k = callKey(name)
-      if (vault == null || vault === '') delete j[k]; else j[k] = { vault: String(vault), at: new Date(now).toISOString() }
-      return JSON.stringify(j, null, 2)
-    })
-    return true
-  })
-
-
-  // What the activity draws now and the later steps of Knowledge 1.0 answer: Ingest and its sources (step 5), minutes
-  // into a vault and a new vault from the twin starter (step 4), Health's fixes and AI checks (step 5). Each says so;
-  // none makes anything up.
+  // What the activity draws now and step 5 of Knowledge 1.0 answers: Ingest's runs and their review, Health's fixes and
+  // AI checks. Each says so; none makes anything up.
   const LATER = {
-    ingest_queue: INGEST_LATER, ingest_run: INGEST_LATER, ingest_changes: INGEST_LATER, ingest_text: INGEST_LATER, ingest_go: INGEST_LATER,
+    ingest_run: INGEST_LATER, ingest_changes: INGEST_LATER, ingest_text: INGEST_LATER, ingest_go: INGEST_LATER,
     ingest_stop: INGEST_LATER, change: INGEST_LATER, ingest_apply: INGEST_LATER, ingest_discard: INGEST_LATER, ingest_requeue: INGEST_LATER,
-    ingest_skill: INGEST_LATER, source_add: INGEST_LATER, source_skip: INGEST_LATER, baseline: INGEST_LATER, pick_files: INGEST_LATER,
-    source_calls: INGEST_LATER, source_m365: INGEST_LATER,
+    ingest_skill: INGEST_LATER,
     fixes: HEALTH_LATER, fix: HEALTH_LATER, fix_all: HEALTH_LATER, lint: HEALTH_LATER, lint_run: HEALTH_LATER, lint_stop: HEALTH_LATER,
-    minutes_preview: MINUTES_LATER, save_minutes: MINUTES_LATER, past: MINUTES_LATER, sample: MINUTES_LATER,
-    new_vault: 'A new vault from Echo\'s twin starter isn\'t in this version of Knowledge yet',
-    twin: 'Installing the twin skill isn\'t in this version of Knowledge yet', twin_text: 'Installing the twin skill isn\'t in this version of Knowledge yet',
   }
   for (const [name, why] of Object.entries(LATER)) ctx.command(name, () => { throw new Error(why) })
 
@@ -3748,6 +4081,1113 @@ export function apply(ctx) {
       how: `Move the file first (${from} → ${dest}, inside ${pagesRoot(v)}), then make each edit: in that file, replace the line “before” with “after” (the note's own edits are listed under its new path). Nothing else needs changing.`,
     }
   })
+
+
+  // ── step 4: a call's minutes into its vaults, Ingest's sources, the twin preset (export.rs, sources.rs, starter.rs) ──
+  // Echo's results are taken as they are (INDEX.md's rule): a call's facts, routing, people, AI profile and minutes come
+  // from `minutes_written` and `ctx.echo.read('source')`; a mail's from `sources_changed` (Recall's facts). Where a call
+  // goes is the plugin's: thread → client → the default vault (`routeCall`). What a vault does with it is its rule:
+  // `minutes.mode` (auto writes the note on the event; ask only on the user's command; off) and `ingest.calls` /
+  // `ingest.mail` (off / add / prepare: queued in the store, nothing written into the vault until a batch is prepared).
+  // A call's record is the store's `calls/<folder>.json` {choice, saved, failed}; a vault's sources ledger
+  // `vaults/<id>/ingest.json`; notes saved by the rule wait for one commit per quiet window (`vaults/<id>/pending.json`).
+  const QUIET_MS = 2 * 60 * 1000
+  // A command also called from another one here (`own.<name>`).
+  const own = (name, fn) => { own[name] = fn; ctx.command(name, fn) }
+  const lockOf = new Map()
+  // One save into a vault at a time in this process (its note, its index row and log line read and written together);
+  // across processes the writes are compare-and-swap (`createNew`, `ifSha`), so a race fails rather than loses a row.
+  const serial = (id, fn) => {
+    const run = (lockOf.get(id) || Promise.resolve()).then(fn, fn)
+    lockOf.set(id, run.then(() => {}, () => {}))
+    return run
+  }
+  const readJson = (path, empty) => {
+    const t = ctx.store.read(path)
+    if (t == null) return empty
+    try { return JSON.parse(t) } catch { throw new Error(`${path} can't be read`) }
+  }
+  const updateJson = (path, empty, fn) => {
+    let out
+    ctx.store.update(path, (t) => {
+      let cur
+      if (t == null) cur = JSON.parse(JSON.stringify(empty))
+      else { try { cur = JSON.parse(t) } catch { throw new Error(`${path} can't be read`) } }
+      out = fn(cur)
+      return JSON.stringify(cur, null, 2)
+    })
+    return out
+  }
+  const today = () => ymd(new Date())
+  const errText = (e) => String((e && e.message) || e)
+  // An AI profile as a vault or a call names it: `null` is the default profile.
+  const profileOf = (p, ps = profilesNow()) => p || ps.default || null
+  const profileName = (id, ps = profilesNow()) => ((ps.profiles || []).find((p) => p.id === id) || {}).name || id || 'the default profile'
+  const sameProfile = (callProfile, v) => { const ps = profilesNow(); return profileOf(callProfile, ps) === profileOf(v.profile, ps) }
+  const mismatch = (callProfile, v) => {
+    const ps = profilesNow()
+    const e = new Error(`this call's text goes only to the ${profileName(profileOf(callProfile, ps), ps)} profile; ${v.name} is read by the ${profileName(profileOf(v.profile, ps), ps)} profile — save it anyway?`)
+    e.mismatch = { call: profileOf(callProfile, ps), vault: profileOf(v.profile, ps) }
+    return e
+  }
+  const available = (v) => { try { return ctx.fs.folders().includes(v.root) && (ctx.fs.stat(v.root, '') || {}).kind === 'dir' } catch { return false } }
+  const callId = (call) => { const c = String(call || '').replace(/^call:/, ''); if (!c || c.includes('/') || c.includes('\\')) throw new Error('call: a call\'s folder, as Echo names it'); return c }
+  const recPath = (call) => `calls/${callKey(call, ctx.crypto.sha256)}.json`
+  const EMPTY_REC = { choice: null, saved: [], failed: [] }
+  const callRec = (call) => ({ ...EMPTY_REC, ...readJson(recPath(call), EMPTY_REC) })
+  const updateRec = (call, fn) => { pastGen++; return updateJson(recPath(call), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; return fn(r) }) }
+  const source = (call, opts) => ctx.echo.read('source', `call:${call}`, opts)
+
+  // ── where a call goes ──
+  const openThreads = () => { try { return ctx.echo.read('threads') || [] } catch { return [] } }
+  const clientsList = () => { try { return ctx.echo.read('clients') || [] } catch { return [] } }
+  const threadVal = (id) => { try { return ctx.threads ? ctx.threads.get(id, 'vault') : null } catch { return null } }
+  const clientVal = (id) => { try { return ctx.clients ? ctx.clients.get(id, 'vault') : null } catch { return null } }
+  // A call's threads as Echo gives them ({id, name, client, client_name}), or their ids (a source's list): completed
+  // from the open threads.
+  const threadRefs = (list) => {
+    const open = openThreads()
+    const clients = clientsList()
+    return (list || []).map((t) => {
+      const id = typeof t === 'string' ? t : t && t.id
+      if (!id) return null
+      const o = open.find((x) => x.id === id) || {}
+      const client = (typeof t === 'object' && t.client) || o.client || null
+      const cname = (typeof t === 'object' && t.client_name) || (clients.find((c) => c.id === client) || {}).name || null
+      return { id, name: (typeof t === 'object' && t.name) || o.name || id, client, client_name: cname }
+    }).filter(Boolean)
+  }
+  const routeOf = (threads, vs = load()) => {
+    const ids = new Set(vs.map((v) => v.id))
+    const r = routeCall(threadRefs(threads), { thread: threadVal, client: clientVal, def: prefs().default, has: (id) => ids.has(id) })
+    return { ...r, vaults: r.vaults.map((x) => ({ ...x, vault: vs.find((v) => v.id === x.id) })) }
+  }
+  const why = (x) => (x.from === 'thread' ? `set on the thread ${x.by}` : x.from === 'client' ? `${x.by}'s vault` : 'the default vault')
+
+  // ── the note (export.rs `save_into`) ──
+  const notesDirOf = (v) => vaultPath(v, 'notes') || (vaultPath(v, 'pages') ? `${vaultPath(v, 'pages')}/notes` : 'notes')
+  const tagOf = (v) => { const t = tagTaxonomy((v.detected && v.detected.taxonomies) || []); return meetingTag(v.minutes ? v.minutes.tag : null, t ? readSafe(v, t) : null) }
+  const logOf = (v) => (v.detected && typeof v.detected.log === 'string' && v.detected.log ? v.detected.log : null)
+  // The client as a wikilink to its page in the vault (title, file name or alias), else its name.
+  const clientLink = async (v, name) => {
+    if (!name) return null
+    try {
+      const ix = await index(v)
+      const lcName = lc(name)
+      for (const r of ix.recs.values()) {
+        const stem = nameOf(r.p)
+        const al = new Note08(r).al
+        if (lc(r.T) === lcName || lc(stem) === lcName || al.some((a) => lc(a) === lcName)) return stem === name ? `[[${name}]]` : `[[${stem}|${name}]]`
+      }
+    } catch { /* no index: the name */ }
+    return name
+  }
+  // The facts of a call's note from Echo's source (`echo.read('source')`), and the note's text.
+  const noteOf = async (v, src, call, opts = {}) => {
+    const title = rsTrim(String(src.title || '')) || 'Call'
+    const date = src.date || (src.started_at ? String(src.started_at).slice(0, 10) : today())
+    const minutes = src.minutes || {}
+    const summary = noteSummary(minutes)
+    const transcript = opts.transcript ? (src.transcript || null) : null
+    const chat = opts.chat ? chatPart(src.chat) : ''
+    const threads = (src.threads || []).map((t) => (typeof t === 'string' ? t : t.name)).filter(Boolean)
+    const text = noteText({
+      title, date, meeting: meetingOf(title, src.app, src.memo || src.kind === 'memo'), tag: tagOf(v),
+      participants: src.participants || src.attendees || [], duration: src.duration_min || 0,
+      client: await clientLink(v, src.client && src.client.name), threads,
+      link: src.link || `echo://call/${call}`, call, summary, body: minutes.body || '',
+      transcript: transcript === null ? null : transcript, chat,
+    })
+    return { title, date, summary, text, duration: src.duration_min || 0, revision: minutes.revision || null }
+  }
+  // A path not taken yet: `base`, else `-2`, `-3`… (export.rs `free_name`).
+  const freeNote = (v, base) => {
+    if (!statSafe(v, base)) return base
+    const dot = base.lastIndexOf('.')
+    const [s, ext] = dot > base.lastIndexOf('/') ? [base.slice(0, dot), base.slice(dot)] : [base, '.md']
+    for (let n = 2; n < 1000; n++) { const p = `${s}-${n}${ext}`; if (!statSafe(v, p)) return p }
+    throw new Error(`no free file name for ${base}`)
+  }
+  const pendingPath = (id) => `vaults/${id}/pending.json`
+  // A marker in the store that one process holds `path` (the app's handler or a terminal's command): taken with
+  // `createNew`, taken over only from a holder older than `ms` (compare-and-swap on what was read). → whether it is ours.
+  const takeLock = (path, ms) => {
+    const mark = JSON.stringify({ at: Date.now(), by: ctx.terminal ? 'terminal' : 'app' })
+    try { ctx.store.write(path, mark, { createNew: true }); return true } catch (e) { if (!/there already/.test(errText(e))) throw e }
+    const cur = ctx.store.read(path)
+    let at = 0
+    try { at = Number(JSON.parse(cur).at) || 0 } catch { /* a broken marker: old */ }
+    if (cur == null || Date.now() - at < ms) return false
+    try { ctx.store.write(path, mark, { ifSha: ctx.crypto.sha256(cur) }); return true } catch { return false }
+  }
+  const dropLock = (path) => { try { ctx.store.remove(path) } catch { /* gone */ } }
+  // One commit of the files Echo wrote, each only while it is still as Echo wrote it (its sha read again right before
+  // the commit: a file changed since is the user's and left out), 1,000 paths a commit at most. → {commit, paths
+  // (committed), changed (left out), failed}.
+  const commitPaths = async (v, items, message) => {
+    if (!v.commit) return { commit: 'off', paths: [], changed: [] }
+    const ok = [], changedNow = []
+    for (const it of items) { const st = statSafe(v, it.path, { sha: true }); if (st && st.kind === 'file' && (it.sha == null || st.sha === it.sha)) ok.push(it.path); else changedNow.push(it.path) }
+    if (!ok.length) return { commit: `skipped: ${changedNow.length ? 'changed since Echo wrote them' : 'nothing to commit'}`, paths: [], changed: changedNow }
+    let rev = null
+    const parts = Math.ceil(ok.length / 1000)
+    try {
+      for (let i = 0; i < ok.length; i += 1000) {
+        const c = await ctx.git.commit(v.root, { paths: ok.slice(i, i + 1000), message: parts > 1 ? `${message} (${i / 1000 + 1}/${parts})` : message })
+        if (c && c.rev) rev = c.rev
+      }
+    } catch (e) { return { commit: `skipped: ${errText(e)}`, paths: [], changed: changedNow, failed: true } }
+    return { commit: rev || 'skipped: nothing changed', paths: rev ? ok : [], changed: changedNow }
+  }
+  const shaItems = (v, paths) => paths.map((p) => ({ path: p, sha: (statSafe(v, p, { sha: true }) || {}).sha || null }))
+  // Changes that may change what Settings' past minutes count (a record, a vault's place): its cache is per day and this.
+  let pastGen = 0
+  // A file Echo wrote for a note still waiting for its commit (`pending.json`), unchanged since, is Echo's, not the
+  // user's: any save may commit it. A commit takes the paths it holds out of the waiting list.
+  const absorbPending = (v, dirty) => {
+    if (!dirty.paths.size) return dirty
+    for (const it of (readJson(pendingPath(v.id), { items: [] }).items || [])) {
+      if (dirty.paths.has(it.path) && it.sha && (statSafe(v, it.path, { sha: true }) || {}).sha === it.sha) dirty.paths.delete(it.path)
+    }
+    return dirty
+  }
+  const dropPending = (v, paths, commit) => {
+    if (!commitId(commit) || !paths.length) return
+    try { updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (q) => { q.items = (q.items || []).filter((it) => !paths.includes(it.path)) }) } catch (e) { ctx.log(`pending of ${v.id}: ${errText(e)}`) }
+  }
+  // Save a call's minutes into vault `v`. `how`: {manual, new, replace, anyway, stem, transcript, chat};
+  // `commit`: 'now' (a command: one commit), 'quiet' (the rule's: one commit per quiet window), 'later' (past minutes:
+  // the caller's one commit). → {vault, path, state, index, commit, paths (to commit)}.
+  const saveInto = async (call, v, how = {}, commitMode = 'now') => {
+    if (!available(v)) throw new Error(`the vault's folder isn't there: ${v.root}`)
+    const manual = !!how.manual
+    const transcript = how.transcript != null ? !!how.transcript : v.minutes.transcript
+    const chat = how.chat != null ? !!how.chat : v.minutes.chat
+    const src = source(call, { transcript, chat })
+    if (!sameProfile(src.profile, v) && (!manual || !how.anyway)) throw mismatch(src.profile, v)
+    const anyway = !sameProfile(src.profile, v)
+    const n = await noteOf(v, src, call, { transcript, chat })
+    const entry = callRec(call).saved.find((e) => e.vault === v.id) || null
+    const notesDir = notesDirOf(v)
+    const naming = vaultPath(v, 'naming') || DATE_SLUG
+    const indexRel = vaultPath(v, 'index')
+    const logRel = logOf(v)
+    const mine = entry && !how.new ? statSafe(v, entry.path, { sha: true }) : null
+    // git first: from the check that the note is as Echo left it to the write, nothing slow runs.
+    const cands = [mine && mine.kind === 'file' ? entry.path : null, indexRel, logRel].filter(Boolean)
+    const dirty = v.commit && commitMode !== 'off' ? await dirtyOf(v, cands) : CLEAN
+    absorbPending(v, dirty)
+    // In a batch (past minutes), a file an earlier save of the batch wrote, unchanged since, is Echo's too.
+    if (how.batch && dirty.paths.size) for (const [p, it] of how.batch) if (dirty.paths.has(p) && it.sha && (statSafe(v, p, { sha: true }) || {}).sha === it.sha) dirty.paths.delete(p)
+    let rel, state, was = null
+    if (mine && mine.kind === 'file') {
+      rel = entry.path
+      const now = readPage(v, rel, mine)
+      if (now.sha === ctx.crypto.sha256(n.text)) return { vault: v.id, path: rel, state: 'unchanged', index: 'listed', commit: entry.commit || 'off', paths: [] }
+      if (now.sha !== entry.sha256 && !how.replace) {
+        updateRec(call, (r) => { const x = r.saved.find((e) => e.vault === v.id); if (x) x.state = 'kept' })
+        return { vault: v.id, path: rel, state: 'kept', index: 'listed', commit: 'off', paths: [] }
+      }
+      ctx.fs.write(v.root, rel, n.text, { ifSha: now.sha })
+      state = 'updated'
+      was = now.utf8 ? now.text : null
+    } else {
+      const name = noteFileName(naming, n.date, n.title, manual ? how.stem : null)
+      for (let tries = 0; ; tries++) {
+        rel = freeNote(v, `${notesDir}/${name}`)
+        try { ctx.fs.write(v.root, rel, n.text, { createNew: true }); break } catch (e) {
+          if (!/is there already/.test(errText(e)) || tries > 5) throw e
+        }
+      }
+      state = 'saved'
+    }
+    // A batch (past minutes) clears the vault's index once, after it.
+    if (commitMode !== 'later') indexes.delete(v.id)
+    const written = [rel]
+    // The index row, the index read just now.
+    let row
+    if (!indexRel) row = 'skipped: the vault has no index'
+    else {
+      const ist = statSafe(v, indexRel, { sha: true })
+      const itext = ist && ist.kind === 'file' && ist.real != null ? readPage(v, indexRel, ist) : null
+      if (!itext || !itext.utf8) row = 'skipped: the index can\'t be read'
+      else {
+        const got = catalogInsert(itext.text, relativeTo(indexRel, notesDir), relativeTo(indexRel, rel), rowDesc(n.duration, n.title, n.summary), n.date, today())
+        if (got.already) row = 'listed'
+        else if (got.error) row = `skipped: ${got.error}`
+        else {
+          try { ctx.fs.write(v.root, indexRel, withLineEndings(itext.text, got.text), { ifSha: itext.sha }); written.push(indexRel); row = 'added' } catch (e) { row = `skipped: ${errText(e)}` }
+        }
+      }
+    }
+    // The vault's log, when it keeps one.
+    if (logRel) {
+      const lst = statSafe(v, logRel)
+      if (lst && lst.kind === 'file' && lst.real != null) {
+        const old = readSafe(v, logRel, 4 << 20)
+        const line = `- ${today()} · ${state === 'updated' ? 'changed' : 'added'} · ${logText(rel)} · minutes of "${logText(n.title)}" from Echo`
+        try { ctx.fs.append(v.root, logRel, `${old && old !== '' && !old.endsWith('\n') ? '\n' : ''}${line}`); written.push(logRel) } catch (e) { ctx.log(`log of ${v.id}: ${errText(e)}`) }
+      }
+    }
+    const clean = written.filter((p) => !dirty.paths.has(p))
+    const items = v.commit ? shaItems(v, clean) : []
+    let commit
+    if (!v.commit) commit = 'off'
+    else if (!clean.length) commit = `skipped: ${dirty.why || 'the files had changes of yours that weren\'t committed'}`
+    else if (commitMode === 'now') {
+      const r = await commitPaths(v, items, `Echo: minutes of "${logText(n.title)}" (${n.date}) → ${notesDir}/`)
+      commit = r.commit
+      dropPending(v, r.paths, commit)
+    } else commit = 'pending'
+    if (commitMode === 'quiet' && commit === 'pending') {
+      updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (q) => {
+        q.at = Date.now()
+        for (const it of items) { q.items = q.items.filter((x) => x.path !== it.path); q.items.push(it) }
+        q.calls = (q.calls || []).filter((c) => c.call !== call)
+        q.calls.push({ call, title: n.title, date: n.date, path: rel })
+      })
+    }
+    changed(v, rel, 'minutes', call, was, n.text, commitId(commit), written.slice(1))
+    const entryOut = { vault: v.id, path: rel, sha256: ctx.crypto.sha256(n.text), at: new Date().toISOString(), how: manual ? 'manual' : 'auto', state, index: row, commit, anyway: anyway || !!(entry && entry.anyway), revision: n.revision }
+    updateRec(call, (r) => { r.saved = r.saved.filter((e) => e.vault !== v.id); r.saved.push(entryOut); r.failed = r.failed.filter((f) => f.vault !== v.id) })
+    return { vault: v.id, path: rel, state, index: row, commit, paths: v.commit ? clean : [], items }
+  }
+  const failed = (call, v, e, { batch = false } = {}) => {
+    updateRec(call, (r) => { r.failed = r.failed.filter((f) => f.vault !== v.id); r.failed.push({ vault: v.id, at: new Date().toISOString(), error: errText(e) }) })
+    if (ctx.inbox && !batch) {
+      try { ctx.inbox.set(`minutes:${callKey(call, ctx.crypto.sha256)}`.slice(0, 80), { title: `The minutes couldn't be saved to ${v.name}`, why: errText(e), go: `call/${call}`, actions: [{ label: 'Save again', command: 'save_minutes', args: { call, vault: v.id }, primary: true }] }) } catch { /* an Echo without the Inbox */ }
+    }
+  }
+  const cleared = (call) => { if (ctx.inbox && !callRec(call).failed.length) { try { ctx.inbox.clear(`minutes:${callKey(call, ctx.crypto.sha256)}`.slice(0, 80)) } catch { /* none */ } } }
+  // A save the user asked for (`save_minutes`), or the rule's: failures are kept on the call, never the minutes touched.
+  // One process at a time writes a call's note into a vault (the app's handler, a terminal's `save_minutes`): a marker
+  // in the store, taken over after two minutes.
+  const saveMinutes = (call, v, how, mode) => serial(v.id, async () => {
+    const lock = `locks/minutes-${callKey(call, ctx.crypto.sha256)}-${v.id}.json`
+    if (!takeLock(lock, 2 * 60 * 1000)) throw new Error(`this call is being saved into ${v.name} already — try again in a moment`)
+    try {
+      const s = await saveInto(call, v, how, mode)
+      cleared(call)
+      return s
+    } catch (e) {
+      if (!e.mismatch) failed(call, v, e)
+      throw e
+    } finally { dropLock(lock) }
+  })
+  // The vaults that take this call's minutes by themselves now: the one chosen for it, else the routed vaults whose
+  // mode is auto — always on the call's own AI profile. A vault whose folder is gone stays in (its save fails, shown).
+  const targetsOf = (rec, route, profile) => {
+    if (rec.choice === 'none') return []
+    const vs = load()
+    const list = rec.choice ? vs.filter((v) => v.id === rec.choice) : route.vaults.map((x) => x.vault).filter((v) => v && v.minutes.mode === 'auto')
+    return list.filter((v) => sameProfile(profile, v))
+  }
+  // The pending commits of a vault, once it has been quiet long enough (or now): one commit of the files Echo wrote that
+  // are still as it wrote them.
+  const flushPending = async (v, force = false) => {
+    const q = readJson(pendingPath(v.id), null)
+    if (!q || !(q.items || []).length) return null
+    if (!force && Date.now() - (q.at || 0) < QUIET_MS) return null
+    return serial(v.id, async () => {
+      const cur = readJson(pendingPath(v.id), null)
+      if (!cur || !(cur.items || []).length) return null
+      const calls = cur.calls || []
+      const message = calls.length === 1 ? `Echo: minutes of "${logText(calls[0].title)}" (${calls[0].date}) → ${notesDirOf(v)}/` : `Echo: minutes of ${calls.length} calls`
+      if (!v.commit) {
+        ctx.store.remove(pendingPath(v.id))
+        for (const c of calls) updateRec(c.call, (rec) => { const x = rec.saved.find((e) => e.vault === v.id && e.path === c.path); if (x && x.commit === 'pending') x.commit = 'off' })
+        return { commit: 'off', paths: [], calls: calls.length }
+      }
+      const r = await commitPaths(v, cur.items, message)
+      // A commit git refused: the notes stay queued, with why, and are tried again after another quiet window.
+      if (r.failed) {
+        updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (x) => { x.at = Date.now(); x.why = r.commit })
+        return { commit: r.commit, paths: [], calls: 0, kept: true }
+      }
+      // Only what this commit took (and the files the user changed since) leave the queue: what was queued meanwhile, by
+      // this process or another, stays for the next.
+      const took = (it) => (r.paths.includes(it.path) || r.changed.includes(it.path)) && cur.items.some((c) => c.path === it.path && c.sha === it.sha)
+      const flushed = new Set(calls.map((c) => `${c.call}\0${c.path}`))
+      const left = updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (x) => {
+        x.items = (x.items || []).filter((it) => !took(it))
+        x.calls = (x.calls || []).filter((c) => !flushed.has(`${c.call}\0${c.path}`))
+        delete x.why
+        return x.items.length
+      })
+      if (!left) ctx.store.remove(pendingPath(v.id))
+      for (const c of calls) updateRec(c.call, (rec) => { const x = rec.saved.find((e) => e.vault === v.id && e.path === c.path); if (x && x.commit === 'pending') x.commit = r.commit })
+      if (commitId(r.commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'minutes', ref: null, plus: 0, minus: 0, commit: r.commit, also: r.paths })
+      return { commit: r.commit, paths: r.paths, calls: calls.length }
+    })
+  }
+
+  // ── Ingest's sources: the ledger, the queue, the sources folder ──
+  const ledgerPath = (id) => `vaults/${id}/ingest.json`
+  const EMPTY_LEDGER = { baseline: null, sources: {}, queued: {}, calls: [], mails: [] }
+  const ledger = (v) => ({ ...EMPTY_LEDGER, ...readJson(ledgerPath(v.id), EMPTY_LEDGER) })
+  const updateLedger = (v, fn) => updateJson(ledgerPath(v.id), EMPTY_LEDGER, (l) => { for (const k of Object.keys(EMPTY_LEDGER)) if (l[k] === undefined) l[k] = JSON.parse(JSON.stringify(EMPTY_LEDGER[k])); return fn(l) })
+  const sourcesDirOf = (v) => vaultPath(v, 'sources') || (v.detected && v.detected.sources) || 'raw_inbox'
+  const processedOf = (v) => { const l = logOf(v); return processedPaths(l ? readSafe(v, l, 4 << 20) : '') }
+  // The files of the sources folder (its README, dot names and links left out), vault-relative.
+  const sourceFiles = async (v) => {
+    const dir = sourcesDirOf(v)
+    const st = statSafe(v, dir)
+    if (!st || st.kind !== 'dir' || st.real == null) return []
+    const all = await ctx.fs.walk(v.root, { path: dir, max: 100000 })
+    return all.filter((f) => asciiLower(f.path) !== asciiLower(`${dir}/README.md`)).map((f) => ({ ...f, path: f.path }))
+  }
+  const kindOf = (dir, rel) => { const sub = rel.slice(dir.length + 1).split('/'); return sub.length > 1 && ['echo', 'mail', 'teams', 'web'].includes(sub[0]) ? sub[0] : 'file' }
+  const titleOf = (rel, head) => {
+    const name = rel.split('/').pop()
+    if (!isMd(name)) return name
+    const t = head || ''
+    const [raw, body] = fmSplit(t)
+    const fromFm = raw !== null ? (() => { const p = fmGet(fmParse(raw), 'title'); return p ? oneLine(propText(p)) : '' })() : ''
+    if (fromFm) return fromFm
+    const h = textLines(body).find((l) => l.startsWith('# '))
+    return (h && oneLine(h.slice(2))) || name
+  }
+  // The queue (sources.rs `queue` + what is queued in the store and not written yet), newest first.
+  const queueOf = async (v) => {
+    const l = ledger(v)
+    const done = processedOf(v)
+    const dir = sourcesDirOf(v)
+    const files = await sourceFiles(v)
+    // A Markdown source's own title: its first 64 KB, every file read in one go off the plugin's time slice.
+    const mds = files.filter((f) => isMd(f.path)).map((f) => f.path)
+    const heads = new Map()
+    for (let i = 0; i < mds.length; i += 500) {
+      const some = mds.slice(i, i + 500)
+      const texts = await ctx.fs.readMany(v.root, some, 64 << 10)
+      some.forEach((p, k) => heads.set(p, texts[k]))
+    }
+    const out = files.map((f) => {
+      const e = l.sources[f.path]
+      return { path: f.path, kind: kindOf(dir, f.path), title: titleOf(f.path, heads.get(f.path)), state: sourceState(e, done.has(f.path)), size: f.size, added: e ? e.added : null, by: e ? e.by : null, note: (e && e.note) || null, anyway: !!(e && e.anyway), when: (e && Date.parse(e.added)) || f.mtime * 1000 }
+    })
+    for (const [id, q] of Object.entries(l.queued || {})) out.push({ path: null, id, kind: q.kind === 'call' ? 'echo' : q.kind, title: q.title, state: q.state === 'skipped' ? 'skipped' : 'new', queued: true, rule: q.rule, added: q.added, by: q.kind, note: q.note || null, why: q.why || null, anyway: !!q.anyway, when: Date.parse(q.added) || 0 })
+    return out.sort((a, b) => b.when - a.when || cmpStr(a.path || a.id, b.path || b.id)).map(({ when, ...s }) => s)
+  }
+  // The README Echo writes when it makes the sources folder: the twin starter's.
+  const sourcesReadme = () => { try { return ctx.package.read('starter/twin/raw_inbox/README.md') || '' } catch { return '' } }
+  // Write one new source (and the README when Echo makes the folder): never over a file, never a name the ledger or
+  // `log.md` already names; recorded as new in the ledger and the activity log; committed alone when the vault commits.
+  const writeSource = (v, n) => serial(`src:${v.id}`, async () => {
+    if (!available(v)) throw new Error(`the vault's folder isn't there: ${v.root}`)
+    const base = sourcesDirOf(v)
+    const there = (() => { const st = statSafe(v, base); return !!st && st.kind === 'dir' })()
+    const dir = n.sub ? `${base}/${n.sub}` : base
+    const l = ledger(v)
+    // Read again here, one write at a time: a source the queue already made (by the call or mail it came from) isn't
+    // written twice — two prepares, or a prepare and an event.
+    if (n.once && n.from) {
+      const had = Object.entries(l.sources).find(([, e]) => e.from === n.from)
+      if (had) {
+        updateLedger(v, (x) => { delete x.queued[n.from] })
+        return { path: had[0], committed: 'already', size: 0, paths: [], items: [], duplicate: true }
+      }
+    }
+    const taken = new Set([...Object.keys(l.sources), ...processedOf(v)])
+    const dot = n.name.lastIndexOf('.')
+    const [stem, ext] = dot > 0 ? [n.name.slice(0, dot), n.name.slice(dot)] : [n.name, '']
+    const readmeRel = `${base}/README.md`
+    const dirty = v.commit ? absorbPending(v, await dirtyOf(v, there ? [`${dir}/${n.name}`] : [`${dir}/${n.name}`, readmeRel])) : CLEAN
+    const written = []
+    if (!there) {
+      const text = sourcesReadme()
+      try { ctx.fs.write(v.root, readmeRel, text, { createNew: true }); written.push({ rel: readmeRel, text }) } catch (e) { if (!/is there already/.test(errText(e))) throw e }
+    }
+    let rel = null, size = 0
+    for (let k = 1; k < 1000 && rel === null; k++) {
+      const cand = `${dir}/${k === 1 ? n.name : `${stem} (${k})${ext}`}`
+      if (taken.has(cand) || (dir === base && asciiLower(cand.split('/').pop()) === 'readme.md') || statSafe(v, cand)) continue
+      try {
+        if (n.file) size = (await ctx.fs.copyIn(n.file, v.root, cand, { createNew: true })).size
+        else ctx.fs.write(v.root, cand, n.text, { createNew: true })
+        rel = cand
+      } catch (e) { if (!/is there already/.test(errText(e))) throw e }
+    }
+    if (rel === null) throw new Error(`no free name for ${n.name} in ${dir}/`)
+    written.push({ rel, text: n.text == null ? null : n.text })
+    // Echo knows the folder now: the vault's sources, never pages.
+    if (!vaultPath(v, 'sources') && !(v.detected && v.detected.sources)) change((vs) => { const w = vs.find((x) => x.id === v.id); if (w) { w.detected = { ...(w.detected || {}), sources: base }; indexes.delete(v.id) } })
+    const sha = (statSafe(v, rel, { sha: true }) || {}).sha || ''
+    updateLedger(v, (x) => {
+      x.sources[rel] = { sha256: sha, added: new Date().toISOString(), by: n.by, state: 'new', anyway: !!n.anyway, ...(n.from ? { from: n.from } : {}) }
+      if (n.from && n.by === 'call' && !x.calls.includes(n.from)) x.calls.push(n.from)
+      if (n.from && n.by === 'mail' && !x.mails.includes(n.from)) x.mails.push(n.from)
+      // A mail added by the user is known by its message's id too: the queue never takes it again.
+      if (n.message && !x.mails.includes(`m365:${n.message}`)) x.mails.push(`m365:${n.message}`)
+      if (n.from) delete x.queued[n.from]
+    })
+    const items = v.commit ? shaItems(v, written.map((w) => w.rel).filter((p) => !dirty.paths.has(p))) : []
+    let commit = v.commit ? 'pending' : 'off'
+    if (!n.noCommit && v.commit) {
+      const r = await commitPaths(v, items, `Add source: ${Array.from(oneLine(n.title)).slice(0, 80).join('')}`)
+      commit = r.commit
+      dropPending(v, r.paths, commit)
+    }
+    for (const w of written) {
+      if (w.text != null) changed(v, w.rel, 'source', n.from || null, null, w.text, commitId(commit))
+      else record(v, { at: new Date().toISOString(), path: w.rel, kind: 'new', by: 'source', ref: n.from || null, plus: 0, minus: 0, commit: commitId(commit) })
+    }
+    return { path: rel, committed: commit, size, paths: items.map((i) => i.path), items }
+  })
+  // A call as a source: Echo's minutes (and the transcript and chat when asked), `echo/<date>-<slug>.md`.
+  const callSource = async (v, call, { transcript = false, chat = false, anyway = false, noCommit = false, once = false } = {}) => {
+    const src = source(call, { transcript, chat })
+    const across = !sameProfile(src.profile, v)
+    if (across && !anyway) throw mismatch(src.profile, v)
+    const entry = callRec(call).saved.find((e) => e.vault === v.id)
+    const note = entry && statSafe(v, entry.path) ? entry.path : null
+    const memo = src.memo || src.kind === 'memo'
+    const date = src.date || today()
+    const { title, text } = callSourceText({ title: src.title, date, memo, participants: src.participants || src.attendees, duration: src.duration_min, link: src.link || `echo://call/${call}`, note, text: src.text, transcript: transcript ? src.transcript : null, chat: chat ? chatPart(src.chat) : '' })
+    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: `call:${call}`, anyway: across, text, noCommit, once })
+  }
+  // A mail as a source: its own text read from Microsoft 365 now — for a queued one only when a batch is prepared (the
+  // queue keeps Recall's facts, never a message's words). Its AI profile is Recall's (its threads'); a mail Recall
+  // hasn't routed counts as the default profile's. On another profile than the vault's: refused unless "anyway".
+  // Read by its message's id only: Recall's `m365_id`, else the one its Outlook link holds — never guessed by a search.
+  const mailSource = async (v, q, { noCommit = false, anyway = false, once = false } = {}) => {
+    if (!ctx.m365) throw new Error('Microsoft 365 mail isn\'t in this Echo')
+    if (!anyway && !q.anyway && !sameProfile(q.profile ?? null, v)) throw mismatch(q.profile ?? null, v)
+    const message = q.m365_id || q.message || messageIdOf(q.url)
+    if (!message) { const e = new Error('this mail can\'t be read until Echo gives its id'); e.keep = true; throw e }
+    const thread = await ctx.m365.mailThread(message)
+    const m = mailSourceText(thread)
+    return writeSource(v, { sub: 'mail', name: datedName(m.date, m.subject, 'mail'), title: m.title, by: 'mail', from: q.id || `m365:${message}`, message, anyway: !sameProfile(q.profile ?? null, v), text: m.text, noCommit, once })
+  }
+  // An event's source into a vault's queue (store only: nothing written into the vault, no model).
+  const queueIn = (l, item) => {
+    const seen = item.kind === 'call' ? l.calls : l.mails
+    if (seen.includes(item.id) || (item.m365_id && seen.includes(`m365:${item.m365_id}`)) || l.queued[item.id]) return false
+    l.queued[item.id] = { ...item, added: new Date().toISOString(), state: 'queued' }
+    return true
+  }
+  const queueInto = (v, item) => updateLedger(v, (l) => queueIn(l, item))
+
+  // ── the events ──
+  // `minutes_written`: the note into every vault that takes it by itself (written now, committed in the quiet window),
+  // and the call into the queue of every routed vault whose rule asks for calls.
+  const onMinutes = async (p, { catchUp = false } = {}) => {
+    const call = callId(p.call || p.id)
+    const rec = callRec(call)
+    const route = routeOf(p.threads || [])
+    const out = { saved: [], queued: [] }
+    for (const v of targetsOf(rec, route, p.profile)) {
+      const e = rec.saved.find((x) => x.vault === v.id)
+      // A note saved by hand isn't updated by itself; a note the user deleted isn't put back; a catch-up never redoes.
+      if (e && (catchUp || e.how !== 'auto' || !statSafe(v, e.path))) continue
+      try { out.saved.push(await saveMinutes(call, v, {}, 'quiet')) } catch (err) { ctx.log(`minutes of ${call} → ${v.id}: ${errText(err)}`) }
+    }
+    if (rec.choice !== 'none') {
+      for (const x of route.vaults) {
+        const v = x.vault
+        if (!v || v.ingest.calls === 'off' || !sameProfile(p.profile, v)) continue
+        try { if (queueInto(v, { id: `call:${call}`, kind: 'call', title: p.title || call, date: (p.started_at || '').slice(0, 10) || null, rule: v.ingest.calls })) out.queued.push(v.id) } catch (err) { ctx.log(`queue of ${call} → ${v.id}: ${errText(err)}`) }
+      }
+    }
+    return out
+  }
+  // `sources_changed`: each changed mail (Recall's facts) into the queue of its routed vaults whose mail rule asks for it,
+  // on their own AI profile, each vault's ledger written once an event; one gone is taken out of a queue it hadn't left
+  // yet. A channel's post isn't queued while there is no reader of its own words: said in the ledger, not dropped.
+  const onSources = (p) => {
+    const vs = load()
+    const out = { queued: [], removed: 0, not_queued: [] }
+    const per = new Map()
+    const add = (v, f) => { if (!per.has(v.id)) per.set(v.id, { v, fs: [] }); per.get(v.id).fs.push(f) }
+    for (const it of (p && p.items) || []) {
+      if (!it || !it.id || it.trust === 'untrusted') continue
+      for (const x of routeOf(it.threads || [], vs).vaults) {
+        const v = x.vault
+        if (!v || (v.ingest.mail || 'off') === 'off' || !it.profile || !sameProfile(it.profile, v)) continue
+        if (it.kind === 'channel') {
+          add(v, (l) => { l.not_queued = l.not_queued || {}; l.not_queued[it.id] = { title: it.subject || it.title || it.id, why: 'Echo can\'t read a channel\'s posts for a vault yet', at: new Date().toISOString() }; out.not_queued.push(`${v.id}:${it.id}`) })
+          continue
+        }
+        const item = { id: it.id, kind: 'mail', title: it.subject || it.title || it.id, subject: it.subject || it.title || '', date: it.at || null, url: it.url || null, link: it.link || null, m365_id: it.m365_id || null, profile: it.profile, from: it.from || [], rule: v.ingest.mail }
+        add(v, (l) => { if (queueIn(l, item)) out.queued.push(`${v.id}:${it.id}`) })
+      }
+    }
+    const gone = (p && p.removed) || []
+    for (const v of vs) {
+      if (!gone.length && !per.has(v.id)) continue
+      if (!per.has(v.id)) { let l; try { l = ledger(v) } catch { continue } if (!gone.some((g) => l.queued[g])) continue }
+      try {
+        updateLedger(v, (l) => {
+          for (const f of (per.get(v.id) || { fs: [] }).fs) f(l)
+          for (const g of gone) if (l.queued[g]) { delete l.queued[g]; out.removed++ }
+        })
+      } catch (err) { ctx.log(`queue of ${v.id}: ${errText(err)}`) }
+    }
+    if (out.not_queued.length) ctx.log(`not queued (no reader for a channel's posts yet): ${out.not_queued.join(', ')}`)
+    return out
+  }
+  if (ctx.on) {
+    ctx.on('minutes_written', (p) => onMinutes(p).catch((e) => ctx.log(`minutes_written: ${errText(e)}`)))
+    ctx.on('sources_changed', (p) => { try { onSources(p) } catch (e) { ctx.log(`sources_changed: ${errText(e)}`) } })
+  }
+  // On start (the app, never a terminal's one command): what came while the plugin wasn't running — the calls with
+  // minutes and Recall's mail and posts since the last look, through the same handlers as the live events (a call
+  // whose record has the vault isn't written again; what the ledger has isn't queued again). The day moves forward
+  // only when both reads answered; the first start only notes it (past minutes are the user's command).
+  const catchUp = async () => {
+    if (!load().length) return { first: false, ok: false }
+    const seen = readJson('seen.json', null)
+    const day = today()
+    if (!seen || typeof seen.since !== 'string') { ctx.store.write('seen.json', JSON.stringify({ since: day })); return { first: true, ok: true } }
+    let ok = true
+    try {
+      for (const c of ctx.echo.read('calls', { since: seen.since, limit: 500 }) || []) if (c.minutes) await onMinutes({ ...c, call: c.id }, { catchUp: true })
+    } catch (e) { ok = false; ctx.log(`catch-up of calls: ${errText(e)}`) }
+    try {
+      onSources({ items: (ctx.echo.read('sources', { since: seen.since, limit: 1000 }) || []).filter((s) => s.kind !== 'call'), removed: [] })
+    } catch (e) { ok = false; ctx.log(`catch-up of mail: ${errText(e)}`) }
+    if (ok) ctx.store.write('seen.json', JSON.stringify({ since: day }))
+    return { first: false, ok }
+  }
+  // The catch-up as a command (the app runs it on start; a test or a terminal asks it).
+  ctx.command('catch_up', () => catchUp())
+  if (!ctx.terminal && ctx.echo) catchUp().catch((e) => ctx.log(`catch-up: ${errText(e)}`))
+  if (!ctx.terminal) ctx.every(30, async () => { for (const v of load()) { try { await flushPending(v) } catch (e) { ctx.log(`commit of ${v.id}: ${errText(e)}`) } } })
+
+  // ── commands: minutes ──
+  // Where a call would go, and why.
+  ctx.command('route', ({ call: c, threads }) => {
+    const call = callId(c)
+    let src = null
+    try { src = source(call, { transcript: false, chat: false }) } catch { /* no minutes yet: its threads as asked */ }
+    const route = routeOf(src ? src.threads : threads || [])
+    const rec = callRec(call)
+    return {
+      call, from: route.from, choice: rec.choice, gone: route.gone, profile: src ? profileOf(src.profile) : null,
+      vaults: route.vaults.map((x) => ({ id: x.id, name: x.vault.name, from: x.from, why: why(x), mode: x.vault.minutes.mode, profile_ok: src ? sameProfile(src.profile, x.vault) : null })),
+    }
+  })
+  const setVaultValue = (kind, id, value) => {
+    const target = kind === 'thread' ? ctx.threads : ctx.clients
+    if (!target) throw new Error(`this Echo keeps no values per ${kind}`)
+    if (!id) throw new Error(`${kind}: its id`)
+    const v = value === undefined || value === '' ? null : value
+    if (v !== null && v !== 'none') find(load(), v)
+    target.set(String(id), 'vault', v)
+    pastGen++
+    return { [kind]: id, vault: v }
+  }
+  ctx.command('thread_vault', ({ thread, vault }) => setVaultValue('thread', thread, vault))
+  ctx.command('client_vault', ({ client, vault }) => setVaultValue('client', client, vault))
+  // What a thread's or client's "Knowledge vault" row shows: its own value, what it inherits, and the vaults.
+  ctx.command('vault_row', ({ thread, client }) => {
+    const vs = load()
+    const name = (id) => (vs.find((v) => v.id === id) || {}).name || null
+    const def = prefs().default && vs.some((v) => v.id === prefs().default) ? prefs().default : null
+    let own, inherited
+    if (thread) {
+      own = threadVal(thread)
+      const t = openThreads().find((x) => x.id === thread) || {}
+      const cv = t.client ? clientVal(t.client) : null
+      const cname = t.client ? (clientsList().find((c) => c.id === t.client) || {}).name || t.client : null
+      inherited = cv && (cv === 'none' || vs.some((v) => v.id === cv)) ? { vault: cv === 'none' ? null : cv, name: cv === 'none' ? null : name(cv), from: 'client', client: t.client, client_name: cname } : { vault: def, name: name(def), from: 'default' }
+    } else if (client) {
+      own = clientVal(client)
+      inherited = { vault: def, name: name(def), from: 'default' }
+    } else throw new Error('thread or client: its id')
+    if (own && own !== 'none' && !vs.some((v) => v.id === own)) own = null
+    const effective = own === 'none' ? null : own || inherited.vault
+    return { own: own || null, inherited, effective, vaults: vs.map((v) => ({ id: v.id, name: v.name, mode: v.minutes.mode })) }
+  })
+  ctx.command('call_choice', ({ call: c, vault }) => {
+    const call = callId(c)
+    const choice = vault === undefined || vault === '' ? null : vault
+    if (choice !== null && choice !== 'none') find(load(), choice)
+    updateRec(call, (r) => { r.choice = choice })
+    return { call, choice }
+  })
+  // Save a call's minutes into a vault (its route's when one, else `vault`): the user's command — across AI profiles only
+  // with `anyway`; a note the user changed is kept unless `replace`, or a new one beside it with `new`.
+  ctx.command('save_minutes', async ({ call: c, vault, anyway, replace, new: asNew, stem, transcript, chat }) => {
+    const call = callId(c)
+    let ids
+    if (vault) ids = [find(load(), vault).id]
+    else {
+      const src = source(call, { transcript: false, chat: false })
+      ids = routeOf(src.threads).vaults.map((x) => x.id)
+      if (!ids.length) throw new Error('this call has no vault: set one on its thread or client, or a default vault, or name one')
+    }
+    const out = []
+    for (const id of ids) {
+      const v = find(load(), id)
+      try {
+        const { paths, items, ...s } = await saveMinutes(call, v, { manual: true, anyway: !!anyway, replace: !!replace, new: !!asNew, stem, transcript, chat }, 'now')
+        out.push(s)
+      } catch (e) {
+        if (!e.mismatch) throw e
+        out.push({ vault: v.id, state: 'mismatch', error: errText(e), mismatch: e.mismatch })
+      }
+    }
+    return vault ? out[0] : { saved: out }
+  })
+  // What the call's page shows: its record, the vaults that will take it, the ones offering an update (stale).
+  ctx.command('call_state', ({ call: c, threads, profile }) => {
+    const call = callId(c)
+    let src = null
+    try { src = source(call, { transcript: false, chat: false }) } catch { /* no minutes yet */ }
+    const p = src ? src.profile : profile ?? null
+    const route = routeOf(src ? src.threads : threads || [])
+    const rec = callRec(call)
+    const vs = load()
+    const nameOf = (id) => (vs.find((v) => v.id === id) || {}).name || id
+    const saved = rec.saved.map((e) => {
+      const v = vs.find((x) => x.id === e.vault)
+      const st = v ? statSafe(v, e.path, { sha: true }) : null
+      return { ...e, name: nameOf(e.vault), exists: !!st, changed: !!st && st.sha !== e.sha256 }
+    })
+    const revision = src && src.minutes ? src.minutes.revision : null
+    return {
+      call, choice: rec.choice, minutes: !!src, profile: profileOf(p), revision,
+      targets: targetsOf(rec, route, p).map((v) => ({ id: v.id, name: v.name, available: available(v) })),
+      routed: route.vaults.map((x) => ({ id: x.id, name: x.vault.name, from: x.from, why: why(x), mode: x.vault.minutes.mode, profile_ok: sameProfile(p, x.vault) })),
+      saved,
+      kept: saved.filter((e) => e.state === 'kept' || (e.exists && e.changed)).map((e) => e.vault),
+      failed: rec.failed.map((f) => ({ ...f, name: nameOf(f.vault) })),
+      // Saved by hand, unchanged since, and the minutes written again: offered as an update.
+      stale: saved.filter((e) => e.how === 'manual' && e.exists && !e.changed && revision && e.revision && e.revision !== revision).map((e) => e.vault),
+    }
+  })
+  // The note the minutes would make in a vault and its index row — nothing written.
+  own('minutes_preview', async ({ call: c, vault, id, stem }) => {
+    const call = callId(c)
+    const v = find(load(), vault || id)
+    const src = source(call, { transcript: false, chat: false })
+    const n = await noteOf(v, src, call, {})
+    const notesDir = notesDirOf(v)
+    const naming = vaultPath(v, 'naming') || DATE_SLUG
+    const mine = callRec(call).saved.find((e) => e.vault === v.id)
+    const rel = mine && statSafe(v, mine.path) ? mine.path : freeNote(v, `${notesDir}/${noteFileName(naming, n.date, n.title, stem)}`)
+    const indexRel = vaultPath(v, 'index')
+    let row = null
+    if (indexRel) {
+      const old = readSafe(v, indexRel)
+      const got = old === null ? null : catalogInsert(old, relativeTo(indexRel, notesDir), relativeTo(indexRel, rel), rowDesc(n.duration, n.title, n.summary), n.date, today())
+      if (got && got.text) { const before = new Set(textLines(old)); row = textLines(got.text).find((l) => !before.has(l) && rsTrimStart(l).startsWith('|')) || null }
+    }
+    const g = await gitInfo(v)
+    return {
+      vault: v.id, path: rel, stem: rel.split('/').pop().replace(/\.md$/, ''), index: indexRel, row, commit: v.commit, branch: g.repo ? g.branch : null,
+      profile_ok: sameProfile(src.profile, v), call_profile: profileOf(src.profile), vault_profile: profileOf(v.profile),
+      transcript: v.minutes.transcript, chat: v.minutes.chat, exists: !!statSafe(v, rel), note: n.text, title: n.title,
+    }
+  })
+  // Past calls' minutes into a vault: the calls routed there since a day, on its profile, not saved there yet and not
+  // opted out — one save each, one commit for all. `dry`: how many, and the first.
+  ctx.command('past_minutes', async ({ vault, since, dry }) => {
+    const v = find(load(), vault)
+    const day = typeof since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(since) ? since : null
+    if (!day) throw new Error('since: a day, YYYY-MM-DD')
+    return pastMinutes(v, day, dry)
+  })
+  // The past calls of a vault (since `day`, else the last 500 calls), and with `dry` false their minutes saved there.
+  const pastTodo = (v, day) => (ctx.echo.read('calls', day ? { since: day, limit: 500 } : { limit: 500 }) || []).filter((c) => c.minutes).filter((c) => {
+      const id = String(c.id || '').replace(/^call:/, '')
+      const rec = callRec(id)
+      return rec.choice !== 'none' && (!rec.choice || rec.choice === v.id) && !rec.saved.some((e) => e.vault === v.id) && sameProfile(c.profile, v) &&
+        (rec.choice === v.id || routeOf(c.threads || []).vaults.some((x) => x.id === v.id))
+  })
+  // What Settings shows: computed once per vault, day and change of the records or the vault's place (`pastGen`).
+  const pastCache = new Map()
+  const pastCountOf = (v) => {
+    const key = `${today()}|${pastGen}|${prefs().default}|${ctx.crypto.sha256(ctx.store.read('vaults.json') || '')}`
+    const had = pastCache.get(v.id)
+    if (had && had.key === key) return had.value
+    const todo = pastTodo(v, null)
+    const value = { count: todo.length, first: todo.slice(0, 5).map((c) => ({ call: String(c.id).replace(/^call:/, ''), title: c.title, date: c.date })) }
+    pastCache.set(v.id, { key, value })
+    return value
+  }
+  const pastMinutes = async (v, day, dry) => {
+    const todo = pastTodo(v, day)
+    if (dry) return { count: todo.length, first: todo.slice(0, 5).map((c) => ({ call: String(c.id).replace(/^call:/, ''), title: c.title, date: c.date })) }
+    return serial(v.id, async () => {
+      let saved = 0, skipped = 0
+      const items = new Map()
+      const failures = []
+      try {
+        for (const c of todo) {
+          const call = String(c.id).replace(/^call:/, '')
+          try {
+            const s = await saveInto(call, v, { batch: items }, 'later')
+            if (s.state === 'saved') { saved++; for (const it of s.items) items.set(it.path, it) } else skipped++
+          } catch (e) { skipped++; failures.push({ call, title: c.title, error: errText(e) }); failed(call, v, e, { batch: true }) }
+        }
+      } finally { indexes.delete(v.id) }
+      // One Inbox item for the batch, not one a call.
+      if (failures.length && ctx.inbox) {
+        try { ctx.inbox.set(`past:${v.id}`.slice(0, 80), { title: `${failures.length} past call${failures.length === 1 ? '' : 's'} couldn't be saved to ${v.name}`, why: failures.slice(0, 3).map((f) => `${f.title}: ${f.error}`).join(' · '), go: '', actions: [{ label: 'Try again', command: 'past', args: { id: v.id, apply: true }, primary: true }] }) } catch { /* an Echo without the Inbox */ }
+      } else if (ctx.inbox) { try { ctx.inbox.clear(`past:${v.id}`.slice(0, 80)) } catch { /* none */ } }
+      let commit = v.commit ? 'skipped: nothing written' : 'off'
+      if (v.commit && items.size) {
+        const r = await commitPaths(v, [...items.values()], `Echo: minutes of ${saved} past calls`)
+        commit = r.commit
+        dropPending(v, r.paths, commit)
+        for (const c of todo) updateRec(String(c.id).replace(/^call:/, ''), (rec) => { const x = rec.saved.find((e) => e.vault === v.id); if (x && x.commit === 'pending') x.commit = commit })
+        if (commitId(commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'minutes', ref: null, plus: 0, minus: 0, commit, also: r.paths })
+      }
+      return { saved, skipped, commit, failed: failures }
+    })
+  }
+  // The rule's notes waiting for their commit, committed now (a terminal has no timer; the app commits after 2 quiet
+  // minutes by itself).
+  ctx.command('commit_pending', async ({ vault } = {}) => {
+    const vs = vault ? [find(load(), vault)] : load()
+    const out = {}
+    for (const v of vs) { const r = await flushPending(v, true); if (r) out[v.id] = r }
+    return out
+  })
+
+  // ── commands: sources ──
+  own('sources', async ({ vault }) => {
+    const v = find(load(), vault)
+    const l = ledger(v)
+    const dir = sourcesDirOf(v)
+    const st = statSafe(v, dir)
+    const there = !!st && st.kind === 'dir'
+    const q = await queueOf(v)
+    const done = processedOf(v)
+    const offerN = l.baseline ? 0 : (await sourceFiles(v)).filter((f) => !done.has(f.path) && !l.sources[f.path]).length
+    const count = (s) => q.filter((x) => x.state === s).length
+    return {
+      folder: dir, exists: there, create: there ? null : `Echo will create ${dir}/ with a README`,
+      offer: offerN ? { count: offerN, folder: dir } : null,
+      counts: { all: q.length, new: count('new'), waiting: count('waiting'), done: count('done'), skipped: count('skipped'), queued: q.filter((x) => x.queued).length },
+      sources: q, baseline: l.baseline, rules: { calls: v.ingest.calls, mail: v.ingest.mail || 'off' }, profile: profileOf(v.profile), web: !!ctx.web, m365: !!ctx.m365,
+    }
+  })
+  own('add_source', async ({ vault, kind, call, message, url, transcript, chat, anyway, profile, since, until, chat_id: chatId }, extra = {}) => {
+    const v = find(load(), vault)
+    if (kind === 'call') {
+      const c = callId(call)
+      try { const a = await callSource(v, c, { transcript: !!transcript, chat: !!chat, anyway: !!anyway }); const { paths, items, ...out } = a; return out } catch (e) {
+        if (e.mismatch) return { mismatch: e.mismatch, error: errText(e) }
+        throw e
+      }
+    }
+    if (kind === 'mail' || kind === 'chat') {
+      // A mail or chat Recall hasn't routed carries no AI profile of its own: the default profile's (`profile` when the
+      // sheet knows Recall's).
+      try {
+        if (kind === 'mail') {
+          if (!message) throw new Error('message: the mail\'s id (Microsoft 365 search gives it)')
+          const { paths, items, ...out } = await mailSource(v, { message: String(message), profile: profile ?? null }, { anyway: !!anyway })
+          return out
+        }
+        return await chatSource(v, String(chatId || ''), since, until, { profile: profile ?? null, anyway: !!anyway })
+      } catch (e) {
+        if (e.mismatch) return { mismatch: e.mismatch, error: errText(e) }
+        throw e
+      }
+    }
+    if (kind === 'file') {
+      let files = (extra && extra.files) || []
+      if (!files.length) {
+        if (!ctx.system || !ctx.system.pickFiles) throw new Error('this Echo has no file picker for plugins')
+        files = await ctx.system.pickFiles('Sources for the vault', { multiple: true })
+      }
+      if (!files.length) return { cancelled: true }
+      const added = []
+      for (const f of files) {
+        try { const { paths, items, ...a } = await writeSource(v, { sub: '', name: safeName(f.name), title: safeName(f.name), by: 'file', file: f.file }); added.push({ name: f.name, ...a }) } catch (e) { added.push({ name: f.name, error: errText(e) }) }
+      }
+      return { added }
+    }
+    if (kind === 'web') {
+      // A web page as Markdown is Echo's to read (`ctx.web.read`, not merged yet): never an extractor of the plugin's.
+      if (!ctx.web || typeof ctx.web.read !== 'function') throw new Error('Adding a web page is not yet in this Echo')
+      const u = String(url || '')
+      if (!/^https:\/\//i.test(u)) throw new Error('a web page by its https address')
+      const page = await ctx.web.read(u)
+      const date = today()
+      const w = webSourceText(u, page && page.title, page && (page.markdown || page.text), date, new Date().toISOString())
+      const { paths, items, ...out } = await writeSource(v, { sub: 'web', name: datedName(date, w.title, 'page'), title: w.title, by: 'web', from: u, text: w.text })
+      return out
+    }
+    throw new Error('kind: call, mail, file or web')
+  })
+  // The queue made into files of the sources folder (calls and mail the events queued): a mail's own text read from
+  // Microsoft 365 only now. One commit for all. (Step 5's batch runs the vault's skill over them.)
+  // One prepare at a time per vault: in this process, and across processes by a marker in the store (taken over after
+  // ten minutes).
+  ctx.command('prepare_sources', async ({ vault }) => {
+    const v = find(load(), vault)
+    return serial(`prep:${v.id}`, async () => {
+      const lock = `locks/prepare-${v.id}.json`
+      if (!takeLock(lock, 10 * 60 * 1000)) throw new Error(`Echo is preparing ${v.name}'s sources already — try again in a moment`)
+      try {
+        const l = ledger(v)
+        const written = [], failedTo = [], items = []
+        for (const [id, q] of Object.entries(l.queued || {})) {
+          if (q.state === 'skipped') continue
+          try {
+            const a = q.kind === 'call'
+              ? await callSource(v, id.replace(/^call:/, ''), { transcript: v.minutes.transcript, chat: v.minutes.chat, noCommit: true, once: true })
+              : await mailSource(v, { ...q, id }, { noCommit: true, once: true })
+            written.push({ id, path: a.path, ...(a.duplicate ? { already: true } : {}) })
+            items.push(...(a.items || []))
+          } catch (e) {
+            // What can't be read (no id yet, another profile, no sign-in) stays queued, saying why.
+            failedTo.push({ id, title: q.title, error: errText(e) })
+            try { updateLedger(v, (x) => { if (x.queued[id]) x.queued[id].why = errText(e) }) } catch { /* the ledger can't be read */ }
+          }
+        }
+        let commit = v.commit ? 'skipped: nothing written' : 'off'
+        if (v.commit && items.length) {
+          const r = await commitPaths(v, items, `Add sources: ${written.filter((w) => !w.already).length}`)
+          commit = r.commit
+          dropPending(v, r.paths, commit)
+          if (commitId(commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'source', ref: null, plus: 0, minus: 0, commit, also: r.paths })
+        }
+        return { written, failed: failedTo, commit }
+      } finally { dropLock(lock) }
+    })
+  })
+  own('skip_source', async ({ vault, path, id, note }) => {
+    const v = find(load(), vault)
+    const n = note == null ? null : Array.from(oneLine(note)).slice(0, 500).join('') || null
+    if (id) {
+      return updateLedger(v, (l) => { if (!l.queued[id]) throw new Error('no such source in the queue'); l.queued[id].state = 'skipped'; l.queued[id].note = n; return { id, state: 'skipped' } })
+    }
+    const why0 = pathProblem(String(path || ''))
+    if (why0) throw new Error(why0)
+    const rel = rsTrim(String(path))
+    if (!(await sourceFiles(v)).some((f) => f.path === rel)) throw new Error(`${rel} isn't a source in ${sourcesDirOf(v)}/`)
+    const sha = (statSafe(v, rel, { sha: true }) || {}).sha || ''
+    updateLedger(v, (l) => { const e = l.sources[rel] || (l.sources[rel] = { sha256: sha, added: new Date().toISOString(), by: 'folder' }); e.state = 'skipped'; e.note = n })
+    return { path: rel, state: 'skipped' }
+  })
+  // The first open's answer for the files already there: done (`done: true`) or new; not asked again.
+  own('baseline', async ({ vault, done }) => {
+    const v = find(load(), vault)
+    const processed = processedOf(v)
+    const found = (await sourceFiles(v)).filter((f) => !processed.has(f.path))
+    const shas = new Map(found.map((f) => [f.path, (statSafe(v, f.path, { sha: true }) || {}).sha || '']))
+    return updateLedger(v, (l) => {
+      const at = new Date().toISOString()
+      let n = 0
+      for (const f of found) if (!l.sources[f.path]) { l.sources[f.path] = { sha256: shas.get(f.path), added: at, by: 'baseline', state: done ? 'done' : 'new' }; n++ }
+      l.baseline = { at, done: !!done }
+      return { marked: n, done: !!done }
+    })
+  })
+
+  // ── the twin preset (starter.rs) ──
+  // The preset's files as the package ships them: every file under `starter/twin/`.
+  const twinFiles = () => {
+    const out = []
+    const walk = (dir) => {
+      for (const name of ctx.package.list(dir) || []) {
+        const p = `${dir}/${name}`
+        const text = ctx.package.read(p)
+        if (text === null || text === undefined) walk(p)
+        else out.push([p.slice('starter/twin/'.length), text])
+      }
+    }
+    walk('starter/twin')
+    return out.sort((a, b) => cmpStr(a[0], b[0]))
+  }
+  ctx.command('starter_files', () => twinFiles().map(([p]) => p))
+  // A new vault from the twin preset in a new or empty folder (picked; the system's picker makes a new one): the files
+  // with its name, owner and day filled in, `git init` and a first commit when asked, registered as `twin@1` (commits
+  // on when committed), an activity line. Echo writes no hidden file for a plugin: the preset's `.claude/skills`,
+  // `.gitignore` and `knowledge/.obsidian` are left out and said so.
+  ctx.command('new_vault', async ({ name: n0, folder: f0, pick, git, minutes }) => {
+    const folder = f0 || pick
+    const name = rsTrim(String(n0 || '')).slice(0, 80)
+    if (!name) throw new Error('a vault needs a name')
+    const mode = minutes == null || minutes === '' ? 'ask' : String(minutes)
+    if (!MINUTES.includes(mode)) throw new Error('minutes: auto, ask or off')
+    const picked = folder ? String(folder) : await ctx.system.pickFolder('A new or empty folder for the vault')
+    if (!picked) return { cancelled: true }
+    if (!ctx.fs.folders().includes(picked)) throw new Error('pick the folder again')
+    const giveBack = () => { if (!folder) try { ctx.fs.forget(picked) } catch { /* not given */ } }
+    const problem = folderProblem(picked, load(), dataDir())
+    if (problem) { giveBack(); throw new Error(problem) }
+    const there = (() => { try { return ctx.fs.list(picked, '') } catch { return [] } })().filter((e) => !['.DS_Store', 'Thumbs.db'].includes(e.name))
+    if (there.length) { giveBack(); throw new Error(`${picked} isn't empty — choose a new or empty folder`) }
+    const files = twinFiles()
+    if (!files.length) throw new Error('the twin preset isn\'t in this plugin')
+    const owner = (() => { try { const m = ctx.echo.read('me'); return (m && typeof m.name === 'string' && rsTrim(m.name)) || 'me' } catch { return 'me' } })()
+    const date = today()
+    const written = [], leftOut = []
+    let lines = 0
+    for (const [p, text] of files) {
+      const target = twinTarget(p)
+      const filled = fillStarter(text, { name, owner, date })
+      try { ctx.fs.write(picked, target, filled, { createNew: true }); written.push(target); lines += textLines(filled).length } catch (e) {
+        if (/hidden/.test(errText(e))) leftOut.push({ path: target, why: errText(e) })
+        else throw e
+      }
+    }
+    let gitState = 'off', first = null
+    if (git) {
+      try {
+        const info = await ctx.git.info(picked)
+        if (info.repo) gitState = 'inside a repository'
+        else {
+          await ctx.git.init(picked, { branch: 'main' })
+          const c = await ctx.git.commit(picked, { paths: written, message: 'Start the vault from Echo\'s twin starter' })
+          first = c && c.rev ? c.rev : null
+          gitState = first ? 'committed' : 'skipped: nothing to commit'
+        }
+      } catch (e) { gitState = /isn't installed/.test(errText(e)) ? 'no git' : `skipped: ${errText(e)}` }
+    }
+    const id = change((vs) => {
+      const p2 = folderProblem(picked, vs, dataDir())
+      if (p2) throw new Error(p2)
+      const v = normalizeVault({ schema: SCHEMA, id: uniqueId(name, vs.map((x) => x.id)), name, root: picked, state: 'analysing', added_at: new Date().toISOString(), structure: 'confirmed', commit: gitState === 'committed', template: TWIN, minutes: { mode } })
+      vs.push(v)
+      return v.id
+    })
+    try { await redetect(id) } catch (e) { ctx.log(`detect ${id}: ${errText(e)}`) }
+    record(vaultOf(id), { at: new Date().toISOString(), path: '', kind: 'new', by: 'starter', ref: TWIN, plus: lines, minus: 0, commit: first })
+    analyse(id).catch(() => {})
+    // Where the twin's skills go (the plugin's setting): the vault's own `.claude/skills`, or `~/.claude/skills`.
+    const where = (() => { try { return ctx.settings.get('skills') === 'global' ? 'global' : 'vault' } catch { return 'vault' } })()
+    const skills = where === 'global'
+      ? { where, installed: false, why: 'Echo doesn\'t let a plugin write your ~/.claude/skills' }
+      : { where, installed: !leftOut.some((x) => x.path.startsWith('.claude/')), why: leftOut.some((x) => x.path.startsWith('.claude/')) ? 'Echo doesn\'t let a plugin write a vault\'s .claude folder' : null }
+    return { id, vault: { id, name }, root: picked, git: gitState, written: written.length, left_out: leftOut, skills }
+  })
+
+  // ── the activity's step-4 commands (seam.js names them; view.js draws their answers, as #17's routes answered) ──
+  // A call's Knowledge for its page: the chip, its ⋯ items and the "Then saved to…" line (`call` as the page has it:
+  // {name, threads, client, profile, notes}).
+  ctx.command('call_knowledge', ({ call: c0 }) => {
+    const c = c0 && typeof c0 === 'object' ? c0 : { name: c0 }
+    const call = callId(c.name)
+    let src = null
+    if (c.notes !== false) { try { src = source(call, { transcript: false, chat: false }) } catch { /* no minutes yet */ } }
+    const p = src ? src.profile : c.profile ?? null
+    const route = routeOf(src ? src.threads : (c.threads || []))
+    const rec = callRec(call)
+    const ps = profilesNow()
+    const vs = load()
+    const vaults = vs.map((v) => ({ id: v.id, name: v.name, available: available(v), profile: profileOf(v.profile, ps), mode: v.minutes.mode }))
+    const revision = src && src.minutes ? src.minutes.revision : null
+    const stale = rec.saved.filter((e) => {
+      if (e.how !== 'manual' || !revision || !e.revision || e.revision === revision) return false
+      const v = vs.find((x) => x.id === e.vault)
+      const st = v ? statSafe(v, e.path, { sha: true }) : null
+      return !!st && st.sha === e.sha256
+    }).map((e) => e.vault)
+    const f = rec.failed[rec.failed.length - 1]
+    return {
+      vaults, targets: targetsOf(rec, route, p).map((v) => ({ id: v.id, name: v.name })),
+      record: { saved: rec.saved, choice: rec.choice }, stale,
+      failure: f ? { vault: f.vault, name: (vs.find((v) => v.id === f.vault) || {}).name || f.vault, error: f.error } : null,
+      profile: profileOf(p, ps),
+    }
+  })
+  // Settings → Meeting minutes: the past calls it would save (`apply`: saved, one commit).
+  ctx.command('past', async ({ id, apply }) => { const v = find(load(), id); return apply ? pastMinutes(v, null, false) : pastCountOf(v) })
+  // How the newest call with minutes on the vault's profile lands here; null before there is one. Nothing written.
+  ctx.command('sample', async ({ id }) => {
+    const v = find(load(), id)
+    const c = (ctx.echo.read('calls', { limit: 200 }) || []).find((x) => x.minutes && sameProfile(x.profile, v))
+    return c ? own.minutes_preview({ call: String(c.id).replace(/^call:/, ''), vault: v.id }) : null
+  })
+  // The twin skill: into the vault (`add`), or for every Claude Code session (`global`, `global_remove`). Echo writes no
+  // hidden file for a plugin (`.claude/…`) and nothing in ~/.claude: said, never worked around.
+  ctx.command('twin', async ({ id, op }) => {
+    const v = find(load(), id)
+    if (op === 'add') {
+      if (statSafe(v, '.claude/skills/twin/SKILL.md')) throw new Error('This vault already has a twin skill')
+      const text = ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md')
+      try { ctx.fs.write(v.root, '.claude/skills/twin/SKILL.md', text, { createNew: true }) } catch (e) {
+        if (/hidden/.test(errText(e))) throw new Error('Echo doesn\'t let a plugin write a vault\'s .claude folder — copy the starter\'s twin skill into .claude/skills/twin/ yourself')
+        throw e
+      }
+      return { path: '.claude/skills/twin/SKILL.md' }
+    }
+    if (op === 'global' || op === 'global_remove') throw new Error('Echo doesn\'t let a plugin write your ~/.claude/skills')
+    throw new Error('op: add, global or global_remove')
+  })
+  // The vault's twin skill as `global` would write it: its own (else the starter's), named, its paths made absolute.
+  ctx.command('twin_text', ({ id, name }) => {
+    const v = find(load(), id)
+    const own = readSafe(v, '.claude/skills/twin/SKILL.md', 1 << 20)
+    const n = String(name || '') || (v.id.includes('twin') ? v.id : `${v.id}-twin`)
+    return { name: n, own: own !== null, text: twinSkillText(own ?? ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md') ?? '', { id: v.id, name: v.name, root: v.root }, n) }
+  })
+  // Ingest's queue as the view lists it (sources.rs `value`): the folder, the first open's question, the sources with
+  // their state, and what is queued and not written yet. Runs are step 5's: none here.
+  ctx.command('ingest_queue', async ({ id }) => {
+    const v = find(load(), id)
+    const s = await own.sources({ vault: v.id })
+    const ps = profilesNow()
+    const sources = s.sources.map((x) => ({
+      path: x.path || x.id, kind: x.kind, title: x.title, state: x.state,
+      meta: { size: x.size ?? null, markdown: !!x.path && isMd(x.path), added: x.added, by: x.by, note: x.note, run: null, kept: null, anyway: x.anyway, queued: !!x.queued, rule: x.rule || null },
+    }))
+    return { ...s, sources, runs: [], profile_name: profileName(s.profile, ps), max_file: 50 << 20 }
+  })
+  // The system's file picker, for the Add a source sheet: names and sizes, the handles kept by the sheet.
+  ctx.command('pick_files', async () => {
+    const files = await ctx.system.pickFiles('Sources for the vault', { multiple: true })
+    return { seq: `p${Date.now().toString(36)}`, files: files.map((f) => ({ name: f.name, size: f.size })), handles: files }
+  })
+  ctx.command('source_add', async (a, extra = {}) => {
+    const { id, kind } = a
+    if (kind === 'files') {
+      const r = await own.add_source({ vault: id, kind: 'file' }, extra)
+      if (r.cancelled) return { added: [], refused: [] }
+      return { added: r.added.filter((x) => x.path), refused: r.added.filter((x) => x.error).map((x) => ({ name: x.name, why: x.error })) }
+    }
+    if (kind === 'call') {
+      const r = await own.add_source({ vault: id, kind: 'call', call: a.call, transcript: a.transcript, chat: a.chat, anyway: a.anyway })
+      if (r.mismatch) { const ps = profilesNow(); return { mismatch: { ...r.mismatch, call_name: profileName(r.mismatch.call, ps), vault_name: profileName(r.mismatch.vault, ps) } } }
+      return r
+    }
+    const r = await own.add_source({ vault: id, kind, message: a.message, url: a.url, chat_id: a.chat, since: a.since, until: a.until, anyway: a.anyway, profile: a.profile })
+    if (r && r.mismatch) { const ps = profilesNow(); return { mismatch: { ...r.mismatch, call_name: profileName(r.mismatch.call, ps), vault_name: profileName(r.mismatch.vault, ps) } } }
+    return r
+  })
+  ctx.command('source_skip', ({ id, path, note }) => (/^(call|mail):/.test(String(path || '')) ? own.skip_source({ vault: id, id: path, note }) : own.skip_source({ vault: id, path, note })))
+  // Calls and memos with minutes, for the sheet: newest first, their profile and whether it is the vault's, their note.
+  ctx.command('source_calls', ({ id, q }) => {
+    const v = find(load(), id)
+    const ps = profilesNow()
+    const rows = (ctx.echo.read('calls', { q: String(q || ''), limit: 200 }) || []).filter((c) => c.minutes).slice(0, 40)
+    return {
+      calls: rows.map((c) => {
+        const call = String(c.id).replace(/^call:/, '')
+        const e = callRec(call).saved.find((x) => x.vault === v.id)
+        return { name: call, title: c.title, date: c.date, people: c.people || [], memo: !!c.memo, profile: profileOf(c.profile, ps), profile_name: profileName(profileOf(c.profile, ps), ps), profile_ok: sameProfile(c.profile, v), transcript: !!c.transcript, chat: !!c.chat, note: e && statSafe(v, e.path) ? e.path : null }
+      }),
+    }
+  })
+  // Mail and Teams chats matching `q` over 90 days, through Echo's Microsoft 365 sign-in; without one, only that.
+  ctx.command('source_m365', async ({ q }) => {
+    if (!ctx.m365) return { signed_in: false, results: [] }
+    if (!String(q || '').trim()) return { signed_in: true, results: [] }
+    try {
+      const r = await ctx.m365.search(String(q), { kinds: ['mail', 'chats'], days: 90 })
+      const addable = (h) => h.kind === 'mail' || (h.kind === 'chats' && typeof h.chat === 'string' && h.chat && h.channel == null)
+      return { signed_in: true, results: ((r && r.results) || []).filter(addable), errors: (r && r.errors) || null }
+    } catch (e) {
+      if (/isn't connected/.test(errText(e))) return { signed_in: false, results: [] }
+      throw e
+    }
+  })
+  // A Teams chat's messages over some local days as a source (sources.rs `add_chat_messages`), `teams/<until>-<chat>.md`.
+  const chatSource = async (v, chat, since, until, { profile = null, anyway = false } = {}) => {
+    if (!chat) throw new Error('which chat?')
+    if (!anyway && !sameProfile(profile, v)) throw mismatch(profile, v)
+    const r = await ctx.m365.chat(chat, { since, until })
+    const t = chatSourceText(r)
+    const { paths, items, ...out } = await writeSource(v, { sub: 'teams', name: datedName(t.until, t.name, 'chat'), title: t.title, by: 'teams', from: chat, anyway: !sameProfile(profile, v), text: t.text })
+    return out
+  }
 
   // An analysis Echo quit during is run again — once it can't be running anywhere (its run stops after 10 minutes):
   // a terminal's `echoctl plugin call` loads this plugin in a process of its own and must not start a second one.

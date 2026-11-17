@@ -23,7 +23,7 @@ test('registry: a 0.8 record keeps its id, name, folder, description state and f
   assert.equal(v.profile, null)
   assert.equal(v.detected, null)
   assert.deepEqual(v.overrides, {})
-  assert.deepEqual(v.ingest, { skill: null, calls: 'off' })
+  assert.deepEqual(v.ingest, { skill: null, calls: 'off', mail: 'off' })
   assert.equal(v.template, null)
 })
 

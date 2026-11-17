@@ -63,7 +63,16 @@ without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `wher
   say out loud.
 - Only where the session may write (the Claude · Echo folder session); elsewhere, read only.
 
+## Calls and sources
+
+- Echo saves a call's minutes into its vault by itself (the thread's, else the client's, else the default vault, when
+  that vault's minutes are Auto); notes it wrote say `origin: echo` and `echo_call:`. Don't write minutes into a vault
+  yourself: when the user asks, `echoctl plugin call obsidian save_minutes '{"call":"<call folder>"}'` (it writes, so
+  it asks first); `route {"call"}` says where a call would go and why.
+- A vault's sources folder (`raw_inbox/` and the like) holds what came in as it came: never edit or delete a source.
+
 ## Where the user manages it
 
 - Connecting, reading again, correcting a vault's description, whom it is for, removing it, browsing its pages and
   graph: the Knowledge activity (⌘K "Connect a folder…"), the vault's Settings tab.
+- Where a thread's or client's calls go: its Profile → Knowledge vault.

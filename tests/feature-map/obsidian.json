@@ -21,12 +21,6 @@
    "check": "agent"
   },
   {
-   "id": "F-OB-04",
-   "title": "Knowledge is an entry for Claude while it is on and holds notes, first; turned off, the entry goes",
-   "priority": "medium",
-   "check": "agent"
-  },
-  {
    "id": "F-OB-05",
    "title": "A vault's description is the user's data to Claude: a hostile \"when\" line (a |, tags, a line break, an instruction) stays one escaped row of the core, and no words of the user's description go into the guide, which points to the description as data",
    "priority": "high",
@@ -40,8 +34,26 @@
   },
   {
    "id": "F-OB-07",
-   "title": "Claude in Echo may run the index's read commands without asking (uses.sessions.commands: search, info, links, backlinks, resolve, tags, where, tasks, unresolved — named on the install sheet, not rename_plan); they work from the laid-out launcher and only read",
+   "title": "Claude in Echo may run the index's commands without asking (uses.sessions.commands: search, info, links, backlinks, resolve, tags, where, tasks, unresolved, rename_plan — named on the install sheet); they work from the laid-out launcher and only read",
    "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-08",
+   "title": "Updated from Obsidian vaults 0.8: the update asks again (it may now change the folders), the vaults keep their ids, descriptions, for whom and Claude's entries, each takes a call's minutes only when asked; 0.8's facts vault, its pipeline's state, its entry for Claude and its commands are gone at once, and a second load changes nothing",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-09",
+   "title": "A vault's settings (minutes auto/ask/off, AI profile, commit, ingest, its folders) are checked as the user sets them; one vault is the default for minutes, and removing it leaves none",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-10",
+   "title": "A folder that is a vault already, is inside one, or holds one isn't connected again, and the folder is given back",
+   "priority": "medium",
    "check": "agent"
   }
  ]

@@ -104,3 +104,122 @@ test('registry: settings are checked as the user sets them', () => {
   assert.throws(() => setVaultKey(v, 'scope', 'all'), /no setting “scope”/)
   assert.equal(v.minutes.mode, 'ask', 'the record given is left as it was')
 })
+
+// ── the plugin from 0.8: on a fake of Echo's ctx ──
+import { apply } from '../../plugins/obsidian/main.js'
+import { fakeCtx } from '../helpers/fake-ctx.mjs'
+
+const DESC = '## When Claude looks here\n\nDecisions on Acme projects\n\n## What it is\n\nThe team\'s wiki.\n'
+const store08 = () => ({
+  'vaults.json': JSON.stringify([OLD, { id: 'home', name: 'Home', root: '/v/home', state: 'review', added_at: '2026-10-02T09:00:00.000Z' }], null, 2),
+  'vaults/acme-wiki/description.md': DESC,
+  'vaults/acme-wiki/index.json': '{"v":2}',
+  'vaults/echo/index.json': '{"v":2}',
+  'vaults.md': '# The user\'s Obsidian vaults',
+  'vault/Clients/Acme.md': '# Acme\n',
+  'vault/_echo/Rules.md': '# What this vault keeps\n',
+  'vault/index.md': '- [[Acme]]\n',
+  'knowledge/things.json': '{}', 'knowledge/queue.json': '["call:1"]', 'knowledge/failed.json': '{}',
+  'knowledge/dictionary.hash': 'x', 'knowledge/render.version': '2',
+  'runs/knowledge/2026-10-03/answer.md': 'x',
+  'runs/acme-wiki/2026-10-01/answer.md': 'x',
+})
+const ctx08 = (extra = {}) => fakeCtx({
+  id: 'obsidian', agent: true, sessions: true, hints: true, inbox: true, settings: { knowledge: true },
+  folders: ['/v/acme-wiki', '/v/home'], echo: { clients: [{ id: 'acme', name: 'Acme' }], threads: [{ id: 'acme-rollout', name: 'Rollout' }] },
+  profiles: { default: 'default', profiles: [{ id: 'default', name: 'Claude' }, { id: 'work', name: 'Work' }] },
+  store: store08(), ...extra,
+})
+
+test('from 0.8: the vaults take this shape, minutes only when asked; the facts vault and its state are gone; descriptions and entries stay', () => {
+  const ctx = ctx08()
+  apply(ctx)
+  const vs = JSON.parse(ctx.files['vaults.json'])
+  assert.deepEqual(vs.map((v) => [v.id, v.schema, v.minutes.mode, v.confirmed]), [['acme-wiki', 1, 'ask', true], ['home', 1, 'ask', false]])
+  assert.equal(vs[0].in_git, true)
+  const left = Object.keys(ctx.files).sort()
+  assert.ok(!left.some((p) => /^(vault|knowledge)\//.test(p) || p.startsWith('vaults/echo/') || p.startsWith('runs/knowledge/')), left.join(' '))
+  for (const kept of ['vaults/acme-wiki/description.md', 'vaults/acme-wiki/index.json', 'runs/acme-wiki/2026-10-01/answer.md']) assert.ok(kept in ctx.files, kept)
+  assert.deepEqual(ctx.agentNow.part.entries.map((e) => e.name), ['acme-wiki'], 'Claude is told the confirmed vault, never a facts vault')
+  assert.match(ctx.files['vaults.md'], /^# The user's Knowledge vaults/)
+  assert.ok(!ctx.files['vaults.md'].includes('Echo\'s own'))
+  assert.deepEqual(ctx.logs, [])
+})
+
+test('from 0.8: loading again changes nothing (the migration is done once and harmless after)', () => {
+  const ctx = ctx08()
+  apply(ctx)
+  const once = JSON.stringify(ctx.files)
+  apply(ctx)
+  assert.equal(JSON.stringify(ctx.files), once)
+  assert.deepEqual(ctx.logs, [])
+})
+
+test('from 0.8: a store with no vaults gets no registry written; a broken registry is read as none', () => {
+  const ctx = ctx08({ store: { 'vault/Acme.md': '# Acme\n' } })
+  apply(ctx)
+  assert.deepEqual(Object.keys(ctx.files), ['vaults.md'], 'only the (empty) catalog: no registry, no facts vault')
+  const bad = ctx08({ store: { 'vaults.json': 'not json' } })
+  apply(bad)
+  assert.equal(bad.files['vaults.json'], 'not json', 'left for the user — not overwritten until a vault changes')
+  assert.deepEqual(bad.agentNow.part, { summary: null, entries: [] })
+})
+
+test('the 0.8 facts commands are gone', () => {
+  const ctx = ctx08()
+  apply(ctx)
+  for (const c of ['knowledge', 'knowledge_fill', 'knowledge_wake', 'knowledge_retry', 'knowledge_status', 'ingest', 'forget_source', 'echo_reindex']) assert.ok(!(c in ctx.commands), c)
+  for (const c of ['view', 'add', 'set', 'default', 'remove', 'search', 'rename_plan']) assert.ok(c in ctx.commands, c)
+})
+
+test('set: a vault\'s setting is checked and kept; a profile must be one of the user\'s', async () => {
+  const ctx = ctx08()
+  apply(ctx)
+  const v = await ctx.run('set', { id: 'acme-wiki', key: 'minutes', value: 'auto' })
+  assert.equal(v.minutes.mode, 'auto')
+  assert.equal(JSON.parse(ctx.files['vaults.json'])[0].minutes.mode, 'auto')
+  assert.equal((await ctx.run('set', { id: 'acme-wiki', key: 'profile', value: 'work' })).profile, 'work')
+  await assert.rejects(ctx.run('set', { id: 'acme-wiki', key: 'profile', value: 'other' }), /no AI profile “other”/)
+  await assert.rejects(ctx.run('set', { id: 'nope', key: 'minutes', value: 'off' }), /no such vault/)
+  await assert.rejects(ctx.run('set', { id: 'acme-wiki', key: 'scope', value: 'all' }), /no setting/)
+  // A folder the vault doesn't have, or a file where a folder is wanted.
+  ctx.fs.stat = (root, path) => (path === 'knowledge' ? { kind: 'dir', real: 'knowledge' } : path === 'CATALOG.md' ? { kind: 'file', real: 'CATALOG.md' } : null)
+  assert.equal((await ctx.run('set', { id: 'acme-wiki', key: 'pages', value: 'knowledge' })).overrides.pages, 'knowledge')
+  assert.equal((await ctx.run('set', { id: 'acme-wiki', key: 'index', value: 'CATALOG.md' })).overrides.index, 'CATALOG.md')
+  await assert.rejects(ctx.run('set', { id: 'acme-wiki', key: 'notes', value: 'missing' }), /isn't in this vault/)
+  await assert.rejects(ctx.run('set', { id: 'acme-wiki', key: 'notes', value: 'CATALOG.md' }), /isn't a folder/)
+})
+
+test('default: the vault minutes go to by default; removing it leaves none', async () => {
+  const ctx = ctx08()
+  ctx.fs.forget = () => true
+  apply(ctx)
+  assert.deepEqual(await ctx.run('default', { id: 'home' }), { default: 'home' })
+  assert.equal((await ctx.run('view')).default, 'home')
+  await assert.rejects(ctx.run('default', { id: 'nope' }), /no such vault/)
+  await ctx.run('remove', { id: 'home' })
+  assert.equal((await ctx.run('view')).default, null)
+  assert.deepEqual(JSON.parse(ctx.files['vaults.json']).map((v) => v.id), ['acme-wiki'])
+  await ctx.run('remove', { id: 'acme-wiki' })
+  assert.ok(!Object.keys(ctx.files).some((p) => p.startsWith('vaults/acme-wiki/')), 'its description and index go with it')
+})
+
+test('add: a folder inside, around or the same as a vault is refused and given back', async () => {
+  const forgot = []
+  const ctx = ctx08({ folders: ['/v/acme-wiki', '/v/home', '/v/acme-wiki/Decisions', '/v'] })
+  ctx.fs.forget = (root) => { forgot.push(root); return true }
+  apply(ctx)
+  await assert.rejects(ctx.run('add', { root: '/v/acme-wiki/Decisions' }), /inside “acme-wiki”/)
+  await assert.rejects(ctx.run('add', { root: '/v' }), /holds “acme-wiki”/)
+  assert.deepEqual(forgot, ['/v/acme-wiki/Decisions', '/v'])
+  assert.deepEqual(await ctx.run('add', { root: '/v/home' }), { id: 'home', already: true })
+})
+
+test('from 0.8: a terminal\'s first load lays out Claude\'s entries again (the facts entry goes); a later one doesn\'t', () => {
+  const ctx = ctx08({ terminal: true })
+  apply(ctx)
+  assert.equal(ctx.agentNow.sets, 1)
+  assert.deepEqual(ctx.agentNow.part.entries.map((e) => e.name), ['acme-wiki'])
+  apply(ctx)
+  assert.equal(ctx.agentNow.sets, 1)
+})

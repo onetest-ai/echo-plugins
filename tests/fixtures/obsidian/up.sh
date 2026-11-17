@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# The Obsidian plugin's functional cases' environment, never the user's own Echo or vaults:
-#   ECHO_REPO=<an Echo checkout, built with `cargo build`> tests/fixtures/obsidian/up.sh <dir> <port>
+# The Knowledge plugin's (`obsidian`) functional cases' environment, never the user's own Echo or vaults:
+#   ECHO_REPO=<an Echo checkout, built with `cargo build`> [OBSIDIAN_FROM=0.8] tests/fixtures/obsidian/up.sh <dir> <port>
+#   tests/fixtures/obsidian/next.sh <dir>     # OBSIDIAN_FROM=0.8 only: this checkout's version offered as the update
 #   tests/fixtures/obsidian/down.sh <dir>
 # <dir> must not exist yet. It builds Echo's standard made-up data (Echo's tests/fixtures/make_data.py; its `claude` is
 # the test fake, which refuses every run: Claude's reading of a vault fails, and a case writes its description), makes
-# two made-up vaults in <dir>/vaults (acme-wiki, home-notes), installs this checkout's Obsidian plugin from a local
-# marketplace, puts one made-up note in its Knowledge vault (read in only once a case turns Knowledge on), and serves
-# Echo's window at http://127.0.0.1:<port>. CLI steps run after `. <dir>/env` (`echoctl` is then the debug build); a
-# vault is connected with `ECHOCTL_PICK_FOLDER=$VAULTS/<vault> echoctl plugin call obsidian add '{"wait":true}'`.
+# two made-up vaults in <dir>/vaults (acme-wiki, home-notes), installs this checkout's plugin from a local marketplace
+# (<dir>/market, a copy), and serves Echo's window at http://127.0.0.1:<port>. CLI steps run after `. <dir>/env`
+# (`echoctl` is then the debug build); a vault is connected with
+# `ECHOCTL_PICK_FOLDER=$VAULTS/<vault> echoctl plugin call obsidian add '{"wait":true}'`.
+# OBSIDIAN_FROM=0.8 installs Obsidian vaults 0.8.0 instead (this repository's commit 6481be6) as a user of it has it:
+# both vaults connected, acme-wiki described and confirmed, its Knowledge (the facts vault) on with one note and its
+# pipeline's state; `next.sh` then puts this checkout's version in the marketplace for `echoctl plugin update`.
 set -euo pipefail
 usage="usage: ECHO_REPO=<echo checkout> up.sh <dir> <port>"
 dir="${1:?$usage}"; port="${2:?$usage}"
@@ -27,29 +31,42 @@ printf -- '---\ntags: [decision]\n---\n# Rollout by region\n\nAcme rolls out by 
 printf -- '---\nrole: QA lead\n---\n# Ada Lovelace\n\nQA lead at Acme.\n' > "$v/acme-wiki/People/Ada Lovelace.md"
 printf -- '# Lisbon\n\nThree days in May.\n' > "$v/home-notes/Trips/Lisbon.md"
 
-printf 'export PATH="%s:$PATH"\nexport VAULTS="%s"\n' "$echo_repo/target/debug" "$v" >> "$dir/env"
+printf 'export PATH="%s:$PATH"\nexport VAULTS="%s"\nexport MARKET="%s"\n' "$echo_repo/target/debug" "$v" "$dir/market" >> "$dir/env"
+from="${OBSIDIAN_FROM:-}"
+case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;; esac
 
 (
   . "$dir/env"
   [ "$(command -v echoctl)" = "$bin" ] || { echo "the debug echoctl isn't first on PATH" >&2; exit 1; }
   case "${ECHOCTL_HOME:-}" in "$dir"/*) ;; *) echo "ECHOCTL_HOME isn't inside $dir: stopping" >&2; exit 1;; esac
-  # An Echo built from source may be older by its number than the release the plugin asks for (its features are in,
-  # the release isn't out): install a copy whose `echo` is the built one, and say so.
-  market="$plugins"
-  built="$(echoctl --version | awk '{print $2}')"
-  want="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("echo","").lstrip(">="))' "$plugins/plugins/obsidian/echo-plugin.json")"
-  if [ -n "$want" ] && [ "$(printf '%s\n%s\n' "$built" "$want" | sort -V | head -1)" != "$want" ]; then
-    market="$dir/market"
-    rsync -a --exclude .git --exclude tests "$plugins/" "$market/"
-    python3 -c 'import json,sys; p,b=sys.argv[1],sys.argv[2]; m=json.load(open(p)); m["echo"]=">="+b; json.dump(m,open(p,"w"),indent=2)' "$market/plugins/obsidian/echo-plugin.json" "$built"
-    echo "Echo $built from source (the plugin asks for $want): installed from a copy with echo >=$built" > "$dir/install.log"
+  # The marketplace: a copy of this checkout (or of 0.8.0), whose `echo` is the built Echo's when that is older by its
+  # number than the release the plugin asks for (its features are in, the release isn't out) — said in install.log.
+  market="$dir/market"
+  if [ "$from" = 0.8 ]; then
+    mkdir -p "$market"
+    git -C "$plugins" archive 6481be6 echo-marketplace.json plugins | tar -x -C "$market"
+  else
+    "$here/next.sh" "$dir" > /dev/null
   fi
+  "$here/next.sh" --echo-only "$dir" >> "$dir/install.log"
   echoctl plugin marketplace add "$market" --name local > /dev/null
   echoctl plugin install obsidian --from local --yes >> "$dir/install.log"
-  # Knowledge's own vault, as the plugin writes it: one made-up note, read in by `echo_reindex` once Knowledge is on.
-  k="$ECHOCTL_HOME/.echo/plugins/obsidian/vault"
-  mkdir -p "$k"
-  printf -- '---\ntags: [type/organisation, client/acme]\n---\n# Acme\n\n- Acme rolls out by region, EU first.\n' > "$k/Acme.md"
+  if [ "$from" = 0.8 ]; then
+    # As a 0.8 user has it: both vaults connected (the fake claude can't describe them), acme-wiki described and
+    # confirmed; Knowledge on, with its facts vault's one note and its pipeline's state.
+    for x in acme-wiki home-notes; do ECHOCTL_PICK_FOLDER="$v/$x" echoctl plugin call obsidian add '{"wait":true}' > /dev/null; done
+    echoctl plugin call obsidian save '{"id":"acme-wiki","key":"when","text":"Decisions on Acme projects and who made them"}' > /dev/null
+    echoctl plugin call obsidian confirm '{"id":"acme-wiki"}' > /dev/null
+    echoctl plugin set obsidian knowledge true > /dev/null
+    s="$ECHOCTL_HOME/.echo/plugins/obsidian"
+    mkdir -p "$s/vault/Clients" "$s/vault/_echo" "$s/knowledge"
+    printf -- '---\ntags: [type/client, client/acme]\n---\n# Acme\n\n- [what] Acme rolls out by region, EU first.\n' > "$s/vault/Clients/Acme.md"
+    printf -- '# What this vault keeps\n' > "$s/vault/_echo/Rules.md"
+    printf -- '- [[Acme]]\n' > "$s/vault/index.md"
+    printf '{"Acme":{"type":"client","written":true}}' > "$s/knowledge/things.json"
+    printf '[]' > "$s/knowledge/queue.json"
+    echoctl plugin call obsidian echo_reindex > /dev/null
+  fi
   cd "$echo_repo"
   ECHOCTL_SERVE_IPC=1 nohup echoctl window --serve "$port" > "$dir/serve.log" 2>&1 &
   echo $! > "$dir/pid"

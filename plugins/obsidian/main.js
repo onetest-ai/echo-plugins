@@ -1856,12 +1856,17 @@ export const commitId = (label) => (label && label !== 'off' && label !== 'pendi
 /** The platform a call's `app` names, as the note's `meeting:` says it. */
 export const PLATFORMS = { teams: 'MS Teams', zoom: 'Zoom', meet: 'Google Meet', 'google-meet': 'Google Meet', slack: 'Slack', webex: 'Webex' }
 
+/** A value made one line for a property: control characters (`\r`, `\n`, tab, NEL) and the line and paragraph
+ *  separators (U+2028/2029) become spaces — none can start another key. */
+export const yamlFlat = (s) => String(s == null ? '' : s).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, ' ')
 /** A YAML value as Echo's notes write it (export.rs `quoted`): double-quoted, `\` and `"` escaped, one line. */
-export const yamlQuoted = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ')}"`
+export const yamlQuoted = (s) => `"${yamlFlat(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+/** An item of a YAML flow list (`[a, b]`): plain only when it holds none of the list's own marks. */
+export const yamlItem = (s) => { const v = yamlValue(s); return v.startsWith('"') || !/[,[\]{}]/.test(v) ? v : yamlQuoted(s) }
 
 /** A YAML value as Echo's notes write it (export.rs `yaml`): plain when that reads back the same, else quoted. */
 export function yamlValue(s) {
-  const t = String(s)
+  const t = yamlFlat(s)
   const plain = t !== '' && !/^[[\]{}&*!|>'"%@`#,?:-]/.test(t) && !isWs(t[0]) && !isWs(t[t.length - 1]) && !t.includes(': ') &&
     !t.includes(' #') && !t.endsWith(':') && !/[\n"']/.test(t) && !['true', 'false', 'yes', 'no', 'null', 'on', 'off', '~'].includes(asciiLower(t))
   return plain ? t : yamlQuoted(t)
@@ -1911,9 +1916,12 @@ const trimDotsWs = (s) => { let a = 0, b = s.length; while (a < b && (s[a] === '
 export function noteFileName(naming, date, title, stem) {
   const s = stem == null ? '' : rsTrim(String(stem))
   if (s) {
-    let clean = trimDotsWs(s.replace(BAD_NAME, '-'))
-    while (clean.endsWith('.md')) clean = clean.slice(0, -3)
-    return `${clean}.md`
+    let clean = rsTrim(s.replace(BAD_NAME, '-'))
+    while (asciiLower(clean).endsWith('.md')) clean = rsTrim(clean.slice(0, -3))
+    clean = trimDotsWs(clean)
+    // As a source's name is made safe: no device name, short enough for both systems, never a lone dot.
+    const safe = safeName(`${clean || 'note'}.md`)
+    return safe === '.md' || safe.startsWith('.') ? 'note.md' : safe
   }
   if (naming === DATE_TITLE) {
     const t = Array.from(String(title).replace(BAD_NAME, '-')).slice(0, 80).join('')
@@ -1963,7 +1971,7 @@ export const personLink = (key) => `echo://person/${String(key).replace(/%/g, '%
  *  tag, participants: [{name, person}], duration, client (a wikilink or a name), threads: [names], link, call,
  *  summary, body, transcript, chat}. */
 export function noteText(f) {
-  const fm = [`title: ${yamlQuoted(f.title)}`, `date: ${f.date}`, `meeting: ${yamlQuoted(f.meeting)}`, `tags: [${yamlValue(f.tag)}]`]
+  const fm = [`title: ${yamlQuoted(f.title)}`, `date: ${f.date}`, `meeting: ${yamlQuoted(f.meeting)}`, `tags: [${yamlItem(f.tag)}]`]
   const names = []
   for (const p of f.participants || []) { const n = rsTrim(String((p && p.name) || '')); if (n && !names.includes(n)) names.push(n) }
   if (names.length) fm.push(`participants: ${yamlValue(names.join(', '))}`)
@@ -1972,8 +1980,8 @@ export function noteText(f) {
   if (f.duration > 0) fm.push(`duration: ${f.duration}m`)
   if (f.client) fm.push(`client: ${yamlQuoted(f.client)}`)
   if ((f.threads || []).length) fm.push(`threads: [${f.threads.map(yamlQuoted).join(', ')}]`)
-  fm.push(`source: ${f.link}`, 'origin: echo', `echo_call: ${f.call}`, `summary: ${yamlQuoted(f.summary || '')}`)
-  let text = `---\n${fm.join('\n')}\n---\n\n# ${f.title} — ${f.date}\n\n${rsTrim(String(f.body || ''))}\n`
+  fm.push(`source: ${yamlQuoted(f.link)}`, 'origin: echo', `echo_call: ${yamlQuoted(f.call)}`, `summary: ${yamlQuoted(f.summary || '')}`)
+  let text = `---\n${fm.join('\n')}\n---\n\n# ${oneLine(f.title)} — ${f.date}\n\n${rsTrim(String(f.body || ''))}\n`
   if (f.transcript != null) text += `\n## Transcript\n\n${transcriptPart(f.transcript)}\n`
   if (f.chat) text += `\n## Chat\n\n${rsTrim(f.chat)}\n`
   return text
@@ -2056,9 +2064,10 @@ export function datedName(date, title, fallback) {
 export function processedPaths(logText) {
   const out = new Set()
   for (const l of String(logText || '').split('\n')) {
-    const at = l.indexOf('· processed ·')
-    if (at < 0) continue
-    let p = l.slice(at + '· processed ·'.length).split('→')[0]
+    // Only a line of its own in the starter's format: never `processed` inside another line's words.
+    const m = /^- \d{4}-\d{2}-\d{2} · processed · /.exec(l)
+    if (!m) continue
+    let p = l.slice(m[0].length).split('→')[0]
     p = p.split(' -> ')[0]
     p = rsTrim(rsTrim(p).replace(/^`+|`+$/g, ''))
     if (p) out.add(p)
@@ -2093,7 +2102,7 @@ export function callSourceText({ title: t0, date, memo, participants, duration, 
   for (const p of participants || []) { const n = rsTrim(String((p && p.name) || '')); if (n && !names.includes(n)) names.push(n) }
   if (names.length) fm.push(`participants: ${yamlValue(oneLine(names.join(', ')))}`)
   if (duration > 0) fm.push(`duration: ${duration}m`)
-  fm.push(`source: ${link}`)
+  fm.push(`source: ${yamlQuoted(link)}`)
   if (note) fm.push(`note: ${yamlValue(note)}`)
   fm.push('origin: echo')
   let out = `---\n${fm.join('\n')}\n---\n\n# ${mdText(title)} — minutes\n\n${rsTrimEnd(String(text || ''))}\n`
@@ -2190,8 +2199,26 @@ export function messageIdOf(url) {
 export const TWIN = 'twin@1'
 /** The twin preset's files in the package (`starter/twin/…`); `gitignore` is written as `.gitignore`. */
 export const twinTarget = (p) => (p === 'gitignore' ? '.gitignore' : p)
-/** A starter file's text with the vault's name, owner and day filled in; Obsidian's own `{{title}}`/`{{date}}` stay. */
-export const fillStarter = (text, { name, owner, date }) => String(text).split('{{vault.name}}').join(name).split('{{vault.owner}}').join(owner).split('{{vault.date}}').join(date)
+/** A starter file's text with the vault's name, owner and day filled in; Obsidian's own `{{title}}`/`{{date}}` stay.
+ *  In the properties each filled value stays one value (a quoted one escaped, a plain one quoted when it must be); in
+ *  the text it is one line of Markdown text. */
+export function fillStarter(text, { name, owner, date }) {
+  const fill = (s, f) => s.split('{{vault.name}}').join(f(name)).split('{{vault.owner}}').join(f(owner)).split('{{vault.date}}').join(date)
+  const [raw, body] = fmSplit(String(text))
+  const inBody = (x) => mdText(oneLine(x))
+  if (raw === null) return fill(String(text), inBody)
+  const lines = raw.split('\n').map((l) => {
+    if (!l.includes('{{vault.')) return l
+    const m = /^([A-Za-z_][\w-]*):[ \t]*(.*)$/.exec(l)
+    if (!m) return fill(l, oneLine)
+    const v = m[2]
+    if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) return `${m[1]}: "${fill(v.slice(1, -1), (x) => yamlFlat(x).replace(/\\/g, '\\\\').replace(/"/g, '\\"'))}"`
+    return `${m[1]}: ${yamlValue(fill(v, oneLine))}`
+  })
+  return `---\n${lines.join('\n')}\n---\n${fill(body, inBody)}`
+}
+/** Words Echo writes into a vault's `log.md` line: one line, no ` · ` of the log's own (a title can't fake a line). */
+export const logText = (s) => oneLine(s).replace(/·/g, '-')
 /** A call's key in the store (`calls/<key>.json`): its folder's stamp `YYYY-MM-DD_HHMMSS`, which a retitle keeps (Echo
  *  opens a retitled call by it); a folder without one by its name when that is plain ASCII, else by its sha. */
 export const callKey = (call, sha) => {
@@ -4108,7 +4135,7 @@ export function apply(ctx) {
   const recPath = (call) => `calls/${callKey(call, ctx.crypto.sha256)}.json`
   const EMPTY_REC = { choice: null, saved: [], failed: [] }
   const callRec = (call) => ({ ...EMPTY_REC, ...readJson(recPath(call), EMPTY_REC) })
-  const updateRec = (call, fn) => updateJson(recPath(call), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; return fn(r) })
+  const updateRec = (call, fn) => { pastGen++; return updateJson(recPath(call), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; return fn(r) }) }
   const source = (call, opts) => ctx.echo.read('source', `call:${call}`, opts)
 
   // ── where a call goes ──
@@ -4182,6 +4209,39 @@ export function apply(ctx) {
     throw new Error(`no free file name for ${base}`)
   }
   const pendingPath = (id) => `vaults/${id}/pending.json`
+  // A marker in the store that one process holds `path` (the app's handler or a terminal's command): taken with
+  // `createNew`, taken over only from a holder older than `ms` (compare-and-swap on what was read). → whether it is ours.
+  const takeLock = (path, ms) => {
+    const mark = JSON.stringify({ at: Date.now(), by: ctx.terminal ? 'terminal' : 'app' })
+    try { ctx.store.write(path, mark, { createNew: true }); return true } catch (e) { if (!/there already/.test(errText(e))) throw e }
+    const cur = ctx.store.read(path)
+    let at = 0
+    try { at = Number(JSON.parse(cur).at) || 0 } catch { /* a broken marker: old */ }
+    if (cur == null || Date.now() - at < ms) return false
+    try { ctx.store.write(path, mark, { ifSha: ctx.crypto.sha256(cur) }); return true } catch { return false }
+  }
+  const dropLock = (path) => { try { ctx.store.remove(path) } catch { /* gone */ } }
+  // One commit of the files Echo wrote, each only while it is still as Echo wrote it (its sha read again right before
+  // the commit: a file changed since is the user's and left out), 1,000 paths a commit at most. → {commit, paths
+  // (committed), changed (left out), failed}.
+  const commitPaths = async (v, items, message) => {
+    if (!v.commit) return { commit: 'off', paths: [], changed: [] }
+    const ok = [], changedNow = []
+    for (const it of items) { const st = statSafe(v, it.path, { sha: true }); if (st && st.kind === 'file' && (it.sha == null || st.sha === it.sha)) ok.push(it.path); else changedNow.push(it.path) }
+    if (!ok.length) return { commit: `skipped: ${changedNow.length ? 'changed since Echo wrote them' : 'nothing to commit'}`, paths: [], changed: changedNow }
+    let rev = null
+    const parts = Math.ceil(ok.length / 1000)
+    try {
+      for (let i = 0; i < ok.length; i += 1000) {
+        const c = await ctx.git.commit(v.root, { paths: ok.slice(i, i + 1000), message: parts > 1 ? `${message} (${i / 1000 + 1}/${parts})` : message })
+        if (c && c.rev) rev = c.rev
+      }
+    } catch (e) { return { commit: `skipped: ${errText(e)}`, paths: [], changed: changedNow, failed: true } }
+    return { commit: rev || 'skipped: nothing changed', paths: rev ? ok : [], changed: changedNow }
+  }
+  const shaItems = (v, paths) => paths.map((p) => ({ path: p, sha: (statSafe(v, p, { sha: true }) || {}).sha || null }))
+  // Changes that may change what Settings' past minutes count (a record, a vault's place): its cache is per day and this.
+  let pastGen = 0
   // A file Echo wrote for a note still waiting for its commit (`pending.json`), unchanged since, is Echo's, not the
   // user's: any save may commit it. A commit takes the paths it holds out of the waiting list.
   const absorbPending = (v, dirty) => {
@@ -4198,12 +4258,12 @@ export function apply(ctx) {
   // Save a call's minutes into vault `v`. `how`: {manual, new, replace, anyway, stem, transcript, chat};
   // `commit`: 'now' (a command: one commit), 'quiet' (the rule's: one commit per quiet window), 'later' (past minutes:
   // the caller's one commit). → {vault, path, state, index, commit, paths (to commit)}.
-  const saveInto = async (call, v, how = {}, commitMode = 'now', given = null) => {
+  const saveInto = async (call, v, how = {}, commitMode = 'now') => {
     if (!available(v)) throw new Error(`the vault's folder isn't there: ${v.root}`)
     const manual = !!how.manual
     const transcript = how.transcript != null ? !!how.transcript : v.minutes.transcript
     const chat = how.chat != null ? !!how.chat : v.minutes.chat
-    const src = given && (!transcript || given.transcript !== undefined) && (!chat || given.chat !== undefined) ? given : source(call, { transcript, chat })
+    const src = source(call, { transcript, chat })
     if (!sameProfile(src.profile, v) && (!manual || !how.anyway)) throw mismatch(src.profile, v)
     const anyway = !sameProfile(src.profile, v)
     const n = await noteOf(v, src, call, { transcript, chat })
@@ -4217,6 +4277,8 @@ export function apply(ctx) {
     const cands = [mine && mine.kind === 'file' ? entry.path : null, indexRel, logRel].filter(Boolean)
     const dirty = v.commit && commitMode !== 'off' ? await dirtyOf(v, cands) : CLEAN
     absorbPending(v, dirty)
+    // In a batch (past minutes), a file an earlier save of the batch wrote, unchanged since, is Echo's too.
+    if (how.batch && dirty.paths.size) for (const [p, it] of how.batch) if (dirty.paths.has(p) && it.sha && (statSafe(v, p, { sha: true }) || {}).sha === it.sha) dirty.paths.delete(p)
     let rel, state, was = null
     if (mine && mine.kind === 'file') {
       rel = entry.path
@@ -4239,7 +4301,8 @@ export function apply(ctx) {
       }
       state = 'saved'
     }
-    indexes.delete(v.id)
+    // A batch (past minutes) clears the vault's index once, after it.
+    if (commitMode !== 'later') indexes.delete(v.id)
     const written = [rel]
     // The index row, the index read just now.
     let row
@@ -4262,19 +4325,21 @@ export function apply(ctx) {
       const lst = statSafe(v, logRel)
       if (lst && lst.kind === 'file' && lst.real != null) {
         const old = readSafe(v, logRel, 4 << 20)
-        const line = `- ${today()} · ${state === 'updated' ? 'changed' : 'added'} · ${rel} · minutes of "${n.title}" from Echo`
+        const line = `- ${today()} · ${state === 'updated' ? 'changed' : 'added'} · ${logText(rel)} · minutes of "${logText(n.title)}" from Echo`
         try { ctx.fs.append(v.root, logRel, `${old && old !== '' && !old.endsWith('\n') ? '\n' : ''}${line}`); written.push(logRel) } catch (e) { ctx.log(`log of ${v.id}: ${errText(e)}`) }
       }
     }
     const clean = written.filter((p) => !dirty.paths.has(p))
+    const items = v.commit ? shaItems(v, clean) : []
     let commit
     if (!v.commit) commit = 'off'
-    else if (commitMode === 'now') commit = await commitOne(v, written, dirty, `Echo: minutes of "${n.title}" (${n.date}) → ${notesDir}/`)
-    if (commitMode === 'now') dropPending(v, clean, commit)
     else if (!clean.length) commit = `skipped: ${dirty.why || 'the files had changes of yours that weren\'t committed'}`
-    else commit = 'pending'
+    else if (commitMode === 'now') {
+      const r = await commitPaths(v, items, `Echo: minutes of "${logText(n.title)}" (${n.date}) → ${notesDir}/`)
+      commit = r.commit
+      dropPending(v, r.paths, commit)
+    } else commit = 'pending'
     if (commitMode === 'quiet' && commit === 'pending') {
-      const items = clean.map((p) => ({ path: p, sha: (statSafe(v, p, { sha: true }) || {}).sha || null }))
       updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (q) => {
         q.at = Date.now()
         for (const it of items) { q.items = q.items.filter((x) => x.path !== it.path); q.items.push(it) }
@@ -4285,25 +4350,29 @@ export function apply(ctx) {
     changed(v, rel, 'minutes', call, was, n.text, commitId(commit), written.slice(1))
     const entryOut = { vault: v.id, path: rel, sha256: ctx.crypto.sha256(n.text), at: new Date().toISOString(), how: manual ? 'manual' : 'auto', state, index: row, commit, anyway: anyway || !!(entry && entry.anyway), revision: n.revision }
     updateRec(call, (r) => { r.saved = r.saved.filter((e) => e.vault !== v.id); r.saved.push(entryOut); r.failed = r.failed.filter((f) => f.vault !== v.id) })
-    return { vault: v.id, path: rel, state, index: row, commit, paths: v.commit ? clean : [] }
+    return { vault: v.id, path: rel, state, index: row, commit, paths: v.commit ? clean : [], items }
   }
-  const failed = (call, v, e) => {
+  const failed = (call, v, e, { batch = false } = {}) => {
     updateRec(call, (r) => { r.failed = r.failed.filter((f) => f.vault !== v.id); r.failed.push({ vault: v.id, at: new Date().toISOString(), error: errText(e) }) })
-    if (ctx.inbox) {
+    if (ctx.inbox && !batch) {
       try { ctx.inbox.set(`minutes:${callKey(call, ctx.crypto.sha256)}`.slice(0, 80), { title: `The minutes couldn't be saved to ${v.name}`, why: errText(e), go: `call/${call}`, actions: [{ label: 'Save again', command: 'save_minutes', args: { call, vault: v.id }, primary: true }] }) } catch { /* an Echo without the Inbox */ }
     }
   }
   const cleared = (call) => { if (ctx.inbox && !callRec(call).failed.length) { try { ctx.inbox.clear(`minutes:${callKey(call, ctx.crypto.sha256)}`.slice(0, 80)) } catch { /* none */ } } }
   // A save the user asked for (`save_minutes`), or the rule's: failures are kept on the call, never the minutes touched.
-  const saveMinutes = (call, v, how, mode, given) => serial(v.id, async () => {
+  // One process at a time writes a call's note into a vault (the app's handler, a terminal's `save_minutes`): a marker
+  // in the store, taken over after two minutes.
+  const saveMinutes = (call, v, how, mode) => serial(v.id, async () => {
+    const lock = `locks/minutes-${callKey(call, ctx.crypto.sha256)}-${v.id}.json`
+    if (!takeLock(lock, 2 * 60 * 1000)) throw new Error(`this call is being saved into ${v.name} already — try again in a moment`)
     try {
-      const s = await saveInto(call, v, how, mode, given)
+      const s = await saveInto(call, v, how, mode)
       cleared(call)
       return s
     } catch (e) {
       if (!e.mismatch) failed(call, v, e)
       throw e
-    }
+    } finally { dropLock(lock) }
   })
   // The vaults that take this call's minutes by themselves now: the one chosen for it, else the routed vaults whose
   // mode is auto — always on the call's own AI profile. A vault whose folder is gone stays in (its save fails, shown).
@@ -4322,17 +4391,33 @@ export function apply(ctx) {
     return serial(v.id, async () => {
       const cur = readJson(pendingPath(v.id), null)
       if (!cur || !(cur.items || []).length) return null
-      const paths = cur.items.filter((it) => { const st = statSafe(v, it.path, { sha: true }); return st && st.sha === it.sha }).map((it) => it.path)
       const calls = cur.calls || []
-      const message = calls.length === 1 ? `Echo: minutes of "${calls[0].title}" (${calls[0].date}) → ${notesDirOf(v)}/` : `Echo: minutes of ${calls.length} calls`
-      let commit = 'skipped: changed since Echo wrote them'
-      if (v.commit && paths.length) {
-        try { const c = await ctx.git.commit(v.root, { paths, message }); commit = c && c.rev ? c.rev : 'skipped: nothing changed' } catch (e) { commit = `skipped: ${errText(e)}` }
-      } else if (!v.commit) commit = 'off'
-      ctx.store.remove(pendingPath(v.id))
-      for (const c of calls) updateRec(c.call, (r) => { const x = r.saved.find((e) => e.vault === v.id && e.path === c.path); if (x && x.commit === 'pending') x.commit = commit })
-      if (commitId(commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'minutes', ref: null, plus: 0, minus: 0, commit, also: paths })
-      return { commit, paths, calls: calls.length }
+      const message = calls.length === 1 ? `Echo: minutes of "${logText(calls[0].title)}" (${calls[0].date}) → ${notesDirOf(v)}/` : `Echo: minutes of ${calls.length} calls`
+      if (!v.commit) {
+        ctx.store.remove(pendingPath(v.id))
+        for (const c of calls) updateRec(c.call, (rec) => { const x = rec.saved.find((e) => e.vault === v.id && e.path === c.path); if (x && x.commit === 'pending') x.commit = 'off' })
+        return { commit: 'off', paths: [], calls: calls.length }
+      }
+      const r = await commitPaths(v, cur.items, message)
+      // A commit git refused: the notes stay queued, with why, and are tried again after another quiet window.
+      if (r.failed) {
+        updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (x) => { x.at = Date.now(); x.why = r.commit })
+        return { commit: r.commit, paths: [], calls: 0, kept: true }
+      }
+      // Only what this commit took (and the files the user changed since) leave the queue: what was queued meanwhile, by
+      // this process or another, stays for the next.
+      const took = (it) => (r.paths.includes(it.path) || r.changed.includes(it.path)) && cur.items.some((c) => c.path === it.path && c.sha === it.sha)
+      const flushed = new Set(calls.map((c) => `${c.call}\0${c.path}`))
+      const left = updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (x) => {
+        x.items = (x.items || []).filter((it) => !took(it))
+        x.calls = (x.calls || []).filter((c) => !flushed.has(`${c.call}\0${c.path}`))
+        delete x.why
+        return x.items.length
+      })
+      if (!left) ctx.store.remove(pendingPath(v.id))
+      for (const c of calls) updateRec(c.call, (rec) => { const x = rec.saved.find((e) => e.vault === v.id && e.path === c.path); if (x && x.commit === 'pending') x.commit = r.commit })
+      if (commitId(r.commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'minutes', ref: null, plus: 0, minus: 0, commit: r.commit, also: r.paths })
+      return { commit: r.commit, paths: r.paths, calls: calls.length }
     })
   }
 
@@ -4352,10 +4437,10 @@ export function apply(ctx) {
     return all.filter((f) => asciiLower(f.path) !== asciiLower(`${dir}/README.md`)).map((f) => ({ ...f, path: f.path }))
   }
   const kindOf = (dir, rel) => { const sub = rel.slice(dir.length + 1).split('/'); return sub.length > 1 && ['echo', 'mail', 'teams', 'web'].includes(sub[0]) ? sub[0] : 'file' }
-  const titleOf = (v, rel) => {
+  const titleOf = (rel, head) => {
     const name = rel.split('/').pop()
     if (!isMd(name)) return name
-    const t = readSafe(v, rel, 64 << 10) || ''
+    const t = head || ''
     const [raw, body] = fmSplit(t)
     const fromFm = raw !== null ? (() => { const p = fmGet(fmParse(raw), 'title'); return p ? oneLine(propText(p)) : '' })() : ''
     if (fromFm) return fromFm
@@ -4368,11 +4453,19 @@ export function apply(ctx) {
     const done = processedOf(v)
     const dir = sourcesDirOf(v)
     const files = await sourceFiles(v)
+    // A Markdown source's own title: its first 64 KB, every file read in one go off the plugin's time slice.
+    const mds = files.filter((f) => isMd(f.path)).map((f) => f.path)
+    const heads = new Map()
+    for (let i = 0; i < mds.length; i += 500) {
+      const some = mds.slice(i, i + 500)
+      const texts = await ctx.fs.readMany(v.root, some, 64 << 10)
+      some.forEach((p, k) => heads.set(p, texts[k]))
+    }
     const out = files.map((f) => {
       const e = l.sources[f.path]
-      return { path: f.path, kind: kindOf(dir, f.path), title: titleOf(v, f.path), state: sourceState(e, done.has(f.path)), size: f.size, added: e ? e.added : null, by: e ? e.by : null, note: (e && e.note) || null, anyway: !!(e && e.anyway), when: (e && Date.parse(e.added)) || f.mtime * 1000 }
+      return { path: f.path, kind: kindOf(dir, f.path), title: titleOf(f.path, heads.get(f.path)), state: sourceState(e, done.has(f.path)), size: f.size, added: e ? e.added : null, by: e ? e.by : null, note: (e && e.note) || null, anyway: !!(e && e.anyway), when: (e && Date.parse(e.added)) || f.mtime * 1000 }
     })
-    for (const [id, q] of Object.entries(l.queued || {})) out.push({ path: null, id, kind: q.kind === 'call' ? 'echo' : q.kind, title: q.title, state: q.state === 'skipped' ? 'skipped' : 'new', queued: true, rule: q.rule, added: q.added, by: q.kind, note: q.note || null, anyway: !!q.anyway, when: Date.parse(q.added) || 0 })
+    for (const [id, q] of Object.entries(l.queued || {})) out.push({ path: null, id, kind: q.kind === 'call' ? 'echo' : q.kind, title: q.title, state: q.state === 'skipped' ? 'skipped' : 'new', queued: true, rule: q.rule, added: q.added, by: q.kind, note: q.note || null, why: q.why || null, anyway: !!q.anyway, when: Date.parse(q.added) || 0 })
     return out.sort((a, b) => b.when - a.when || cmpStr(a.path || a.id, b.path || b.id)).map(({ when, ...s }) => s)
   }
   // The README Echo writes when it makes the sources folder: the twin starter's.
@@ -4385,6 +4478,15 @@ export function apply(ctx) {
     const there = (() => { const st = statSafe(v, base); return !!st && st.kind === 'dir' })()
     const dir = n.sub ? `${base}/${n.sub}` : base
     const l = ledger(v)
+    // Read again here, one write at a time: a source the queue already made (by the call or mail it came from) isn't
+    // written twice — two prepares, or a prepare and an event.
+    if (n.once && n.from) {
+      const had = Object.entries(l.sources).find(([, e]) => e.from === n.from)
+      if (had) {
+        updateLedger(v, (x) => { delete x.queued[n.from] })
+        return { path: had[0], committed: 'already', size: 0, paths: [], items: [], duplicate: true }
+      }
+    }
     const taken = new Set([...Object.keys(l.sources), ...processedOf(v)])
     const dot = n.name.lastIndexOf('.')
     const [stem, ext] = dot > 0 ? [n.name.slice(0, dot), n.name.slice(dot)] : [n.name, '']
@@ -4414,17 +4516,25 @@ export function apply(ctx) {
       x.sources[rel] = { sha256: sha, added: new Date().toISOString(), by: n.by, state: 'new', anyway: !!n.anyway, ...(n.from ? { from: n.from } : {}) }
       if (n.from && n.by === 'call' && !x.calls.includes(n.from)) x.calls.push(n.from)
       if (n.from && n.by === 'mail' && !x.mails.includes(n.from)) x.mails.push(n.from)
+      // A mail added by the user is known by its message's id too: the queue never takes it again.
+      if (n.message && !x.mails.includes(`m365:${n.message}`)) x.mails.push(`m365:${n.message}`)
       if (n.from) delete x.queued[n.from]
     })
-    const commit = n.noCommit ? (v.commit ? 'pending' : 'off') : await commitOne(v, written.map((w) => w.rel), dirty, `Add source: ${Array.from(n.title).slice(0, 80).join('')}`)
+    const items = v.commit ? shaItems(v, written.map((w) => w.rel).filter((p) => !dirty.paths.has(p))) : []
+    let commit = v.commit ? 'pending' : 'off'
+    if (!n.noCommit && v.commit) {
+      const r = await commitPaths(v, items, `Add source: ${Array.from(oneLine(n.title)).slice(0, 80).join('')}`)
+      commit = r.commit
+      dropPending(v, r.paths, commit)
+    }
     for (const w of written) {
       if (w.text != null) changed(v, w.rel, 'source', n.from || null, null, w.text, commitId(commit))
       else record(v, { at: new Date().toISOString(), path: w.rel, kind: 'new', by: 'source', ref: n.from || null, plus: 0, minus: 0, commit: commitId(commit) })
     }
-    return { path: rel, committed: commit, size, paths: written.map((w) => w.rel).filter((p) => !dirty.paths.has(p)) }
+    return { path: rel, committed: commit, size, paths: items.map((i) => i.path), items }
   })
   // A call as a source: Echo's minutes (and the transcript and chat when asked), `echo/<date>-<slug>.md`.
-  const callSource = async (v, call, { transcript = false, chat = false, anyway = false, noCommit = false } = {}) => {
+  const callSource = async (v, call, { transcript = false, chat = false, anyway = false, noCommit = false, once = false } = {}) => {
     const src = source(call, { transcript, chat })
     const across = !sameProfile(src.profile, v)
     if (across && !anyway) throw mismatch(src.profile, v)
@@ -4433,30 +4543,29 @@ export function apply(ctx) {
     const memo = src.memo || src.kind === 'memo'
     const date = src.date || today()
     const { title, text } = callSourceText({ title: src.title, date, memo, participants: src.participants || src.attendees, duration: src.duration_min, link: src.link || `echo://call/${call}`, note, text: src.text, transcript: transcript ? src.transcript : null, chat: chat ? chatPart(src.chat) : '' })
-    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: `call:${call}`, anyway: across, text, noCommit })
+    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: `call:${call}`, anyway: across, text, noCommit, once })
   }
-  // A queued mail as a source: its own text read from Microsoft 365 now (only when a batch is prepared — the queue keeps
-  // Recall's facts, never a message's words).
-  const mailSource = async (v, q, { noCommit = false } = {}) => {
+  // A mail as a source: its own text read from Microsoft 365 now — for a queued one only when a batch is prepared (the
+  // queue keeps Recall's facts, never a message's words). Its AI profile is Recall's (its threads'); a mail Recall
+  // hasn't routed counts as the default profile's. On another profile than the vault's: refused unless "anyway".
+  // Read by its message's id only: Recall's `m365_id`, else the one its Outlook link holds — never guessed by a search.
+  const mailSource = async (v, q, { noCommit = false, anyway = false, once = false } = {}) => {
     if (!ctx.m365) throw new Error('Microsoft 365 mail isn\'t in this Echo')
-    let message = q.message || messageIdOf(q.url)
-    if (!message && q.subject) {
-      const found = await ctx.m365.search(q.subject, { kinds: ['mail'], days: 365, limit: 10 })
-      const hit = ((found && found.results) || []).find((h) => h.kind === 'mail' && oneLine(h.subject || h.title || '') === oneLine(q.subject))
-      message = hit ? hit.id : null
-    }
-    if (!message) throw new Error(`Echo can't find “${q.subject || q.title}” in your mail`)
+    if (!anyway && !q.anyway && !sameProfile(q.profile ?? null, v)) throw mismatch(q.profile ?? null, v)
+    const message = q.m365_id || q.message || messageIdOf(q.url)
+    if (!message) { const e = new Error('this mail can\'t be read until Echo gives its id'); e.keep = true; throw e }
     const thread = await ctx.m365.mailThread(message)
     const m = mailSourceText(thread)
-    return writeSource(v, { sub: 'mail', name: datedName(m.date, m.subject, 'mail'), title: m.title, by: 'mail', from: q.id || null, text: m.text, noCommit })
+    return writeSource(v, { sub: 'mail', name: datedName(m.date, m.subject, 'mail'), title: m.title, by: 'mail', from: q.id || `m365:${message}`, message, anyway: !sameProfile(q.profile ?? null, v), text: m.text, noCommit, once })
   }
   // An event's source into a vault's queue (store only: nothing written into the vault, no model).
-  const queueInto = (v, item) => updateLedger(v, (l) => {
+  const queueIn = (l, item) => {
     const seen = item.kind === 'call' ? l.calls : l.mails
-    if (seen.includes(item.id) || l.queued[item.id]) return false
+    if (seen.includes(item.id) || (item.m365_id && seen.includes(`m365:${item.m365_id}`)) || l.queued[item.id]) return false
     l.queued[item.id] = { ...item, added: new Date().toISOString(), state: 'queued' }
     return true
-  })
+  }
+  const queueInto = (v, item) => updateLedger(v, (l) => queueIn(l, item))
 
   // ── the events ──
   // `minutes_written`: the note into every vault that takes it by itself (written now, committed in the quiet window),
@@ -4481,51 +4590,66 @@ export function apply(ctx) {
     }
     return out
   }
-  // `sources_changed`: each changed mail or post (Recall's facts) into the queue of its routed vaults whose mail rule asks
-  // for it, on their own AI profile; one gone is taken out of a queue it hadn't left yet.
+  // `sources_changed`: each changed mail (Recall's facts) into the queue of its routed vaults whose mail rule asks for it,
+  // on their own AI profile, each vault's ledger written once an event; one gone is taken out of a queue it hadn't left
+  // yet. A channel's post isn't queued while there is no reader of its own words: said in the ledger, not dropped.
   const onSources = (p) => {
     const vs = load()
-    const out = { queued: [], removed: 0 }
+    const out = { queued: [], removed: 0, not_queued: [] }
+    const per = new Map()
+    const add = (v, f) => { if (!per.has(v.id)) per.set(v.id, { v, fs: [] }); per.get(v.id).fs.push(f) }
     for (const it of (p && p.items) || []) {
       if (!it || !it.id || it.trust === 'untrusted') continue
-      const route = routeOf(it.threads || [], vs)
-      for (const x of route.vaults) {
+      for (const x of routeOf(it.threads || [], vs).vaults) {
         const v = x.vault
         if (!v || (v.ingest.mail || 'off') === 'off' || !it.profile || !sameProfile(it.profile, v)) continue
-        try {
-          const item = { id: it.id, kind: it.kind === 'channel' ? 'channel' : 'mail', title: it.subject || it.title || it.id, subject: it.subject || it.title || '', date: it.at || null, url: it.url || null, link: it.link || null, from: it.from || [], rule: v.ingest.mail }
-          if (queueInto(v, item)) out.queued.push(`${v.id}:${it.id}`)
-        } catch (err) { ctx.log(`queue of ${it.id} → ${v.id}: ${errText(err)}`) }
+        if (it.kind === 'channel') {
+          add(v, (l) => { l.not_queued = l.not_queued || {}; l.not_queued[it.id] = { title: it.subject || it.title || it.id, why: 'Echo can\'t read a channel\'s posts for a vault yet', at: new Date().toISOString() }; out.not_queued.push(`${v.id}:${it.id}`) })
+          continue
+        }
+        const item = { id: it.id, kind: 'mail', title: it.subject || it.title || it.id, subject: it.subject || it.title || '', date: it.at || null, url: it.url || null, link: it.link || null, m365_id: it.m365_id || null, profile: it.profile, from: it.from || [], rule: v.ingest.mail }
+        add(v, (l) => { if (queueIn(l, item)) out.queued.push(`${v.id}:${it.id}`) })
       }
     }
-    for (const gone of (p && p.removed) || []) {
-      for (const v of vs) {
-        try { updateLedger(v, (l) => { if (l.queued[gone]) { delete l.queued[gone]; out.removed++ } }) } catch { /* a ledger that can't be read stays */ }
-      }
+    const gone = (p && p.removed) || []
+    for (const v of vs) {
+      if (!gone.length && !per.has(v.id)) continue
+      if (!per.has(v.id)) { let l; try { l = ledger(v) } catch { continue } if (!gone.some((g) => l.queued[g])) continue }
+      try {
+        updateLedger(v, (l) => {
+          for (const f of (per.get(v.id) || { fs: [] }).fs) f(l)
+          for (const g of gone) if (l.queued[g]) { delete l.queued[g]; out.removed++ }
+        })
+      } catch (err) { ctx.log(`queue of ${v.id}: ${errText(err)}`) }
     }
+    if (out.not_queued.length) ctx.log(`not queued (no reader for a channel's posts yet): ${out.not_queued.join(', ')}`)
     return out
   }
   if (ctx.on) {
     ctx.on('minutes_written', (p) => onMinutes(p).catch((e) => ctx.log(`minutes_written: ${errText(e)}`)))
     ctx.on('sources_changed', (p) => { try { onSources(p) } catch (e) { ctx.log(`sources_changed: ${errText(e)}`) } })
   }
-  // On start (the app, never a terminal's one command): what came while the plugin wasn't running — calls with minutes
-  // and Recall's mail since the last look; the first start only notes the day (past minutes are the user's command).
+  // On start (the app, never a terminal's one command): what came while the plugin wasn't running — the calls with
+  // minutes and Recall's mail and posts since the last look, through the same handlers as the live events (a call
+  // whose record has the vault isn't written again; what the ledger has isn't queued again). The day moves forward
+  // only when both reads answered; the first start only notes it (past minutes are the user's command).
   const catchUp = async () => {
-    if (!load().length) return
+    if (!load().length) return { first: false, ok: false }
     const seen = readJson('seen.json', null)
     const day = today()
-    if (seen && typeof seen.since === 'string') {
-      try {
-        for (const c of ctx.echo.read('calls', { since: seen.since, limit: 500 }) || []) if (c.minutes) await onMinutes({ ...c, call: c.id }, { catchUp: true })
-      } catch (e) { ctx.log(`catch-up of calls: ${errText(e)}`) }
-      try {
-        const items = (ctx.echo.read('sources', { kind: 'mail', since: seen.since, limit: 1000 }) || []).map((s) => ({ ...s }))
-        onSources({ items, removed: [] })
-      } catch (e) { ctx.log(`catch-up of mail: ${errText(e)}`) }
-    }
-    ctx.store.write('seen.json', JSON.stringify({ since: day }))
+    if (!seen || typeof seen.since !== 'string') { ctx.store.write('seen.json', JSON.stringify({ since: day })); return { first: true, ok: true } }
+    let ok = true
+    try {
+      for (const c of ctx.echo.read('calls', { since: seen.since, limit: 500 }) || []) if (c.minutes) await onMinutes({ ...c, call: c.id }, { catchUp: true })
+    } catch (e) { ok = false; ctx.log(`catch-up of calls: ${errText(e)}`) }
+    try {
+      onSources({ items: (ctx.echo.read('sources', { since: seen.since, limit: 1000 }) || []).filter((s) => s.kind !== 'call'), removed: [] })
+    } catch (e) { ok = false; ctx.log(`catch-up of mail: ${errText(e)}`) }
+    if (ok) ctx.store.write('seen.json', JSON.stringify({ since: day }))
+    return { first: false, ok }
   }
+  // The catch-up as a command (the app runs it on start; a test or a terminal asks it).
+  ctx.command('catch_up', () => catchUp())
   if (!ctx.terminal && ctx.echo) catchUp().catch((e) => ctx.log(`catch-up: ${errText(e)}`))
   if (!ctx.terminal) ctx.every(30, async () => { for (const v of load()) { try { await flushPending(v) } catch (e) { ctx.log(`commit of ${v.id}: ${errText(e)}`) } } })
 
@@ -4549,6 +4673,7 @@ export function apply(ctx) {
     const v = value === undefined || value === '' ? null : value
     if (v !== null && v !== 'none') find(load(), v)
     target.set(String(id), 'vault', v)
+    pastGen++
     return { [kind]: id, vault: v }
   }
   ctx.command('thread_vault', ({ thread, vault }) => setVaultValue('thread', thread, vault))
@@ -4595,7 +4720,7 @@ export function apply(ctx) {
     for (const id of ids) {
       const v = find(load(), id)
       try {
-        const { paths, ...s } = await saveMinutes(call, v, { manual: true, anyway: !!anyway, replace: !!replace, new: !!asNew, stem, transcript, chat }, 'now')
+        const { paths, items, ...s } = await saveMinutes(call, v, { manual: true, anyway: !!anyway, replace: !!replace, new: !!asNew, stem, transcript, chat }, 'now')
         out.push(s)
       } catch (e) {
         if (!e.mismatch) throw e
@@ -4670,28 +4795,46 @@ export function apply(ctx) {
       return rec.choice !== 'none' && (!rec.choice || rec.choice === v.id) && !rec.saved.some((e) => e.vault === v.id) && sameProfile(c.profile, v) &&
         (rec.choice === v.id || routeOf(c.threads || []).vaults.some((x) => x.id === v.id))
   })
-  const pastCountOf = (v) => { const todo = pastTodo(v, null); return { count: todo.length, first: todo.slice(0, 5).map((c) => ({ call: String(c.id).replace(/^call:/, ''), title: c.title, date: c.date })) } }
+  // What Settings shows: computed once per vault, day and change of the records or the vault's place (`pastGen`).
+  const pastCache = new Map()
+  const pastCountOf = (v) => {
+    const key = `${today()}|${pastGen}|${prefs().default}|${ctx.crypto.sha256(ctx.store.read('vaults.json') || '')}`
+    const had = pastCache.get(v.id)
+    if (had && had.key === key) return had.value
+    const todo = pastTodo(v, null)
+    const value = { count: todo.length, first: todo.slice(0, 5).map((c) => ({ call: String(c.id).replace(/^call:/, ''), title: c.title, date: c.date })) }
+    pastCache.set(v.id, { key, value })
+    return value
+  }
   const pastMinutes = async (v, day, dry) => {
     const todo = pastTodo(v, day)
     if (dry) return { count: todo.length, first: todo.slice(0, 5).map((c) => ({ call: String(c.id).replace(/^call:/, ''), title: c.title, date: c.date })) }
     return serial(v.id, async () => {
       let saved = 0, skipped = 0
-      const paths = new Set()
-      for (const c of todo) {
-        const call = String(c.id).replace(/^call:/, '')
-        try {
-          const s = await saveInto(call, v, {}, 'later')
-          if (s.state === 'saved') { saved++; for (const p of s.paths) paths.add(p) } else skipped++
-        } catch (e) { skipped++; failed(call, v, e) }
+      const items = new Map()
+      const failures = []
+      try {
+        for (const c of todo) {
+          const call = String(c.id).replace(/^call:/, '')
+          try {
+            const s = await saveInto(call, v, { batch: items }, 'later')
+            if (s.state === 'saved') { saved++; for (const it of s.items) items.set(it.path, it) } else skipped++
+          } catch (e) { skipped++; failures.push({ call, title: c.title, error: errText(e) }); failed(call, v, e, { batch: true }) }
+        }
+      } finally { indexes.delete(v.id) }
+      // One Inbox item for the batch, not one a call.
+      if (failures.length && ctx.inbox) {
+        try { ctx.inbox.set(`past:${v.id}`.slice(0, 80), { title: `${failures.length} past call${failures.length === 1 ? '' : 's'} couldn't be saved to ${v.name}`, why: failures.slice(0, 3).map((f) => `${f.title}: ${f.error}`).join(' · '), go: '', actions: [{ label: 'Try again', command: 'past', args: { id: v.id, apply: true }, primary: true }] }) } catch { /* an Echo without the Inbox */ }
+      } else if (ctx.inbox) { try { ctx.inbox.clear(`past:${v.id}`.slice(0, 80)) } catch { /* none */ } }
+      let commit = v.commit ? 'skipped: nothing written' : 'off'
+      if (v.commit && items.size) {
+        const r = await commitPaths(v, [...items.values()], `Echo: minutes of ${saved} past calls`)
+        commit = r.commit
+        dropPending(v, r.paths, commit)
+        for (const c of todo) updateRec(String(c.id).replace(/^call:/, ''), (rec) => { const x = rec.saved.find((e) => e.vault === v.id); if (x && x.commit === 'pending') x.commit = commit })
+        if (commitId(commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'minutes', ref: null, plus: 0, minus: 0, commit, also: r.paths })
       }
-      let commit = 'off'
-      if (v.commit && paths.size) {
-        try { const r = await ctx.git.commit(v.root, { paths: [...paths], message: `Echo: minutes of ${saved} past calls` }); commit = r && r.rev ? r.rev : 'skipped: nothing changed' } catch (e) { commit = `skipped: ${errText(e)}` }
-        dropPending(v, [...paths], commit)
-        for (const c of todo) updateRec(String(c.id).replace(/^call:/, ''), (r) => { const x = r.saved.find((e) => e.vault === v.id); if (x && x.commit === 'pending') x.commit = commit })
-        if (commitId(commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'minutes', ref: null, plus: 0, minus: 0, commit, also: [...paths] })
-      }
-      return { saved, skipped, commit }
+      return { saved, skipped, commit, failed: failures }
     })
   }
   // The rule's notes waiting for their commit, committed now (a terminal has no timer; the app commits after 2 quiet
@@ -4721,19 +4864,29 @@ export function apply(ctx) {
       sources: q, baseline: l.baseline, rules: { calls: v.ingest.calls, mail: v.ingest.mail || 'off' }, profile: profileOf(v.profile), web: !!ctx.web, m365: !!ctx.m365,
     }
   })
-  own('add_source', async ({ vault, kind, call, message, url, transcript, chat, anyway }, extra = {}) => {
+  own('add_source', async ({ vault, kind, call, message, url, transcript, chat, anyway, profile, since, until, chat_id: chatId }, extra = {}) => {
     const v = find(load(), vault)
     if (kind === 'call') {
       const c = callId(call)
-      try { const a = await callSource(v, c, { transcript: !!transcript, chat: !!chat, anyway: !!anyway }); const { paths, ...out } = a; return out } catch (e) {
+      try { const a = await callSource(v, c, { transcript: !!transcript, chat: !!chat, anyway: !!anyway }); const { paths, items, ...out } = a; return out } catch (e) {
         if (e.mismatch) return { mismatch: e.mismatch, error: errText(e) }
         throw e
       }
     }
-    if (kind === 'mail') {
-      if (!message) throw new Error('message: the mail\'s id (Microsoft 365 search gives it)')
-      const { paths, ...out } = await mailSource(v, { message: String(message) })
-      return out
+    if (kind === 'mail' || kind === 'chat') {
+      // A mail or chat Recall hasn't routed carries no AI profile of its own: the default profile's (`profile` when the
+      // sheet knows Recall's).
+      try {
+        if (kind === 'mail') {
+          if (!message) throw new Error('message: the mail\'s id (Microsoft 365 search gives it)')
+          const { paths, items, ...out } = await mailSource(v, { message: String(message), profile: profile ?? null }, { anyway: !!anyway })
+          return out
+        }
+        return await chatSource(v, String(chatId || ''), since, until, { profile: profile ?? null, anyway: !!anyway })
+      } catch (e) {
+        if (e.mismatch) return { mismatch: e.mismatch, error: errText(e) }
+        throw e
+      }
     }
     if (kind === 'file') {
       let files = (extra && extra.files) || []
@@ -4744,7 +4897,7 @@ export function apply(ctx) {
       if (!files.length) return { cancelled: true }
       const added = []
       for (const f of files) {
-        try { const { paths, ...a } = await writeSource(v, { sub: '', name: safeName(f.name), title: safeName(f.name), by: 'file', file: f.file }); added.push({ name: f.name, ...a }) } catch (e) { added.push({ name: f.name, error: errText(e) }) }
+        try { const { paths, items, ...a } = await writeSource(v, { sub: '', name: safeName(f.name), title: safeName(f.name), by: 'file', file: f.file }); added.push({ name: f.name, ...a }) } catch (e) { added.push({ name: f.name, error: errText(e) }) }
       }
       return { added }
     }
@@ -4756,34 +4909,47 @@ export function apply(ctx) {
       const page = await ctx.web.read(u)
       const date = today()
       const w = webSourceText(u, page && page.title, page && (page.markdown || page.text), date, new Date().toISOString())
-      const { paths, ...out } = await writeSource(v, { sub: 'web', name: datedName(date, w.title, 'page'), title: w.title, by: 'web', from: u, text: w.text })
+      const { paths, items, ...out } = await writeSource(v, { sub: 'web', name: datedName(date, w.title, 'page'), title: w.title, by: 'web', from: u, text: w.text })
       return out
     }
     throw new Error('kind: call, mail, file or web')
   })
   // The queue made into files of the sources folder (calls and mail the events queued): a mail's own text read from
   // Microsoft 365 only now. One commit for all. (Step 5's batch runs the vault's skill over them.)
+  // One prepare at a time per vault: in this process, and across processes by a marker in the store (taken over after
+  // ten minutes).
   ctx.command('prepare_sources', async ({ vault }) => {
     const v = find(load(), vault)
-    const l = ledger(v)
-    const written = [], failedTo = []
-    const paths = []
-    for (const [id, q] of Object.entries(l.queued || {})) {
-      if (q.state === 'skipped') continue
+    return serial(`prep:${v.id}`, async () => {
+      const lock = `locks/prepare-${v.id}.json`
+      if (!takeLock(lock, 10 * 60 * 1000)) throw new Error(`Echo is preparing ${v.name}'s sources already — try again in a moment`)
       try {
-        const a = q.kind === 'call'
-          ? await callSource(v, id.replace(/^call:/, ''), { transcript: v.minutes.transcript, chat: v.minutes.chat, noCommit: true })
-          : await mailSource(v, { ...q, id }, { noCommit: true })
-        written.push({ id, path: a.path })
-        paths.push(...a.paths)
-      } catch (e) { failedTo.push({ id, title: q.title, error: errText(e) }) }
-    }
-    let commit = v.commit ? 'skipped: nothing written' : 'off'
-    if (v.commit && paths.length) {
-      try { const r = await ctx.git.commit(v.root, { paths, message: `Add sources: ${written.length}` }); commit = r && r.rev ? r.rev : 'skipped: nothing changed' } catch (e) { commit = `skipped: ${errText(e)}` }
-      if (commitId(commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'source', ref: null, plus: 0, minus: 0, commit, also: paths })
-    }
-    return { written, failed: failedTo, commit }
+        const l = ledger(v)
+        const written = [], failedTo = [], items = []
+        for (const [id, q] of Object.entries(l.queued || {})) {
+          if (q.state === 'skipped') continue
+          try {
+            const a = q.kind === 'call'
+              ? await callSource(v, id.replace(/^call:/, ''), { transcript: v.minutes.transcript, chat: v.minutes.chat, noCommit: true, once: true })
+              : await mailSource(v, { ...q, id }, { noCommit: true, once: true })
+            written.push({ id, path: a.path, ...(a.duplicate ? { already: true } : {}) })
+            items.push(...(a.items || []))
+          } catch (e) {
+            // What can't be read (no id yet, another profile, no sign-in) stays queued, saying why.
+            failedTo.push({ id, title: q.title, error: errText(e) })
+            try { updateLedger(v, (x) => { if (x.queued[id]) x.queued[id].why = errText(e) }) } catch { /* the ledger can't be read */ }
+          }
+        }
+        let commit = v.commit ? 'skipped: nothing written' : 'off'
+        if (v.commit && items.length) {
+          const r = await commitPaths(v, items, `Add sources: ${written.filter((w) => !w.already).length}`)
+          commit = r.commit
+          dropPending(v, r.paths, commit)
+          if (commitId(commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'source', ref: null, plus: 0, minus: 0, commit, also: r.paths })
+        }
+        return { written, failed: failedTo, commit }
+      } finally { dropLock(lock) }
+    })
   })
   own('skip_source', async ({ vault, path, id, note }) => {
     const v = find(load(), vault)
@@ -4982,8 +5148,9 @@ export function apply(ctx) {
       if (r.mismatch) { const ps = profilesNow(); return { mismatch: { ...r.mismatch, call_name: profileName(r.mismatch.call, ps), vault_name: profileName(r.mismatch.vault, ps) } } }
       return r
     }
-    if (kind === 'chat') return chatSource(find(load(), id), String(a.chat || ''), a.since, a.until)
-    return own.add_source({ vault: id, kind, message: a.message, url: a.url })
+    const r = await own.add_source({ vault: id, kind, message: a.message, url: a.url, chat_id: a.chat, since: a.since, until: a.until, anyway: a.anyway, profile: a.profile })
+    if (r && r.mismatch) { const ps = profilesNow(); return { mismatch: { ...r.mismatch, call_name: profileName(r.mismatch.call, ps), vault_name: profileName(r.mismatch.vault, ps) } } }
+    return r
   })
   ctx.command('source_skip', ({ id, path, note }) => (/^(call|mail):/.test(String(path || '')) ? own.skip_source({ vault: id, id: path, note }) : own.skip_source({ vault: id, path, note })))
   // Calls and memos with minutes, for the sheet: newest first, their profile and whether it is the vault's, their note.
@@ -5013,11 +5180,12 @@ export function apply(ctx) {
     }
   })
   // A Teams chat's messages over some local days as a source (sources.rs `add_chat_messages`), `teams/<until>-<chat>.md`.
-  const chatSource = async (v, chat, since, until) => {
+  const chatSource = async (v, chat, since, until, { profile = null, anyway = false } = {}) => {
     if (!chat) throw new Error('which chat?')
+    if (!anyway && !sameProfile(profile, v)) throw mismatch(profile, v)
     const r = await ctx.m365.chat(chat, { since, until })
     const t = chatSourceText(r)
-    const { paths, ...out } = await writeSource(v, { sub: 'teams', name: datedName(t.until, t.name, 'chat'), title: t.title, by: 'teams', from: chat, text: t.text })
+    const { paths, items, ...out } = await writeSource(v, { sub: 'teams', name: datedName(t.until, t.name, 'chat'), title: t.title, by: 'teams', from: chat, anyway: !sameProfile(profile, v), text: t.text })
     return out
   }
 

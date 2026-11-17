@@ -16,7 +16,7 @@ const NOTE = 'knowledge/notes/2026-11-05-weekly-delivery-sync.md'
 // A call's record, by its folder's stamp (YYYY-MM-DD_HHMMSS: a retitle keeps it).
 const rec = (ctx, c) => JSON.parse(ctx.files[`calls/${c.slice(0, 17)}.json`] || '{"saved":[],"failed":[]}')
 
-const GOLDEN = '---\ntitle: "Weekly delivery sync"\ndate: 2026-11-05\nmeeting: "Weekly delivery sync (MS Teams)"\ntags: [meeting]\nparticipants: Dana Reyes, Alex Doe, Sam Rivera\nduration: 46m\nsource: echo://call/2026-11-05_090012-weekly-delivery-sync\norigin: echo\necho_call: 2026-11-05_090012-weekly-delivery-sync\nsummary: "The team agreed to move the pilot | rollout to 18 November and to keep the pricing page as it is."\n---\n\n# Weekly delivery sync — 2026-11-05\n\n## Summary\n\nThe team agreed to move the pilot | rollout to 18 November and to keep the pricing page as it is.\n\n## Decisions\n\n- Pilot moves to 18 November.\n\n## Action items\n\n- [ ] Me — send the revised plan to Dana by Friday.\n\n## Open questions\n\n- Who owns the data migration?\n'
+const GOLDEN = '---\ntitle: "Weekly delivery sync"\ndate: 2026-11-05\nmeeting: "Weekly delivery sync (MS Teams)"\ntags: [meeting]\nparticipants: Dana Reyes, Alex Doe, Sam Rivera\nduration: 46m\nsource: \"echo://call/2026-11-05_090012-weekly-delivery-sync\"\norigin: echo\necho_call: \"2026-11-05_090012-weekly-delivery-sync\"\nsummary: "The team agreed to move the pilot | rollout to 18 November and to keep the pricing page as it is."\n---\n\n# Weekly delivery sync — 2026-11-05\n\n## Summary\n\nThe team agreed to move the pilot | rollout to 18 November and to keep the pricing page as it is.\n\n## Decisions\n\n- Pilot moves to 18 November.\n\n## Action items\n\n- [ ] Me — send the revised plan to Dana by Friday.\n\n## Open questions\n\n- Who owns the data migration?\n'
 
 test('a call becomes a note and a row (golden; echo_call is the call\'s folder, as Echo names calls now)', async () => {
   const w = world({ calls: [call(CALL, 'Weekly delivery sync')] })
@@ -508,7 +508,7 @@ test('Settings: the past minutes it would save, then saved; the sample is the ne
   assert.equal(s.title, 'Weekly delivery sync')
   assert.ok(s.note.includes('title: "Weekly delivery sync"'))
   assert.deepEqual(nfs.readdirSync(npath.join(v.root, 'knowledge/notes')), ['README.md'])
-  assert.deepEqual(await w.ctx.run('past', { id: v.id, apply: true }), { saved: 2, skipped: 0, commit: 'off' })
+  assert.deepEqual(await w.ctx.run('past', { id: v.id, apply: true }), { saved: 2, skipped: 0, commit: 'off', failed: [] })
   assert.equal((await w.ctx.run('past', { id: v.id })).count, 0)
 })
 

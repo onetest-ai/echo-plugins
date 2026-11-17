@@ -61,7 +61,7 @@ test('a call becomes a source: Echo\'s minutes, the transcript and chat only whe
   const note = (await w.ctx.run('save_minutes', { call: c, vault: v.id })).path
   const a = await w.ctx.run('add_source', { vault: v.id, kind: 'call', call: c })
   assert.equal(a.path, 'raw_inbox/echo/2026-11-05-weekly-delivery-sync.md')
-  assert.equal(read(v.root, a.path), `---\ntitle: Weekly delivery sync\ndate: 2026-11-05\nkind: call\nparticipants: Dana Reyes, Alex Doe, Sam Rivera\nduration: 46m\nsource: echo://call/${c}\nnote: ${note}\norigin: echo\n---\n\n# Weekly delivery sync — minutes\n\n${MINUTES.trimEnd()}\n`)
+  assert.equal(read(v.root, a.path), `---\ntitle: Weekly delivery sync\ndate: 2026-11-05\nkind: call\nparticipants: Dana Reyes, Alex Doe, Sam Rivera\nduration: 46m\nsource: "echo://call/${c}"\nnote: ${note}\norigin: echo\n---\n\n# Weekly delivery sync — minutes\n\n${MINUTES.trimEnd()}\n`)
   const b = await w.ctx.run('add_source', { vault: v.id, kind: 'call', call: c, transcript: true, chat: true })
   assert.equal(b.path, 'raw_inbox/echo/2026-11-05-weekly-delivery-sync (2).md')
   const t = read(v.root, b.path)
@@ -215,7 +215,7 @@ test('log.md\'s processed lines count as done; the first open offers a baseline 
   assert.equal(after.offer, null)
   assert.ok(after.sources.every((x) => x.state === 'done' || x.state === 'skipped'))
   assert.equal(after.sources.find((x) => x.path === 'raw_inbox/notes.txt').note, 'Already in the client page')
-  assert.deepEqual([...processedPaths('- d · processed · `raw_inbox/a b.pdf` -> x\n- d · added · y')], ['raw_inbox/a b.pdf'])
+  assert.deepEqual([...processedPaths('- 2026-11-01 · processed · `raw_inbox/a b.pdf` -> x\n- 2026-11-01 · added · y\n- x · processed · raw_inbox/c.pdf → y\nsee - 2026-11-01 · processed · raw_inbox/d.pdf → y')], ['raw_inbox/a b.pdf'], 'only a line of its own in the starter\'s format')
   assert.equal(sourceState({ state: 'new' }, true), 'done')
   assert.equal(sourceState({ state: 'waiting' }, false), 'waiting')
 })

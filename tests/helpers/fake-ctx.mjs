@@ -44,7 +44,12 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
     store: {
       // A file Echo can't read (not UTF-8, a folder where a file should be) throws, as Echo's `store.read` does.
       read: (path) => { if (storeUnreadable.includes(path)) throw new Error(`${path}: stream did not contain valid UTF-8`); return path in files ? files[path] : null },
-      write: (path, text) => { files[path] = String(text) },
+      // `{createNew}` never over a file ("is there already"), `{ifSha}` only over the text with that sha256 (as Echo's).
+      write: (path, text, opts = {}) => {
+        if (opts.createNew && path in files) throw new Error(`${path} is there already`)
+        if (opts.ifSha != null && (!(path in files) || sha256(files[path]) !== opts.ifSha)) throw new Error(`${path} changed since you read it`)
+        files[path] = String(text)
+      },
       // The names in a folder of the store, sorted (as Echo's `store.list`).
       list: (dir = '') => {
         const pre = dir ? `${dir.replace(/\/+$/, '')}/` : ''

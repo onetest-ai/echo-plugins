@@ -101,7 +101,7 @@
 .kn-doc li { margin: 3px 0; }
 .kn-doc a { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); cursor: default; }
 .kn-doc a:hover { border-bottom-color: var(--accent); }
-.kn-doc a[href^="#kn-new:"] { color: var(--text-3); border-bottom: 1px dashed var(--text-3); }
+.kn-doc a.md-missing { color: var(--text-3); border-bottom: 1px dashed var(--text-3); }
 .kn-doc .tablewrap { overflow-x: auto; margin: 4px 0 12px; }
 .kn-doc table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .kn-doc th, .kn-doc td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
@@ -754,6 +754,9 @@ button.kn-h-chg:hover .tt b { color: var(--accent-ink); }
 .td-dialog.plug-sheet:has(> .kn-framed) { width: min(640px, calc(100vw - 32px)); padding: 0; overflow: hidden; }
 .kn-sheet.kn-framed { width: auto; max-width: none; max-height: calc(100vh - 48px); border: 0; border-radius: 0; box-shadow: none; }
 :is(.kn-framed) .btn.primary { display: inline-flex; flex-direction: row; grid-area: auto; min-width: auto; min-height: auto; }
+/* Obsidian's links are anchors Echo opens (`data-ext`): drawn as the buttons and menu items they were. */
+.kn a.btn, .kn a.menu-item { text-decoration: none; color: inherit; }
+.kn a.menu-item { display: flex; }
 /* Home's Ask card: Ask the vault opens Claude Code in Echo's panel. */
 .kn-h-asklead { margin: 0 0 10px; line-height: 1.5; }
 .kn-h-asklead code { font-family: var(--mono); font-size: 11.5px; }

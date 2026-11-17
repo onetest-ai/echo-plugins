@@ -76,13 +76,15 @@ export function knActionOf(cmd, args = {}) {
 }
 
 /** A read, answered as #17's route answered: the pages' paths are the host's (relative to the vault's pages folder,
- *  `root` ''), a page too large to show has no HTML, a version's diff is text, the graph's top-level folder is ''. */
+ *  `root` ''), times in milliseconds (the host's are seconds), a page too large to show has no HTML, a version's diff
+ *  is text, the graph's top-level folder is ''. */
 export async function knRead(call, path) {
   const r = knReadOf(path)
   if (!r) throw new Error(`Knowledge has no ${String(path).split('?')[0]}`)
   const v = await call(r.command, r.args)
-  if (r.command === 'tree') return { ...v, root: '' }
-  if (r.command === 'page') return { ...v, html: v.html == null ? '<p class="set-sub">This page is too large to show here.</p>' : v.html }
+  const ms = (t) => (typeof t === 'number' ? t * 1000 : t)
+  if (r.command === 'tree') return { ...v, root: '', pages: (v.pages || []).map((p) => ({ ...p, mtime: ms(p.mtime) })) }
+  if (r.command === 'page') return { ...v, mtime: ms(v.mtime), html: v.html == null ? '<p class="set-sub">This page is too large to show here.</p>' : v.html }
   if (r.command === 'version') return { ...v, diff: knDiffText(v.diff), html: v.html == null ? '' : v.html }
   if (r.command === 'graph') return { ...v, nodes: (v.nodes || []).map((n) => (n.folder === '(top level)' ? { ...n, folder: '' } : n)) }
   return v

@@ -1087,7 +1087,7 @@ test('the seam: answers in the shape the view takes — a conflict throws, a ver
     if (command === 'save_page') return { conflict: true, base: 'b2', text: 'theirs' }
     if (command === 'version') return { rev: 'abc', diff: [[['=', 'a'], ['-', 'b'], ['+', 'c']], [['+', 'z']]], html: null }
     if (command === 'graph') return { nodes: [{ id: 'CATALOG.md', folder: '(top level)' }, { id: 'clients/a.md', folder: 'clients' }], edges: [], hubs: [] }
-    if (command === 'page') return { path: 'big.md', html: null, editable: false }
+    if (command === 'page') return { path: 'big.md', html: null, editable: false, mtime: 1794950746 }
     if (command === 'set') return { id: 'v', name: 'V' }
     if (command === 'kn') return { vaults: [{ id: 'v', name: 'V', available: true, paths: { pages: 'knowledge' } }] }
     if (command === 'tree') return { pages: [], index: null }
@@ -1097,6 +1097,7 @@ test('the seam: answers in the shape the view takes — a conflict throws, a ver
   assert.equal((await knRead(call, 'api/kn/v/version?path=a.md&rev=abc')).diff, '@@\n a\n-b\n+c\n@@\n+z')
   assert.deepEqual((await knRead(call, 'api/kn/v/graph?mode=links')).nodes.map((n) => n.folder), ['', 'clients'])
   assert.match((await knRead(call, 'api/kn/v/page?path=big.md')).html, /too large/)
+  assert.equal((await knRead(call, 'api/kn/v/page?path=big.md')).mtime, 1794950746000, 'the host\'s seconds as the view\'s milliseconds')
   assert.equal((await knRead(call, 'api/kn/v/tree')).root, '', 'page paths are relative to the pages folder')
   assert.deepEqual((await knAct(call, 'kn_set', { id: 'v', key: 'commit', value: 'true' })).vault.paths, { pages: 'knowledge' }, 'a setting answers with the vault as kn lists it')
   assert.equal(knDiffText([]), '')

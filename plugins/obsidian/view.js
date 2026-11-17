@@ -315,11 +315,10 @@ export async function createKnowledge(ctx, hooks = {}) {
   function askVault() {
     const v = vault()
     if (!v) return
-    s0().menu = null
-    try { ctx.claude.session({ folder: v.root, path: (v.paths || {}).pages || '' }) } catch (e) { say(String(e.message || e)) }
+    st().menu = null
+    try { ctx.claude.session({ folder: v.root, path: (v.paths || {}).pages || '', ...(v.profile ? { profile: v.profile } : {}) }) } catch (e) { say(String(e.message || e)) }
     render()
   }
-  const s0 = () => st()
   /** A page's path on the disk (Copy path). */
   const pagePathAbs = (path) => { const v = vault(), pf = ((v || {}).paths || {}).pages || ''; return v ? `${v.root}/${pf ? `${pf}/` : ''}${path}` : path }
   /** Obsidian's own link to the vault or a page of it (`obsidian://open?path=`), opened by Echo. */
@@ -361,7 +360,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const g = v.git
     const where = v.available === false ? '<span class="kn-meta warn">The folder isn\'t there</span>'
       : `<span class="kn-meta"><code title="${esc(v.root)}">${esc(short(v.root))}</code>${g ? ` · ${IC.git} ${esc(g.branch || 'detached')}` : ''}${v.pages != null ? ` · ${nf(v.pages)} pages` : ''}</span>`
-    const menu = s.menu === 'vault' ? `<div class="menu kn-head-menu" role="menu"><a class="menu-item" role="menuitem" data-ext href="${esc(obsidianHref((s.tree || {}).index || ''))}" data-kn="obsidian">Open in Obsidian</a><button class="menu-item" role="menuitem" data-kn="reread">Read the folder again</button><div class="menu-sep" role="separator"></div><button class="menu-item" role="menuitem" data-kn="tab" data-kn-tab="settings">Vault settings</button></div>` : ''
+    const menu = s.menu === 'vault' ? `<div class="menu kn-head-menu" role="menu"><a class="menu-item" role="menuitem" data-ext href="${esc(obsidianHref((s.tree || {}).index || toPage((v.paths || {}).index)))}" data-kn="obsidian">Open in Obsidian</a><button class="menu-item" role="menuitem" data-kn="reread">Read the folder again</button><div class="menu-sep" role="separator"></div><button class="menu-item" role="menuitem" data-kn="tab" data-kn-tab="settings">Vault settings</button></div>` : ''
     const acts = v.available === false ? '' : `<button class="btn sm" data-kn="ask" title="Claude Code in this vault, in Echo's panel">${IC.ask} Ask the vault</button><button class="btn sm" data-kn="ing-add">${IC.tray} Add a source</button><button class="btn sm" data-kn="newpage">${IC.plus} New page</button><span class="kn-rel"><button class="icon-btn" data-kn="menu" data-menu="vault" aria-haspopup="menu" aria-expanded="${s.menu === 'vault'}" aria-label="More">${IC.more}</button>${menu}</span>`
     return `<header class="kn-head">${title()}${where}<span class="grow"></span>${acts}</header>`
   }
@@ -2275,6 +2274,20 @@ export async function createKnowledge(ctx, hooks = {}) {
     if (isNaN(d)) return ''
     const days = (Date.now() - d) / 864e5
     return d.toDateString() === new Date().toDateString() ? hm(d) : days < 6 ? d.toLocaleDateString([], { weekday: 'short' }) : d.toLocaleDateString([], { day: 'numeric', month: 'short' })
+  }
+  /** The time of a run going (its rows' `data-kn-since`, Ingest's and the AI checks' `data-kn-elapsed`), each second. */
+  let runTimer = null
+  function tickRunning() {
+    const draw = () => {
+      const now = Date.now()
+      for (const el of document.querySelectorAll('[data-kn-since]')) el.textContent = `${Math.max(0, Math.round((now - Number(el.dataset.knSince)) / 1000))} s`
+      // An ingest run's time so far.
+      for (const el of document.querySelectorAll('[data-kn-elapsed]')) el.textContent = dur((now - Number(el.dataset.knElapsed)) / 1000)
+    }
+    const any = () => document.querySelector('[data-kn-since], [data-kn-elapsed]')
+    draw()
+    if (runTimer || !any()) return
+    runTimer = setInterval(() => { if (!any()) { clearInterval(runTimer); runTimer = null } else draw() }, 1000)
   }
   function toolsHtml(b, ended, opened, act) {
     const secs = (ms) => `${(ms / 1000).toFixed(1)} s`

@@ -65,5 +65,5 @@ without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `wher
 
 ## Where the user manages it
 
-- Connecting, reading again, correcting a vault's description, whom it is for, removing it: Settings → From plugins →
-  Knowledge (⌘K "Knowledge: connect a vault"). Browsing a vault's notes and graph: the Knowledge activity.
+- Connecting, reading again, correcting a vault's description, whom it is for, removing it, browsing its pages and
+  graph: the Knowledge activity (⌘K "Connect a folder…"), the vault's Settings tab.

@@ -1659,7 +1659,7 @@ export function isPagePath(v, page) {
   return !['sources', 'templates'].map((k) => vaultPath(v, k)).some((s) => s && under(rel, s))
 }
 
-/** A path for a `#brain/<plugin>:pages/…` link: its own `%`, spaces and the like encoded, its slashes kept. */
+/** A path for a `#<plugin>:knowledge/<vault>/pages/…` link: its own `%`, spaces and the like encoded, its slashes kept. */
 export function linkPart(s) {
   return utf8Bytes(s).map((b) => ((b >= 48 && b <= 57) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || [45, 95, 46, 126, 47].includes(b) ? String.fromCharCode(b) : `%${b.toString(16).toUpperCase().padStart(2, '0')}`)).join('')
 }
@@ -2092,7 +2092,7 @@ export function apply(ctx) {
     // The Inbox: descriptions waiting for the user's look (decided on the vault's page, after reading them).
     step('inbox', () => {
       for (const v of vs) {
-        if (v.state === 'review') ctx.inbox.set(`review:${v.id}`, { title: `Check what Claude will be told about ${v.name}`, why: 'Echo read this vault and described it; read it, fix what is wrong, then confirm.', go: 'settings/obsidian:main', actions: [] })
+        if (v.state === 'review') ctx.inbox.set(`review:${v.id}`, { title: `Check what Claude will be told about ${v.name}`, why: 'Echo read this vault and described it; read it, fix what is wrong, then confirm.', go: `${ctx.id}:knowledge/${encodeURIComponent(v.id)}/settings`, actions: [] })
         else ctx.inbox.clear(`review:${v.id}`)
       }
     })
@@ -2106,7 +2106,9 @@ export function apply(ctx) {
   })
   // `add` picks a folder; one with no notes comes back as `check` for the user's yes, then `add {root, anyway}`
   // connects it. One connected already comes back as `already`.
-  ctx.command('add', async ({ wait, root: picked, anyway } = {}) => {
+  // From the Connect sheet also its name, its minutes (`auto` | `ask` | `off`), whether Echo commits what it writes and
+  // its AI profile — each checked as `set` checks it.
+  ctx.command('add', async ({ wait, root: picked, anyway, name: named, minutes, commit, profile } = {}) => {
     const root = picked ? String(picked) : await ctx.system.pickFolder('A folder of notes for Knowledge')
     if (!root) return { cancelled: true }
     // Only a folder the picker gave this plugin (a `check` answered later); never a path the window made up.
@@ -2121,11 +2123,17 @@ export function apply(ctx) {
       // Any folder of Markdown notes is a vault to Echo; only an empty one is asked about.
       if (!notes) return { check: { root, is_vault: isVault, empty: true } }
     }
-    const name = root.split(/[\\/]/).filter(Boolean).pop() || 'Vault'
+    const name = rsTrim(String(named || '')).slice(0, 80) || root.split(/[\\/]/).filter(Boolean).pop() || 'Vault'
+    const allowed = {}
+    if (profile) { try { allowed.profiles = (ctx.profiles().profiles || []).map((p) => p.id) } catch { /* an Echo without it */ } }
+    let made = normalizeVault({ schema: SCHEMA, id: 'new', name, root, state: 'analysing', added_at: new Date().toISOString(), structure: 'confirmed' })
+    if (minutes != null) made = setVaultKey(made, 'minutes', minutes)
+    if (commit != null) made = setVaultKey(made, 'commit', String(!!commit))
+    if (profile) made = setVaultKey(made, 'profile', profile, allowed)
     const id = change((vs) => {
       const problem = folderProblem(root, vs, dataDir())
       if (problem) throw new Error(problem)
-      const v = normalizeVault({ schema: SCHEMA, id: uniqueId(name, vs.map((x) => x.id)), name, root, state: 'analysing', added_at: new Date().toISOString(), structure: 'confirmed' })
+      const v = { ...made, id: uniqueId(name, vs.map((x) => x.id)) }
       vs.push(v)
       return v.id
     })
@@ -2737,7 +2745,7 @@ export function apply(ctx) {
   }
   // Does a newline show as a line break: in an Obsidian vault, unless its "Strict line breaks" is on.
   const lineBreaks = (v) => !!(v.detected && v.detected.obsidian && !v.detected.obsidian.strict_line_breaks)
-  const pageHref = (v, p) => `#brain/${ctx.id}:pages/${encodeURIComponent(v.id)}/${linkPart(p)}`
+  const pageHref = (v, p) => `#${ctx.id}:knowledge/${encodeURIComponent(v.id)}/pages/${linkPart(p)}`
   const imageSrc = (v, rel) => `plugin/${ctx.id}/folder/${encodeURIComponent(v.root)}/${rel.split('/').map(encodeURIComponent).join('/')}`
   const isFileIn = (v, rel) => { const st = statSafe(v, rel); return !!st && st.kind === 'file' && st.real != null }
   // An embed's image (`![[chart.png]]`): beside the page, in Obsidian's attachments folder, else the shortest path in
@@ -2958,6 +2966,24 @@ export function apply(ctx) {
     changed(v, rel, 'editor', null, cur.text, next, commitId(commit))
     return { path: page, ...pg(v), base: ctx.crypto.sha256(next), commit }
   })
+  // A page's row put into the index's text (page.rs `row_for`): the page's link (relative to the index), its title and
+  // summary, its date, in the table of its folder → catalogInsert's answer ({text} | {already} | {error}).
+  const indexRowIn = (v, indexText, page, text, now) => {
+    const index = vaultPath(v, 'index')
+    const rel = toVaultRel(v, page)
+    const sp = scanPage(page, text)
+    const prop = (k) => { const x = fmGet(sp.props, k); const t = x ? propText(x) : ''; return rsTrim(t) !== '' ? t : null }
+    const summary = prop('summary') ?? prop('description') ?? firstProse(fmSplit(text)[1])
+    const desc = summary === '' || summary === sp.title ? sp.title : `${sp.title} — ${summary}`
+    const d = prop('date')
+    const date = d !== null && d.length >= 10 && d[4] === '-' ? d.slice(0, 10) : ymd(now)
+    const idir = folderOf(index)
+    const toIndex = (x) => (idir === '' ? x : x.startsWith(`${idir}/`) ? x.slice(idir.length + 1) : x)
+    const top = page.includes('/') ? page.slice(0, page.indexOf('/')) : ''
+    const pf = vaultPath(v, 'pages')
+    const got = catalogInsert(indexText, toIndex(top ? toVaultRel(v, top) : pf ? `${pf}/` : ''), toIndex(rel), catalogCell(desc), date, ymd(now))
+    return { ...got, desc, date }
+  }
   // A new page in `folder` (a page path's folder; '' the pages folder) named from `title`, from a template of the
   // vault's templates folder or the vault's page format; with a row in its index when asked.
   ctx.command('new_page', async ({ id, folder, title, template, index_row }) => {
@@ -3009,18 +3035,7 @@ export function apply(ctx) {
         const itext = ist && ist.kind === 'file' && ist.real != null ? readPage(v, index, ist) : null
         if (!itext || !itext.utf8) row = 'skipped: the index can\'t be read'
         else {
-          // The row: the page's link (relative to the index), its title and summary, its date (page.rs `row_for`).
-          const sp = scanPage(page, text)
-          const prop = (k) => { const x = fmGet(sp.props, k); const t = x ? propText(x) : ''; return rsTrim(t) !== '' ? t : null }
-          const summary = prop('summary') ?? prop('description') ?? firstProse(fmSplit(text)[1])
-          const desc = summary === '' || summary === sp.title ? sp.title : `${sp.title} — ${summary}`
-          const d = prop('date')
-          const date = d !== null && d.length >= 10 && d[4] === '-' ? d.slice(0, 10) : ymd(now)
-          const idir = folderOf(index)
-          const toIndex = (x) => (idir === '' ? x : x.startsWith(`${idir}/`) ? x.slice(idir.length + 1) : x)
-          const top = page.includes('/') ? page.slice(0, page.indexOf('/')) : ''
-          const pf = vaultPath(v, 'pages')
-          const got = catalogInsert(itext.text, toIndex(top ? toVaultRel(v, top) : pf ? `${pf}/` : ''), toIndex(rel), catalogCell(desc), date, ymd(now))
+          const got = indexRowIn(v, itext.text, page, text, now)
           if (got.already) row = 'listed'
           else if (got.error) row = `skipped: ${got.error}`
           else {
@@ -3129,16 +3144,15 @@ export function apply(ctx) {
     return out
   }
   // A vault's health, read-only (checks.rs `run`), from the index and the vault.
-  ctx.command('checks', async ({ id }) => {
-    const v = vaultOf(id)
-    const ix = await index(v)
+  // The checks' answer for a vault (checks.rs `run`), read-only, from the index and the vault.
+  const checksOf = async (v, ix) => {
     const ipath = vaultPath(v, 'index')
     let indexText = null, indexBytes = 0
     if (ipath) { const st = statSafe(v, ipath); if (st && st.kind === 'file' && st.real != null) { indexBytes = st.size; indexText = readSafe(v, ipath) } }
     const taxonomies = (v.detected && v.detected.taxonomies) || []
     const tagTax = tagTaxonomy(taxonomies)
     const taxonomyText = tagTax ? readSafe(v, tagTax) : null
-    const c = runChecks({
+    return runChecks({
       pages: pagesOf(ix), indexPage: indexPageOf(v), indexLinks: indexText !== null ? scanPage(ipath, indexText).links : null,
       indexDir: ipath ? folderOf(ipath) : '', indexBytes, indexText,
       pageDirInVault: (p) => folderOf(toVaultRel(v, p)), toPagePath: (r) => toPageRel(v, r),
@@ -3146,6 +3160,12 @@ export function apply(ctx) {
       taxonomies: taxonomies.map((t) => toPageRel(v, t)).filter((x) => x !== null), taxonomyText,
       meetingTag: meetingTag(v.minutes ? v.minutes.tag : null, taxonomyText),
     })
+  }
+  // A vault's health, read-only (checks.rs `run`), from the index and the vault.
+  ctx.command('checks', async ({ id }) => {
+    const v = vaultOf(id)
+    const ix = await index(v)
+    const c = await checksOf(v, ix)
     return { ...c, ...pg(v), pages_in_scope: pagesOf(ix).filter((p) => inScopeOf(v)(p.path)).length }
   })
   ctx.command('activity', ({ id, days }) => {
@@ -3165,6 +3185,365 @@ export function apply(ctx) {
     for (const n of g.nodes) if (!n.tag && n.folder === '') n.folder = '(top level)'
     return { ...g, ...pg(v) }
   })
+
+  // ── the Knowledge activity (the window half: #17's reads and actions, onetest-ai/echo-plugins#17) ──
+  // `kn`: every vault as the activity draws it — its record, its paths, whether its folder is there, its git — with the
+  // AI profiles, clients and threads its sheets offer, and the default vault. The rest answer one screen each.
+  // What the later steps of Knowledge 1.0 bring answers that it isn't here yet (`LATER` below).
+  const HEALTH_LATER = 'Health\'s fixes and AI checks aren\'t in this version of Knowledge yet'
+  const INGEST_LATER = 'Ingest isn\'t in this version of Knowledge yet'
+  const MINUTES_LATER = 'Saving minutes into a vault isn\'t in this version of Knowledge yet'
+  const gitNow = async (v) => {
+    try {
+      const i = await ctx.git.info(v.root)
+      if (!i.repo) return { git: null, installed: true }
+      let changed = 0
+      try { changed = (await ctx.git.status(v.root)).length } catch { /* git couldn't say */ }
+      return { git: { branch: i.branch, head: i.head, busy: i.busy, changed, remotes: [] }, installed: true }
+    } catch (e) { return { git: null, installed: !/isn't installed/.test(String((e && e.message) || e)) } }
+  }
+  const folderThere = (v) => { try { const st = ctx.fs.stat(v.root, ''); return !!st && st.kind === 'dir' } catch { return false } }
+  const profilesNow = () => { try { const p = ctx.profiles() || {}; return { profiles: (p.profiles || []).map((x) => ({ id: x.id, name: x.name })), default: p.default || null } } catch { return { profiles: [], default: null } } }
+  const proposedOf = (id) => { const t = ctx.store.read(`vaults/${id}/proposed.md`); return t ? parse(t) : null }
+  const PATHS = ['pages', 'index', 'notes', 'naming', 'templates', 'sources']
+  const vaultValue = (v, there, git, def) => ({
+    ...v, profile: v.profile || def, available: there, git,
+    pages: v.detected && typeof v.detected.md_files === 'number' ? v.detected.md_files : null,
+    paths: Object.fromEntries(PATHS.map((k) => [k, k === 'naming' ? vaultPath(v, k) || DATE_SLUG : vaultPath(v, k)])),
+    description: description(v.id), proposed: proposedOf(v.id),
+  })
+  ctx.command('kn', async () => {
+    recover()
+    const p = profilesNow()
+    let installed = true
+    const vaults = []
+    for (const v of load()) {
+      const there = folderThere(v)
+      const g = there ? await gitNow(v) : { git: null, installed: true }
+      if (!g.installed) installed = false
+      vaults.push(vaultValue(v, there, g.git, p.default))
+    }
+    return { vaults, default: prefs().default, default_profile: p.default, profiles: p.profiles, git: installed, clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads') }
+  })
+  // The folder picker of the Connect sheet: the folder and what Echo finds in it, nothing written and nothing connected
+  // yet — `add {root}` connects it; `unpick` gives it back.
+  ctx.command('pick', async () => {
+    const root = await ctx.system.pickFolder('A folder of notes for Knowledge')
+    if (!root) return null
+    const name = root.split(/[\\/]/).filter(Boolean).pop() || 'Vault'
+    const vs = load()
+    const known = vs.find((v) => v.root === root)
+    const problem = folderProblem(root, vs, dataDir())
+    if (problem) {
+      if (!known) try { ctx.fs.forget(root) } catch { /* not given */ }
+      return { path: root, name, refused: problem }
+    }
+    const entries = (() => { try { return ctx.fs.list(root, '') } catch { return [] } })()
+    if (!entries.filter((e) => !e.name.startsWith('.')).length) return { path: root, name, empty: true }
+    const io = {
+      list: (rel) => ctx.fs.list(root, rel),
+      read: (rel, max) => { try { return ctx.fs.read(root, rel, max || READ_MAX) } catch { return null } },
+      isDir: (rel) => { try { const st = ctx.fs.stat(root, rel); return !!st && st.kind === 'dir' } catch { return false } },
+      walk: (rel, opts) => ctx.fs.walk(root, { ...opts, ...(rel ? { path: rel } : {}), max: 100000 }),
+    }
+    const detected = await detectVault(io)
+    let indexBytes = 0
+    if (detected.index) { try { const st = ctx.fs.stat(root, detected.index); if (st && st.kind === 'file') indexBytes = st.size } catch { /* gone */ } }
+    const g = await gitNow({ root })
+    return { path: root, name, detected, git: g.git, index_bytes: indexBytes }
+  })
+  // A vault's Settings tab: what Echo found and what the user changed, its skills, tags and templates.
+  ctx.command('vault_settings', async ({ id }) => {
+    const v = vaultOf(id), d = v.detected || {}
+    const skills = Array.isArray(d.skills) ? d.skills : []
+    const ipath = vaultPath(v, 'index')
+    const ist = ipath ? statSafe(v, ipath) : null
+    const tagTax = tagTaxonomy(d.taxonomies || [])
+    const taxText = tagTax ? readSafe(v, tagTax) : null
+    const tdir = vaultPath(v, 'templates')
+    let templates = []
+    if (tdir) { try { templates = (await ctx.fs.walk(v.root, { path: tdir, ext: ['md'], max: 500 })).map((f) => f.path.slice(tdir.length + 1)).filter((p) => p && isMd(p)).sort(cmpStr) } catch { /* none */ } }
+    const found = skills.find((k) => k.kind !== 'agents' && /inbox|ingest/i.test(k.name)) || null
+    const chosen = (v.ingest && v.ingest.skill && skills.find((k) => k.name === v.ingest.skill)) || found
+    return {
+      vault: { id: v.id }, skills, has_twin: skills.some((k) => k.name === 'twin' && k.kind !== 'agents'), global_twin: null, global_twin_name: 'twin',
+      tags: taxText != null ? allowedTags(taxText).length : null, terms: null, tag_file: tagTax, meeting_tag: meetingTag(v.minutes.tag, taxText),
+      index_bytes: ist && ist.kind === 'file' ? ist.size : 0, pages: typeof d.md_files === 'number' ? d.md_files : null, cache_bytes: null,
+      past: null, templates, in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
+    }
+  })
+  // The editor's preview: the text as the page would read, nothing written.
+  ctx.command('preview', async ({ id, path, text }) => {
+    const v = vaultOf(id)
+    const { page } = checkedPage(v, path)
+    if (typeof text !== 'string') throw new Error('text: the page\'s text')
+    const html = renderPage(v, await index(v), page, text)
+    return { html: html === null ? '<p class="set-sub">Too long to preview.</p>' : html }
+  })
+  // Rows for pages the index doesn't list: as they would go in (`rows`), then put there (`index_add`) — one write of
+  // the index over what was read, one commit when the vault commits.
+  const rowsFor = (v, paths, indexText, now) => {
+    let text = indexText
+    const out = []
+    for (const path of (Array.isArray(paths) ? paths : []).slice(0, 200)) {
+      const { page, rel } = checkedPage(v, String(path))
+      const pt = readSafe(v, rel)
+      if (pt === null) { out.push({ path: page, section: 'skipped: it can\'t be read' }); continue }
+      const got = indexRowIn(v, text, page, pt, now)
+      if (got.already) { out.push({ path: page, section: 'already listed', desc: got.desc, date: got.date }); continue }
+      if (got.error) { out.push({ path: page, section: `skipped: ${got.error}`, desc: got.desc, date: got.date }); continue }
+      // The row: the table line the index didn't have (its "Last update" line may change too).
+      const had = new Set(textLines(text)), after = textLines(got.text)
+      let at = after.findIndex((l) => !had.has(l) && l.trimStart().startsWith('|'))
+      if (at < 0) at = 0
+      out.push({ path: page, section: tableOfRow(got.text, at) || '', row: after[at] || '', desc: got.desc, date: got.date })
+      text = got.text
+    }
+    return { rows: out, text }
+  }
+  const indexOf = (v) => {
+    const index = vaultPath(v, 'index')
+    if (!index) throw new Error('this vault has no index')
+    const ist = statSafe(v, index, { sha: true })
+    const it = ist && ist.kind === 'file' && ist.real != null ? readPage(v, index, ist) : null
+    if (!it || !it.utf8) throw new Error('the index can\'t be read')
+    return { index, it }
+  }
+  ctx.command('rows', ({ id, paths }) => {
+    const v = vaultOf(id)
+    const { it } = indexOf(v)
+    return { rows: rowsFor(v, paths, it.text, new Date()).rows }
+  })
+  ctx.command('index_add', async ({ id, paths }) => {
+    const v = vaultOf(id)
+    const { index } = indexOf(v)
+    const dirty = v.commit ? await dirtyOf(v, [index]) : CLEAN
+    const { it } = indexOf(v)
+    const { rows, text } = rowsFor(v, paths, it.text, new Date())
+    const added = rows.filter((r) => r.row).length
+    if (!added) return { added: 0, rows, commit: 'off' }
+    ctx.fs.write(v.root, index, withLineEndings(it.text, text), { ifSha: it.sha })
+    indexes.delete(v.id)
+    const commit = await commitOne(v, [index], dirty, `Add ${added} row${added === 1 ? '' : 's'} to ${index}`)
+    changed(v, index, 'editor', null, it.text, text, commitId(commit))
+    return { added, rows, commit }
+  })
+
+  // Health (health.rs, read-only): the code checks' findings — keyed the same across scans, by group — the score, one
+  // point a day (`vaults/<id>/health.json`: {history: [{day, score}], ignored: [key]}) and the findings the user
+  // ignored. Fixes and the AI checks come with a later step (`HEALTH_LATER`).
+  const HEALTH_KINDS = [
+    ['not_in_index', 'should', 'The index is how you and agents find pages, and it doesn\'t list this one.'],
+    ['broken', 'should', 'A link that leads nowhere loses the reader and hides a relation from the graph.'],
+    ['isolated', 'tidy', 'Nothing links to this page and it links nowhere, so it is easy to miss.'],
+    ['no_props', 'should', 'Without properties a page has no title, date or tags for the index and search.'],
+    ['unknown_tag', 'needs', 'A tag the taxonomy doesn\'t allow splits one subject into several.'],
+    ['meeting_tag_missing', 'needs', 'Echo tags meeting notes with it, and the taxonomy doesn\'t allow it.'],
+    ['dead_row', 'should', 'The index lists a page that isn\'t there.'],
+    ['usual_prop', 'tidy', 'Most pages in this folder have this property, and this one doesn\'t.'],
+    ['duplicate_title', 'needs', 'Pages with one title are hard to tell apart in links and search.'],
+    ['oversized_index', 'should', 'Agents read the index first; past 150 KB or 1,500 rows it costs more than it helps.'],
+  ]
+  const HEALTH_CATEGORIES = [['Links', 25, ['broken', 'dead_row']], ['Index', 20, ['not_in_index', 'oversized_index']], ['Properties', 15, ['no_props', 'usual_prop']], ['Consistency', 25, ['unknown_tag', 'meeting_tag_missing', 'duplicate_title']]]
+  const healthPath = (id) => `vaults/${id}/health.json`
+  const healthState = (text) => { try { const j = JSON.parse(text || '{}'); return { history: Array.isArray(j.history) ? j.history.filter((x) => x && typeof x.day === 'string') : [], ignored: Array.isArray(j.ignored) ? j.ignored.filter((k) => typeof k === 'string') : [] } } catch { return { history: [], ignored: [] } } }
+  const findingsOf = async (v, ix) => {
+    const c = await checksOf(v, ix)
+    const at = (p) => toVaultRel(v, p)
+    const shown = (p) => toPageRel(v, p) ?? p
+    const titleOf = (p) => (pageOf(ix, p) ? pageOf(ix, p).title : p)
+    const index = vaultPath(v, 'index') || ''
+    const indexName = index.split('/').pop()
+    const written = (l) => (l.wiki ? `${l.embed ? '!' : ''}[[${l.target}]]` : `(${l.target})`)
+    const shownLink = (l) => (l.wiki ? `[[${l.target}]]` : linkBare(l))
+    const grouped = (list) => {
+      const by = new Map()
+      for (const [p, l] of list) {
+        const k = `${p}\n${written(l)}`
+        if (!by.has(k)) by.set(k, { p, l, lines: [] })
+        const e = by.get(k)
+        if (!e.lines.includes(l.line)) e.lines.push(l.line)
+      }
+      return [...by.keys()].sort(cmpStr).map((k) => by.get(k))
+    }
+    const out = []
+    const made = (kind, pages, about, title, fixable) => {
+      const [, group, why] = HEALTH_KINDS.find(([k]) => k === kind)
+      const names = [...new Set(pages.map(([p]) => p))].sort(cmpStr)
+      // Paths as the pages show them (relative to the pages folder), the index's own where it is outside it.
+      out.push({ key: `${kind}:${names.join(',')}${about != null ? `:${about}` : ''}`, kind, group, by: 'code', pages: pages.map(([p, l]) => [shown(p), l]), title, why, fixable, fix_all: fixable })
+    }
+    for (const p of c.not_in_index) made('not_in_index', [[at(p), null]], null, `${titleOf(p)} isn't in ${indexName}`, true)
+    for (const e of grouped(c.broken_links)) made('broken', e.lines.map((n) => [at(e.p), n]), written(e.l), `${shownLink(e.l)} leads to no page`, false)
+    for (const p of c.isolated) made('isolated', [[at(p), null]], null, `${titleOf(p)} has no links`, false)
+    for (const p of c.no_props) made('no_props', [[at(p), null]], null, `${titleOf(p)} has no properties`, true)
+    for (const [p, t] of c.unknown_tags) made('unknown_tag', [[at(p), null]], `#${t}`, `#${t} isn't in the taxonomy`, false)
+    const tax = tagTaxonomy((v.detected && v.detected.taxonomies) || [])
+    if (c.meeting_tag_missing && tax) made('meeting_tag_missing', [[tax, null]], `#${c.meeting_tag_missing}`, `The taxonomy doesn't allow #${c.meeting_tag_missing}, the tag of meeting notes`, false)
+    for (const e of grouped(c.dead_rows.map((l) => [index, l]))) made('dead_row', e.lines.map((n) => [index, n]), written(e.l), `${indexName} lists ${shownLink(e.l)}, which isn't there`, true)
+    for (const [p, k] of c.usual_props) made('usual_prop', [[at(p), null]], k, `${titleOf(p)} has no ${k}`, false)
+    for (const ps of c.duplicate_titles) made('duplicate_title', ps.map((p) => [at(p), null]), null, `“${titleOf(ps[0])}” is the title of ${ps.length} pages`, false)
+    if (c.oversized_index) made('oversized_index', [[index, null]], null, `${indexName} is ${Math.floor(c.oversized_index.bytes / 1024)} KB with ${c.oversized_index.rows} rows`, false)
+    const rank = (f) => HEALTH_KINDS.findIndex(([k]) => k === f.kind)
+    return out.sort((a, b) => rank(a) - rank(b) || cmpStr(a.key, b.key))
+  }
+  // §5.7: each category's points from the share of pages its findings touch; Freshness waits for the AI checks.
+  const healthScore = (findings, scope) => {
+    let points = 0, weights = 0
+    const categories = []
+    for (const [name, weight, kinds] of HEALTH_CATEGORIES) {
+      const touched = new Set(findings.filter((f) => kinds.includes(f.kind)).flatMap((f) => f.pages.map(([p]) => p)))
+      const pts = weight * Math.max(0, 1 - (5 * touched.size) / Math.max(1, scope))
+      points += pts
+      weights += weight
+      categories.push([name, Math.round(pts * 100) / 100, weight])
+    }
+    return { total: Math.min(100, weights ? Math.floor((100 * points) / weights + 0.5 + 1e-9) : 100), categories, code_only: true }
+  }
+  const healthNow = async (v) => {
+    const ix = await index(v)
+    const all = await findingsOf(v, ix)
+    const st = healthState(ctx.store.read(healthPath(v.id)))
+    const off = new Set(st.ignored)
+    const findings = all.filter((f) => !off.has(f.key)), ignored = all.filter((f) => off.has(f.key))
+    const score = healthScore(findings, pagesOf(ix).filter((p) => inScopeOf(v)(p.path)).length)
+    const day = ymd(new Date())
+    let history = st.history
+    // Today's point, kept for 90 days.
+    try {
+      const kept = ctx.store.update(healthPath(v.id), (text) => {
+        const cur = healthState(text)
+        const h = cur.history.filter((x) => x.day !== day && x.day >= ymd(new Date(Date.now() - 90 * 864e5)))
+        h.push({ day, score: score.total })
+        h.sort((a, b) => cmpStr(a.day, b.day))
+        return JSON.stringify({ ...cur, history: h }, null, 2)
+      })
+      history = healthState(kept).history
+    } catch (e) { ctx.log(`health of ${v.id}: ${(e && e.message) || e}`) }
+    return { findings, ignored, score, history, ai: null, lint: null, rev: ix.rev, ...pg(v) }
+  }
+  ctx.command('health', async ({ id }) => healthNow(vaultOf(id)))
+  // One finding as Health opens it: no fix yet (they come with the AI checks), whether it is ignored.
+  ctx.command('health_finding', async ({ id, key }) => {
+    const v = vaultOf(id)
+    const all = await findingsOf(v, await index(v))
+    const f = all.find((x) => x.key === key)
+    if (!f) throw new Error('that finding isn\'t there any more')
+    return { key, choices: [], fix: null, error: HEALTH_LATER, ignored: healthState(ctx.store.read(healthPath(v.id))).ignored.includes(key) }
+  })
+  ctx.command('ignore', ({ id, key, on }) => {
+    const v = vaultOf(id)
+    if (typeof key !== 'string' || !key) throw new Error('key: the finding')
+    ctx.store.update(healthPath(v.id), (text) => {
+      const cur = healthState(text)
+      const ignored = cur.ignored.filter((k) => k !== key)
+      if (on) ignored.push(key)
+      return JSON.stringify({ ...cur, ignored: ignored.slice(-2000) }, null, 2)
+    })
+    return true
+  })
+
+  // Home: what changed in the last 14 days (Echo's own writes from the activity log, the commits git has), the Health
+  // card, where to start reading, the vault's card. What comes in (Ingest) and the Ask suggestions come later.
+  ctx.command('home', async ({ id }) => {
+    const v = vaultOf(id)
+    const ix = await index(v)
+    const since = Date.now() - 14 * 864e5
+    const rows = []
+    const title = (rel) => { const p = toPageRel(v, rel); return (p !== null && pageOf(ix, p) && pageOf(ix, p).title) || rel.split('/').pop() }
+    const pagePath = (rel) => toPageRel(v, rel) ?? rel
+    for (const e of activityRecent(ctx.store.read(actPath(v.id)), since)) {
+      rows.push({ path: pagePath(e.path), title: title(e.path), kind: e.kind === 'new' ? 'new' : 'edit', plus: e.plus, minus: e.minus, at: e.at, by: e.by, who: e.by === 'new-page' ? 'New in Echo' : 'Edited in Echo', detail: e.commit ? `commit ${String(e.commit).slice(0, 7)}` : '' })
+    }
+    const g = await gitNow(v)
+    let gitWord = g.installed ? (g.git ? 'ready' : 'none') : 'no-git'
+    let last = null
+    if (g.git) {
+      try {
+        const log = await ctx.git.log(v.root, { max: 50 })
+        if (log[0]) last = { subject: log[0].subject, at: log[0].date }
+        for (const c of log) {
+          if (Date.parse(c.date) < since) break
+          if (c.echo === ctx.id) continue
+          rows.push({ path: '', title: c.subject, kind: 'edit', at: c.date, by: 'commit', who: c.author, detail: `commit ${c.rev.slice(0, 7)}` })
+        }
+      } catch { gitWord = 'failed' }
+    }
+    rows.sort((a, b) => cmpStr(String(b.at), String(a.at)))
+    const h = await healthNow(v)
+    const needs = h.findings.filter((f) => f.group === 'needs')
+    const fixable = h.findings.filter((f) => f.fixable)
+    const kinds = new Map()
+    for (const f of fixable) kinds.set(f.kind, (kinds.get(f.kind) || 0) + 1)
+    const graph = linkGraph(pagesOf(ix), indexPageOf(v), 'links')
+    const ip = indexPageOf(v)
+    const inbound = new Map()
+    for (const [, b] of graph.edges) inbound.set(b, (inbound.get(b) || 0) + 1)
+    const hubs = { index: ip && pageOf(ix, ip) ? { path: ip, links: graph.edges.filter(([a]) => a === ip).length } : null, pages: [...inbound].filter(([p]) => p !== ip).sort((a, b) => b[1] - a[1] || cmpStr(a[0], b[0])).slice(0, 5).map(([path, n]) => ({ path, in: n })) }
+    const prof = profilesNow()
+    const pid = v.profile || prof.default
+    const ipath = vaultPath(v, 'index')
+    const ist = ipath ? statSafe(v, ipath) : null
+    const tags = new Set()
+    for (const p of pagesOf(ix)) for (const t of p.tags) tags.add(t)
+    return {
+      rev: ix.rev, fresh: false, suggestions: [], continue: [],
+      whats_new: { rows: rows.slice(0, 40), git: gitWord, notes: vaultPath(v, 'notes') ? toPageRel(v, vaultPath(v, 'notes')) || '' : '' },
+      health: { score: h.score.total, history: h.history, top: needs.slice(0, 3).map((f) => ({ key: f.key, title: f.title, kind: f.kind, by: f.by })), needs: needs.length, fixable: fixable.length, fixable_kinds: [...kinds].sort((a, b) => b[1] - a[1]), code_only: true, ai: null },
+      coming_in: { error: INGEST_LATER },
+      hubs,
+      vault: { git: g.git ? { branch: g.git.branch, last } : null, index: ipath, index_bytes: ist && ist.kind === 'file' ? ist.size : null, pages_root: vaultPath(v, 'pages'), obsidian: !!(v.detected && v.detected.obsidian), profile: pid, profile_name: ((prof.profiles.find((p) => p.id === pid) || {}).name) || pid || '', pages: pagesOf(ix).length, tags: tags.size, skills: ((v.detected && v.detected.skills) || []).filter((k) => k.kind !== 'agents').length },
+    }
+  })
+
+  // A call's Knowledge (the chip on its page, its ⋯ items, the minutes' line): the vaults it may go to, those its minutes
+  // go to by themselves — the vaults for its threads, else its client, else the default, each on the call's AI profile
+  // and taking minutes automatically — and the user's choice for this call (`calls.json`: {<call>: vault id | "none"}).
+  const choicesOf = () => { try { const j = JSON.parse(ctx.store.read('calls.json') || '{}'); return j && typeof j === 'object' && !Array.isArray(j) ? j : {} } catch { return {} } }
+  ctx.command('call_knowledge', ({ call }) => {
+    const c = call && typeof call === 'object' ? call : {}
+    const name = String(c.name || '')
+    if (!name) throw new Error('call: the call as its page has it')
+    const prof = profilesNow()
+    const callProfile = c.profile || prof.default
+    const vs = load()
+    const vaults = vs.map((v) => ({ id: v.id, name: v.name, available: folderThere(v), profile: v.profile || prof.default, mode: v.minutes.mode }))
+    const mine = (b) => vs.filter((v) => (v.belongs || []).some(b))
+    const threads = Array.isArray(c.threads) ? c.threads : []
+    let routed = mine((b) => b.thread && threads.includes(b.thread))
+    if (!routed.length && c.client) routed = mine((b) => b.client === c.client)
+    if (!routed.length && prefs().default) routed = vs.filter((v) => v.id === prefs().default)
+    const choice = choicesOf()[name] || null
+    const targets = routed.filter((v) => v.minutes.mode === 'auto' && (v.profile || prof.default) === callProfile).map((v) => ({ id: v.id, name: v.name }))
+    return { vaults, targets: choice && choice !== 'none' ? vaults.filter((v) => v.id === choice).map((v) => ({ id: v.id, name: v.name })) : targets, record: { saved: [], choice }, stale: [], failure: null, profile: c.profile || null }
+  })
+  ctx.command('call_choice', ({ call, vault }) => {
+    const name = String(call || '')
+    if (!name) throw new Error('call: the call\'s name')
+    if (vault != null && vault !== '' && vault !== 'none') find(load(), vault)
+    ctx.store.update('calls.json', (text) => {
+      let j = {}
+      try { j = JSON.parse(text || '{}') || {} } catch { /* started again */ }
+      if (vault == null || vault === '') delete j[name]; else j[name] = String(vault)
+      return JSON.stringify(j, null, 2)
+    })
+    return true
+  })
+
+  // What the activity draws now and the later steps of Knowledge 1.0 answer: Ingest and its sources (step 5), minutes
+  // into a vault and a new vault from the twin starter (step 4), Health's fixes and AI checks (step 5). Each says so;
+  // none makes anything up.
+  const LATER = {
+    ingest_queue: INGEST_LATER, ingest_run: INGEST_LATER, ingest_changes: INGEST_LATER, ingest_text: INGEST_LATER, ingest_go: INGEST_LATER,
+    ingest_stop: INGEST_LATER, change: INGEST_LATER, ingest_apply: INGEST_LATER, ingest_discard: INGEST_LATER, ingest_requeue: INGEST_LATER,
+    ingest_skill: INGEST_LATER, source_add: INGEST_LATER, source_skip: INGEST_LATER, baseline: INGEST_LATER, pick_files: INGEST_LATER,
+    source_calls: INGEST_LATER, source_m365: INGEST_LATER,
+    fixes: HEALTH_LATER, fix: HEALTH_LATER, fix_all: HEALTH_LATER, lint: HEALTH_LATER, lint_run: HEALTH_LATER, lint_stop: HEALTH_LATER,
+    minutes_preview: MINUTES_LATER, save_minutes: MINUTES_LATER, past: MINUTES_LATER, sample: MINUTES_LATER,
+    new_vault: 'A new vault from Echo\'s twin starter isn\'t in this version of Knowledge yet',
+    twin: 'Installing the twin skill isn\'t in this version of Knowledge yet', twin_text: 'Installing the twin skill isn\'t in this version of Knowledge yet',
+  }
+  for (const [name, why] of Object.entries(LATER)) ctx.command(name, () => { throw new Error(why) })
 
   // ── Claude's tools: `echoctl plugin call obsidian <command> '<json>'` (agent/CLAUDE.md lists them) ──
   // Each takes `vault` (a name, folder or id) and answers from the index — Obsidian need not be open.

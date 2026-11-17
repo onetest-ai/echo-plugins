@@ -256,7 +256,7 @@ test('page: reads with its links, backlinks, local graph and whether the index l
   const p = await ctx.run('page', { id: 'twin', path: 'clients/acme.md' })
   assert.equal(p.title, 'Acme Corp')
   assert.deepEqual(p.tags, ['client'])
-  assert.ok(p.html.includes('href="#brain/obsidian:pages/twin/notes/2026-01-01-a.md"'), p.html)
+  assert.ok(p.html.includes('href="#obsidian:knowledge/twin/pages/notes/2026-01-01-a.md"'), p.html)
   assert.ok(!p.html.includes('title: Acme Corp'), 'the frontmatter isn\'t in the body')
   assert.deepEqual(p.backlinks.map((b) => b.path), ['CATALOG.md', 'notes/2026-01-01-a.md'])
   assert.equal(p.backlinks[1].line, 'With Acme.', 'the line reads as text, not Markdown')
@@ -320,8 +320,8 @@ test('page: names with % link safely; a missing page is marked, never linked', a
   write(root, 'knowledge/topics/z.md', '# Z\n\n[[50% plan]] [[a%20b]] [[new 10%]]\n')
   const ctx = await vault(root)
   const html = (await ctx.run('page', { id: 'twin', path: 'topics/z.md' })).html
-  assert.ok(html.includes('href="#brain/obsidian:pages/twin/topics/50%25%20plan.md"'), html)
-  assert.ok(html.includes('href="#brain/obsidian:pages/twin/topics/a%2520b.md"'), `the % is the name's own: ${html}`)
+  assert.ok(html.includes('href="#obsidian:knowledge/twin/pages/topics/50%25%20plan.md"'), html)
+  assert.ok(html.includes('href="#obsidian:knowledge/twin/pages/topics/a%2520b.md"'), `the % is the name's own: ${html}`)
   assert.ok(html.includes('data-md-missing="new 10%"'), html)
   assert.equal(linkPart('a b/č.md'), 'a%20b/%C4%8D.md')
 })
@@ -402,7 +402,7 @@ test('page: links route inside Echo; an image of the vault by its folder route',
   write(root, 'knowledge/topics/chart.png', '\u0089PNG fake')
   const ctx = await vault(root)
   const html = (await ctx.run('page', { id: 'twin', path: 'topics/y.md' })).html
-  assert.ok(html.includes('<a href="#brain/obsidian:pages/twin/clients/acme.md">acme</a>'), html)
+  assert.ok(html.includes('<a href="#obsidian:knowledge/twin/pages/clients/acme.md">acme</a>'), html)
   assert.ok(html.includes('>the client</a>'), html)
   assert.ok(html.includes('data-md-missing="missing page"'), `a missing page is marked: ${html}`)
   assert.ok(html.includes('href="echo://call/2026-11-05_090012-x"'), html)

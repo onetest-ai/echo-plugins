@@ -60,7 +60,7 @@ export function knReadOf(path) {
 /** Each `kn_*` action #17 sent → the host command and its arguments. */
 const ACTIONS = {
   kn_preview: ['preview'], kn_save_page: ['save_page'], kn_restore: ['restore'], kn_index_add: ['index_add'],
-  kn_remove: ['remove'], kn_reread: ['reread'], kn_set: ['set'], kn_ignore: ['ignore'], kn_call_choice: ['call_choice'],
+  kn_remove: ['remove'], kn_reread: ['reread'], kn_confirm_structure: ['confirm_structure'], kn_set: ['set'], kn_ignore: ['ignore'], kn_call_choice: ['call_choice'],
   kn_new_page: ['new_page', (a) => ({ id: a.id, folder: a.folder || '', title: a.name, template: a.template || null, index_row: !!a.row })],
   kn_add: ['add', (a) => ({ root: a.pick, name: a.name, minutes: a.minutes, commit: !!a.commit, profile: a.profile || '', anyway: true })],
   kn_new: ['new_vault'], kn_save_minutes: ['save_minutes'], kn_past: ['past'], kn_twin: ['twin'],
@@ -97,7 +97,7 @@ export async function knAct(call, cmd, args = {}) {
   if (!a) throw new Error(`Knowledge can't ${cmd} here`)
   const r = await call(a.command, a.args)
   if (a.command === 'save_page' && r && r.conflict) throw new Error('changed_on_disk')
-  if (a.command === 'add' || a.command === 'set') {
+  if (a.command === 'add' || a.command === 'set' || a.command === 'confirm_structure') {
     const id = a.command === 'add' ? r && r.id : a.args.id
     const all = await call('kn', {})
     const vault = ((all && all.vaults) || []).find((v) => v.id === id) || { id, name: a.args.name || id }

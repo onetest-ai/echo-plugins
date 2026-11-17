@@ -1,6 +1,6 @@
 ---
 id: TC-035
-title: A vault's Settings tab — 0.8's "What Claude knows" (its state, the When-line and the five parts changed in place, read again) and "For whom", then #17's Structure, Meeting minutes, Ingest, Ask, Schema, Skills and Git & AI; a setting kept; Remove asks first
+title: A vault's Settings tab — the structure a 0.8 vault confirms, 0.8's "What Claude knows" (its state, the When-line and the five parts changed in place, read again) and "For whom", then #17's Structure, Meeting minutes, Ingest, Ask, Schema, Skills and Git & AI; a setting kept; Remove asks first
 priority: critical
 type: functional
 requirements: [F-OB-37, F-OB-38]
@@ -33,4 +33,6 @@ tags: [obsidian, knowledge, window, settings, description]
 | 5 | The nav's sections in turn | Structure (Name, Pages live in knowledge, Index, Meeting notes, Sources, *Read again*); Meeting minutes (Automatically · Only when I ask · Never, As, Also include, Preview); Ingest (the skill, the new calls' rule); Ask (*Ask the vault*); Schema (AGENTS.md, TAG_TAXONOMY.md *Open*); Skills (ingest, *Run in Claude*, the twin starter row); Git & AI (main, *Commit what Echo writes*, AI profile, Echo's index) |
 | 6 | *Commit what Echo writes* off, then on | Each kept (`obs view`'s `commit`) |
 | 7 | *Remove from Echo…* → *Keep it* | The sheet "Remove acme-twin from Echo?" says the folder stays; *Keep it* keeps the vault |
-| 8 | *Run in Claude* on a skill | Claude Code opens in Echo's panel (TC-037); "/<skill> is copied: paste it in Claude." |
+| 8 | On `OBSIDIAN_FROM=0.8`'s environment, updated (TC-006): acme-wiki's Settings | Above Structure: "Echo found this vault's shape and doesn't use it yet. … Echo reads the whole folder as pages, as Obsidian vaults 0.8 did." with *Confirm the structure*; *Pages live in* "(the folder itself)" |
+| 9 | *Confirm the structure* | "The structure is confirmed: Echo reads the vault by it."; the banner gone; `obs view`'s `structure` "confirmed"; Pages lists the pages folder's pages |
+| 10 | *Run in Claude* on a skill | Claude Code opens in Echo's panel (TC-037); "/<skill> is copied: paste it in Claude." |

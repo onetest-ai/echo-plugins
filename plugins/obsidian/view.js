@@ -838,7 +838,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     return `<div class="kn-vset"><nav class="kn-vset-nav">${nav.map(([id, l]) => `<button class="set-nav" data-kn="vs-go" data-to="${id}">${l}</button>`).join('')}<button class="set-nav" data-kn="tab" data-kn-tab="health">Health<span class="kn-nav-r" aria-hidden="true">→</span></button><span class="grow"></span><button class="set-nav danger" data-kn="remove-ask">Remove from Echo…</button></nav>
     <div class="kn-vset-main" data-keep-scroll>
       ${hooks.about ? hooks.about(v) : ''}
-      <section class="set-sec" id="vs-structure"><h3>Structure</h3><div class="set-card">
+      <section class="set-sec" id="vs-structure"><h3>Structure</h3>${v.structure === 'confirmed' ? '' : `<div class="kn-warn kn-structure-b"><span class="grow"><b>Echo found this vault's shape and doesn't use it yet.</b> ${d.pages ? `Its pages look to be in <code>${esc(d.pages)}/</code>${d.sources ? `, its sources in <code>${esc(d.sources)}/</code>` : ''}${d.templates ? `, its templates in <code>${esc(d.templates)}/</code>` : ''}; until` : 'Until'} you confirm it, Echo reads the whole folder as pages, as Obsidian vaults 0.8 did. Changing a folder below confirms it too.</span><button class="btn primary sm" data-kn="confirm-structure"${s.busy.structure ? ' disabled' : ''}>${s.busy.structure ? 'Confirming…' : 'Confirm the structure'}</button></div>`}<div class="set-card">
         ${row('Name', '', `<input class="set-in" data-kn-set="name" value="${esc(v.name)}" aria-label="The vault's name">`)}
         ${change('pages', 'Pages live in', P.pages === '' ? '(the folder itself)' : P.pages, d.obsidian ? 'Obsidian opens this folder.' : '')}
         ${change('index', 'Index', P.index, x.index_bytes ? `${kb(x.index_bytes)}${x.index_bytes > 60000 ? ' — large: Claude searches it rather than reading it whole' : ''}` : '')}
@@ -2476,6 +2476,7 @@ export async function createKnowledge(ctx, hooks = {}) {
       // Obsidian's link: Echo opens it (`data-ext`); the menu closes after.
       case 'obsidian': s.menu = null; setTimeout(render); return
       case 'copy': s.menu = null; try { ctx.ui.copy(d.text) } catch (err) { return say(String(err.message || err)) } return done('Copied.')
+      case 'confirm-structure': try { await run('kn_confirm_structure', { id: s.vault }, 'structure'); s.tree = null; s.page = null; s.path = ''; await refreshAll(); await loadSettings(); render(); done('The structure is confirmed: Echo reads the vault by it.') } catch (err) { say(String(err.message || err)) } return
       case 'reread': try { await run('kn_reread', { id: s.vault }, 'reread'); await refreshAll(); done('Read again.') } catch (err) { say(String(err.message || err)) } return
       // Ask the vault: Claude Code in the vault, in Echo's panel; a page or a skill is said, a skill's command copied.
       case 'ask': return askVault()

@@ -1076,6 +1076,7 @@ test('the seam: each kn_* action is one command, its arguments as the host takes
   assert.deepEqual(knActionOf('kn_new_page', { id: 'v', folder: 'topics', name: 'Pricing', template: '', row: true }), { command: 'new_page', args: { id: 'v', folder: 'topics', title: 'Pricing', template: null, index_row: true } })
   assert.deepEqual(knActionOf('kn_add', { pick: '/notes/acme', name: 'Acme', minutes: 'ask', commit: 1, profile: '' }), { command: 'add', args: { root: '/notes/acme', name: 'Acme', minutes: 'ask', commit: true, profile: '', anyway: true } })
   assert.deepEqual(knActionOf('kn_save_page', { id: 'v', path: 'a.md', text: 'x', base: 'b', message: 'm' }), { command: 'save_page', args: { id: 'v', path: 'a.md', text: 'x', base: 'b', message: 'm' } })
+  assert.deepEqual(knActionOf('kn_confirm_structure', { id: 'v' }), { command: 'confirm_structure', args: { id: 'v' } })
   for (const [a, c] of [['kn_ingest_run', 'ingest_go'], ['kn_fix', 'fix'], ['kn_lint', 'lint'], ['kn_save_minutes', 'save_minutes'], ['kn_new', 'new_vault'], ['kn_twin', 'twin']]) assert.equal(knActionOf(a).command, c)
   for (const gone of ['kn_chat_send', 'kn_chat_permit', 'kn_chat_terminal', 'kn_import_plugin', 'kn_pick', 'kn_drops', 'kn_reveal']) assert.equal(knActionOf(gone), null, gone)
 })

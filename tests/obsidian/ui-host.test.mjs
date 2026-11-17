@@ -40,7 +40,7 @@ function twin(root) {
 
 /** The plugin over one vault at `root` (its record as Knowledge keeps it), detected as `add` does. */
 async function vault(root, { commit = false, terminal = true, git = false, id = 'twin', detect = true, storeUnreadable = [], rec: more = {} } = {}) {
-  const rec = { schema: 1, id, name: 'Twin', root, state: 'ready', confirmed: true, added_at: '2026-11-01T09:00:00.000Z', commit, ...more }
+  const rec = { schema: 1, id, name: 'Twin', root, state: 'ready', confirmed: true, added_at: '2026-11-01T09:00:00.000Z', commit, structure: 'confirmed', ...more }
   const ctx = fakeCtx({ id: 'obsidian', terminal, folders: [root], disk: true, git, markdown: true, store: { 'vaults.json': JSON.stringify([rec]) }, storeUnreadable, echo: { clients: [{ id: 'acme', name: 'Acme' }], threads: [{ id: 'acme-rollout', name: 'Rollout', client: 'acme' }] }, profiles: { default: 'p1', profiles: [{ id: 'p1', name: 'Claude' }, { id: 'p2', name: 'Other' }] } })
   apply(ctx)
   if (detect) await ctx.run('reread', { id })

@@ -13,8 +13,9 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
 ```
 
 - The environment: Echo's standard data (Sam Rivera, Acme, Globex) with its fake `claude`, which refuses every run —
-  so Claude's reading of a vault fails and a case writes the vault's description itself (`save`, then `confirm`); two
-  made-up vaults in `$VAULTS` (`acme-wiki`, `home-notes`); the plugin installed from a copy of this checkout
+  so Claude's reading of a vault fails and a case writes the vault's description itself (`save`, then `confirm`); made-up
+  vaults in `$VAULTS` (`acme-wiki`, `home-notes`; `acme-twin`, twin-shaped — its pages in `knowledge/`, an index
+  `CATALOG.md`, a page template, an image, a hostile page — in a git repository of its own); the plugin installed from a copy of this checkout
   (`$MARKET`). With `OBSIDIAN_FROM=0.8`: Obsidian vaults 0.8.0 installed instead, both vaults connected, acme-wiki
   confirmed, its facts vault on with one note. Never the user's own Echo, vaults or Claude.
 - A vault is connected without the folder picker: `ECHOCTL_PICK_FOLDER="$VAULTS/<vault>" echoctl plugin call obsidian
@@ -23,4 +24,7 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   starts with.
 - Besides `echoctl`, a step may read files under `<dir>` (`cat`, `ls`, `grep`), run `tests/fixtures/obsidian/next.sh
   <dir>` (puts this checkout's version in `$MARKET` for `echoctl plugin update`), and look at the window with
-  Playwright (headless). Nothing else.
+  Playwright (headless). In the made-up vaults of `$VAULTS` only, a step may also do what the user's Obsidian or
+  editor would — write, append to or remove a file (`printf`, `rm`), look at its bytes (`xxd`) — and ask git there
+  (`git status`, `git log`, `git checkout -- <file>` to undo a step's change); `curl` the window's image route. Nothing
+  else.

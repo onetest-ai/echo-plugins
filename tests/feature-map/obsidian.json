@@ -55,6 +55,72 @@
    "title": "A folder that is a vault already, is inside one, or holds one isn't connected again, and the folder is given back",
    "priority": "medium",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-11",
+   "title": "Echo finds a vault's shape without changing it — its pages folder, index, notes folder and naming, templates, sources, taxonomies, rules, skills, Obsidian's settings — when it is connected, when asked to read it again (the user's overrides kept), and once in the background for a vault from 0.8",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-12",
+   "title": "One index per vault over its pages folder (sources, templates and machinery left out), rebuilt by size and time, with a revision; Claude's index commands keep their arguments and answers, their note paths relative to the pages folder, named as `pages` when it isn't the vault's root",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-13",
+   "title": "A page reads as safe HTML: links to the vault's pages route inside Echo, a missing page is marked, https and Echo's links kept, images only png/jpg/gif/webp from inside the vault, the vault's own markup (scripts, javascript: and file: links, raw HTML, code) stays text; with its links, backlinks and their lines, local graph, and whether the index lists it",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-14",
+   "title": "An edit is saved only over the text it was opened with: a change made meanwhile comes back as a conflict with what is there now and is never written over; line endings are kept; a page that isn't UTF-8 or is over 2 MB is read only",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-15",
+   "title": "A new page from the vault's template (title, date, time filled) or its page format, named in the folder's own way, never over a page that is there, with a row in the index's table for its folder when asked",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-16",
+   "title": "In a vault in git: a save, a new page and a restore commit only the files Echo wrote when the vault's commit is on; a page's history, a version's text and changes; a restore never over changes git hasn't got, and is a new commit",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-17",
+   "title": "Find pages in a vault: by #tag, then by title, path and words in the text, each text hit with its line as plain text",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-18",
+   "title": "The vault's graph: pages with their top folder, tags and number of links, links as edges, tags as nodes when asked, the index a hub; the 0.8 browser still draws it",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-19",
+   "title": "A vault's checks, read only: pages the index doesn't list, broken links, isolated pages, pages without properties, tags the taxonomy doesn't allow, index rows to missing pages",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-20",
+   "title": "Every change Echo makes in a vault leaves a line in its activity log (what, by whom, lines added and removed, the commit, the version restored, the index row written with it), the last 2,000 kept",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-21",
+   "title": "Paths never leave the vault: no `..`, absolute path, drive, device name or link, and never a dot folder (.git, .obsidian), the sources or the templates as a page — read or written",
+   "priority": "critical",
+   "check": "agent"
   }
  ]
 }

@@ -33,7 +33,8 @@ Echo keeps an index of every vault as Obsidian does (links and where they lead, 
 headings, tasks), whether or not Obsidian is open. Ask it instead of searching file by file:
 
 `${CLAUDE_PLUGIN_ROOT}/scripts/echoctl plugin call obsidian <command> '<json>'` — "vault": a vault's name or folder;
-"note": its path in the vault, or its name as a [[link]] would say it. Echo lets its sessions run these commands
+"note": its path in the vault's pages folder, or its name as a [[link]] would say it. Where a vault keeps its pages in
+a folder of its own (`knowledge/`), the answers name it as "pages" and every note path is relative to it. Echo lets its sessions run these commands
 without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `where`, `tasks`, `unresolved`,
 `rename_plan` — they only read the index.
 

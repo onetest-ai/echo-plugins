@@ -2,7 +2,16 @@
 
 The user's own Claude prompts — routines — run on a schedule on their AI profiles, each answer sent to them in
 Telegram, Teams, mail or on Today. Turn here when the user asks about their routines: what runs when, what a run
-answered or cost, why one failed, or help writing a new one.
+answered or cost, why one failed, or help writing a new one. Its section also shows Echo's own background jobs.
+
+## Echo's jobs
+
+Echo runs seven jobs by itself — Needs you now, Thread sync, Threads' mail and meeting chats, Minutes, Meeting prep,
+Recall, Live notes — each with settings the user may tune: how often, whether it pauses at night (and the night
+itself), and the model (haiku, sonnet or opus, which each AI profile maps to its own). `echoctl jobs` lists them with
+each setting's value and default, last run and runs today: read it to answer "why didn't the sync run at night", "how
+often does Recall read". Only the user changes them, in this section (or `echoctl jobs set` themselves): a change from
+a run Echo started is refused, so tell them where instead. The jobs run on their settings with or without this plugin.
 
 ## What it keeps (in Echo's data folder, `.echo/plugins/scheduler/`)
 
@@ -23,7 +32,8 @@ a short message), then point them to the section to save it.
 
 ## Where the user manages it
 
-Settings → From plugins → Scheduler (⌘K "Scheduler: routines"): a row per routine with its next and last run and its
+Settings → From plugins → Scheduler (⌘K "Scheduler: routines", "Scheduler: Echo's jobs"): Echo's jobs first, each with
+its settings, a way back to its default, and the night; then a row per routine with its next and last run and its
 cost in 30 days; a routine's runs, each with its answer, tokens, cost and what Claude did; New routine — blank or from
 a template (Plan for the day, Monday asks, Meeting prep, Friday wrap-up) — with Try it before saving; Run now; on or
 off; Delete. A failed run also shows in Echo's Inbox with Run again.

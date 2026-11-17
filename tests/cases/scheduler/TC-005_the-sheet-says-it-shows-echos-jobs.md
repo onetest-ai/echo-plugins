@@ -1,0 +1,27 @@
+---
+id: TC-005
+title: The install sheet says the Scheduler shows Echo's background jobs and changes them only in its screens
+priority: high
+type: functional
+requirements: [F-SCH-05]
+module: scheduler
+run: agent
+platform: any
+data: standard
+tags: [scheduler, jobs, permissions]
+---
+
+# TC-005: The sheet names Echo's jobs
+
+## Preconditions
+- A fresh environment from `up.sh` (Echo 0.9.13, or main with onetest-ai/echo#672)
+
+## Steps
+
+| # | Action | Expected Result |
+|---|--------|----------------|
+| 1 | `cat <dir>/install.log` | "Scheduler 0.6.0"; among its lines "Shows Echo's background jobs and changes how often each runs, when it pauses at night and which model it uses — only when you change them in its screens"; "Installed Scheduler 0.6.0" |
+| 2 | `echoctl plugin list` | The Scheduler (`"id": "scheduler"`) listed with its summary "See and tune what Echo runs by itself — how often, the night pause, the model — and run your own Claude prompts on a schedule, …" |
+
+## Expected Final State
+Scheduler 0.6.0 installed; Echo's jobs untouched.

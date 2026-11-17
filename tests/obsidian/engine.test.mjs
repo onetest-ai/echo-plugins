@@ -468,7 +468,7 @@ test('checks: dead rows, usual properties, duplicate titles, an oversized index,
   assert.ok(c.not_in_index.includes('notes/2026-01-04-d.md'))
   assert.deepEqual(c.duplicate_titles, [['notes/2026-01-01-a.md', 'notes/2026-01-06-f.md']], 'case and spacing ignored')
   assert.deepEqual(c.usual_props, [], 'six notes: title and tags on all, date on one')
-  // Nine notes, eight with a date (80 %): the one without it lacks a usual property; tags on five (under 80 %).
+  // Ten notes, eight with a date (80 %): the one without it lacks a usual property; tags on five (under 80 %).
   for (const n of ['b', 'c']) f.set(`knowledge/notes/2026-01-0${n === 'b' ? 2 : 3}-${n}.md`, `---\ntitle: ${n}\ndate: 2026-01-01\ntags: [meeting]\n---\n`)
   f.set('knowledge/notes/2026-01-04-d.md', '---\ntitle: d\ndate: 2026-01-04\n---\n')
   f.set('knowledge/notes/2026-01-05-e.md', '---\ntitle: e\ndate: 2026-01-05\ntags: [meeting]\n---\n')
@@ -486,4 +486,43 @@ test('checks: dead rows, usual properties, duplicate titles, an oversized index,
   assert.ok(none.no_index)
   assert.deepEqual(none.not_in_index, [])
   assert.equal(none.oversized_index, null)
+})
+
+// ── QuickJS's limits (64 MB shared by every plugin, 5 s a slice): where the port parts from Rust on purpose ──
+import { PAGE_MAX_LINKS, PAGE_MAX_TAGS, PAGE_MAX_HEADINGS, isTextSource as textSource } from '../../plugins/obsidian/main.js'
+
+test('limits: a page keeps at most PAGE_MAX_LINKS links, PAGE_MAX_TAGS tags and PAGE_MAX_HEADINGS headings', () => {
+  assert.equal(scanPage('a.md', '[[a]] '.repeat(PAGE_MAX_LINKS + 50)).links.length, PAGE_MAX_LINKS)
+  assert.equal(scanPage('a.md', '[a](b.md) '.repeat(PAGE_MAX_LINKS + 50)).links.length, PAGE_MAX_LINKS)
+  assert.equal(scanPage('a.md', Array.from({ length: PAGE_MAX_TAGS + 50 }, (_, i) => `#t${i}`).join(' ')).tags.length, PAGE_MAX_TAGS)
+  assert.equal(scanPage('a.md', Array.from({ length: PAGE_MAX_HEADINGS + 50 }, (_, i) => `## h${i}`).join('\n')).headings.length, PAGE_MAX_HEADINGS)
+})
+
+test('limits: hostile lines take linear time (each well under a second here)', () => {
+  const quick = (label, f) => { const t = Date.now(); f(); assert.ok(Date.now() - t < 1000, `${label}: ${Date.now() - t} ms`) }
+  quick('spaces in a heading', () => scanPage('a.md', '# a' + ' '.repeat(200000) + 'b\n'))
+  quick('spaces in frontmatter', () => fmParse('a: x' + ' '.repeat(200000) + 'y'))
+  quick('a run of \\r', () => fmParse('a: b' + '\r'.repeat(200000) + 'x'))
+  quick('hashes in a heading', () => scanPage('a.md', '# ' + '#'.repeat(200000) + 'x\n'))
+  quick('Markdown links that never close', () => scanPage('a.md', '[](('.repeat(100000)))
+  quick('a phrase on many lines', () => quoteLines('word\n'.repeat(100000), 'word word word', 50000))
+})
+
+test('limits: a code span still hides its links and tags; tags beside wide chars are read', () => {
+  const p = scanPage('a.md', 'see `[[no]] #no` and [[yes]] #yes 😀 #also\n')
+  assert.deepEqual(p.links.map((l) => l.target), ['yes'])
+  assert.deepEqual(p.tags, ['yes', 'also'])
+  assert.deepEqual(scanPage('a.md', '😀#no (#ok\n').tags, ['ok'])
+})
+
+test('limits: the diff\'s table is capped at 4M cells — past it, all removed and all added', () => {
+  const a = Array.from({ length: 2100 }, (_, i) => `a${i}`).join('\n')
+  const b = Array.from({ length: 2100 }, (_, i) => `b${i}`).join('\n')
+  assert.deepEqual(diffCounts(diffLines(a, b)), [2100, 2100])
+  assert.deepEqual(diffLines(a, b).slice(0, 1), [['-', 'a0']], 'removed first, as the fallback writes it')
+})
+
+test('isTextSource: a trailing `.` component is skipped as Path does', () => {
+  assert.equal(textSource('a.md/.'), true)
+  assert.equal(textSource('a/..'), false)
 })

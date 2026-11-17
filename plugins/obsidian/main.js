@@ -246,12 +246,18 @@ export function setVaultKey(v, key, value, known = {}) {
 //   (same answers: what they find is ASCII);
 // - `char::is_alphanumeric` is Alphabetic or a number (Nd, Nl, No): `\p{Alphabetic}` or `\p{N}`;
 // - `str::to_lowercase` is JS's `toLowerCase` (both with the final sigma); `ledger::norm` lowercases one char at a time
-//   (`char::to_lowercase`, no final sigma), so `norm` does too; `eq_ignore_ascii_case`/`to_ascii_lowercase`: `asciiLower`.
+//   (`char::to_lowercase`, no final sigma), so `normWords` does too; `eq_ignore_ascii_case`/`to_ascii_lowercase`: `asciiLower`.
 
 const WS = /^\p{White_Space}$/u
 const ALNUM = /^[\p{Alphabetic}\p{N}]$/u
-const rsTrim = (s) => s.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, '')
-const rsTrimStart = (s) => s.replace(/^\p{White_Space}+/u, '')
+// Trims by index, never by a pattern anchored at the end: `/\s+$/` on a long run of spaces mid-text is quadratic in
+// QuickJS (Echo's host gives a plugin 5 s a slice), where Rust's `trim` is linear. Every White_Space char is in the BMP.
+const isWs = (c) => WS.test(c)
+const rsTrimStart = (s) => { let a = 0; while (a < s.length && isWs(s[a])) a++; return s.slice(a) }
+const rsTrimEnd = (s) => { let b = s.length; while (b > 0 && isWs(s[b - 1])) b--; return s.slice(0, b) }
+const rsTrim = (s) => rsTrimEnd(rsTrimStart(s))
+/** `s` without the run of `chars` (a string of single units) at its end — `trim_end_matches`, linear. */
+const trimEndOf = (s, chars) => { let b = s.length; while (b > 0 && chars.includes(s[b - 1])) b--; return s.slice(0, b) }
 const rsWords = (s) => s.split(/\p{White_Space}+/u).filter((w) => w !== '')
 const asciiLower = (s) => s.replace(/[A-Z]/g, (c) => c.toLowerCase())
 const isSurrogate = (u) => u >= 0xd800 && u <= 0xdfff
@@ -345,8 +351,8 @@ export function fmSplit(text) {
   while (at < rest.length) {
     const nl = rest.indexOf('\n', at)
     const end = nl < 0 ? rest.length : nl + 1
-    const bare = rest.slice(at, end).replace(/[\r\n]+$/, '')
-    if (bare === '---' || bare === '...') return [rest.slice(0, at).replace(/[\r\n]+$/, ''), rest.slice(end)]
+    const bare = trimEndOf(rest.slice(at, end), '\r\n')
+    if (bare === '---' || bare === '...') return [trimEndOf(rest.slice(0, at), '\r\n'), rest.slice(end)]
     at = end
   }
   return [null, text]
@@ -473,7 +479,7 @@ export function fmParse(raw) {
     return true
   }
   for (const line0 of textLines(raw)) {
-    const line = line0.replace(/\r+$/, '')
+    const line = trimEndOf(line0, '\r')
     if (rsTrim(line) === '' || rsTrimStart(line).startsWith('#')) continue
     if (line.startsWith(' ') || line.startsWith('\t') || line.startsWith('- ')) {
       if (!open) return broken()
@@ -558,9 +564,11 @@ export function quoteLines(text, quote, near = null) {
       all += `${n} `
     }
   })
+  // The line holding offset `at`: the last start at or before it, by binary search (a scan per match is quadratic).
   const lineAt = (at) => {
-    for (let k = starts.length - 1; k >= 0; k--) if (starts[k][0] <= at) return starts[k][1]
-    return null
+    let lo = 0, hi = starts.length - 1, got = null
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (starts[mid][0] <= at) { got = starts[mid][1]; lo = mid + 1 } else hi = mid - 1 }
+    return got
   }
   const found = []
   let from = 0
@@ -569,7 +577,7 @@ export function quoteLines(text, quote, near = null) {
     if (at < 0) break
     const a = lineAt(at)
     const b = lineAt(at + q.length - 2) // the last word's last unit, before the closing space
-    if (a !== null && b !== null) found.push([a, b])
+    if (a !== null && b !== null) { found.push([a, b]); if (near == null) break }
     from = at + 1
   }
   if (near != null) {
@@ -583,7 +591,8 @@ export function quoteLines(text, quote, near = null) {
 /** A file whose text a quote can be checked against: `.md .txt .csv .json` (not a PDF or a deck). Paths use `/` (Rust's
  *  `Path::extension` on Unix: a dotfile like `.md` has none). */
 export function isTextSource(path) {
-  const name = path.replace(/\/+$/, '').split('/').pop()
+  // Path's components skip empty ones and `.`: `a.md/.` names `a.md`.
+  const name = path.split('/').filter((c) => c !== '' && c !== '.').pop() || ''
   if (name === '' || name === '..') return false
   const i = name.lastIndexOf('.')
   if (i <= 0) return false
@@ -596,7 +605,9 @@ export function isTextSource(path) {
 /** Over this many lines on either side, the diff is "all removed, all added". */
 export const DIFF_MAX_LINES = 20000
 /** The most cells the LCS table may have (the changed middle of both sides, multiplied). */
-const DIFF_MAX_CELLS = 16000000
+// Rust's cap is 16M cells; here a cell is 4 bytes of a Uint32Array and every plugin shares Echo's 64 MB QuickJS
+// heap, so 4M (16 MB, about 2000 × 2000 changed lines) — past it, "all removed, all added", as in Rust.
+const DIFF_MAX_CELLS = 4000000
 
 function diffSplit(s) {
   if (s === '') return []
@@ -1025,48 +1036,67 @@ export function linkGraph(pages, indexPage, mode) {
 }
 
 // ── scan.rs `page`: one page read as Obsidian reads it ──
+// Unlike Rust, a page keeps at most these many links, tags and headings: every one is an object in the 64 MB QuickJS
+// heap all plugins share, and a 2 MB page of `[[a]]` would fill it. A link's destination is looked for in the next
+// 4096 units only (a hostile `[](((…` line would make every `](` scan to its end).
+export const PAGE_MAX_LINKS = 5000
+export const PAGE_MAX_TAGS = 1000
+export const PAGE_MAX_HEADINGS = 2000
+const DEST_MAX = 4096
+// And a line's scan for destinations is budgeted (units looked at, with the line's own length eight times over): a
+// line of `](` that never close stops being read for Markdown links rather than taking seconds.
+const DEST_BUDGET = (line) => 65536 + 8 * line.length
 
 /** The line's text outside inline code spans (`` `…` ``), each char of a span (and its backticks) a space. */
 function outsideCode(line) {
-  let out = ''
+  if (!line.includes('`')) return line
+  // By slices, not a char at a time (a 2 MB line would be millions of strings in the shared heap). A span's units are
+  // spaces (Rust: its chars; only where links and tags are looked for, so the count doesn't matter).
+  const parts = []
+  let at = 0
   let inCode = false
-  for (const c of line) {
-    if (c === '`') { inCode = !inCode; out += ' ' }
-    else out += inCode ? ' ' : c
+  for (;;) {
+    const k = line.indexOf('`', at)
+    const end = k < 0 ? line.length : k
+    parts.push(inCode ? ' '.repeat(end - at) : line.slice(at, end))
+    if (k < 0) break
+    parts.push(' ')
+    inCode = !inCode
+    at = k + 1
   }
-  return out
+  return parts.join('')
 }
 
 /** `[[…]]` and `![[…]]` in a line. */
 function wikilinksIn(line, n, out) {
-  let rest = line
-  for (;;) {
-    const i = rest.indexOf('[[')
+  let at = 0
+  while (out.length < PAGE_MAX_LINKS) {
+    const i = line.indexOf('[[', at)
     if (i < 0) break
-    const embed = rest.slice(0, i).endsWith('!')
-    const after = rest.slice(i + 2)
-    const j = after.indexOf(']]')
+    const embed = i > at && line[i - 1] === '!'
+    const j = line.indexOf(']]', i + 2)
     if (j < 0) break
-    const target = rsTrim(after.slice(0, j))
+    const target = rsTrim(line.slice(i + 2, j))
     if (target !== '' && !target.includes('\n')) out.push({ target, line: n, wiki: true, embed })
-    rest = after.slice(j + 2)
+    at = j + 2
   }
 }
 
-/** `[text](dest)` and `![alt](dest)` in a line, skipping web, mail and other schemes, and `#anchor`-only links. */
 function mdLinksIn(line, n, out) {
   let i = 0
-  while (i < line.length) {
+  let budget = DEST_BUDGET(line)
+  while (i < line.length && out.length < PAGE_MAX_LINKS && budget > 0) {
     if (line[i] === ']' && line[i + 1] === '(') {
-      const open = line.slice(0, i).lastIndexOf('[') // the `[` that opens this text (not one of a wikilink)
+      const open = i > 0 ? line.lastIndexOf('[', i - 1) : -1 // the `[` that opens this text (not one of a wikilink)
       if (open < 0 || (open > 0 && line[open - 1] === '[')) { i++; continue }
       const embed = open > 0 && line[open - 1] === '!'
-      const rest = line.slice(i + 2)
+      const rest = line.slice(i + 2, i + 2 + DEST_MAX)
       let dest
       let used
       if (rest.startsWith('<')) {
         const r = rest.slice(1)
         const k = r.indexOf('>')
+        budget -= k < 0 ? r.length : k
         if (k < 0 || !r.slice(k + 1).startsWith(')')) { i++; continue }
         dest = `<${r.slice(0, k)}>`
         used = k + 3
@@ -1075,6 +1105,7 @@ function mdLinksIn(line, n, out) {
         let depth = 0
         let end = -1
         for (let k = 0; k < rest.length; k++) {
+          budget--
           if (rest[k] === '(') depth++
           else if (rest[k] === ')') {
             if (depth === 0) { end = k; break }
@@ -1098,18 +1129,24 @@ function mdLinksIn(line, n, out) {
 
 /** Inline `#tags` in a line (not headings, not inside words, not all digits). */
 function inlineTagsIn(line, out) {
-  const cs = Array.from(line)
+  // By index, a code point at a time (no array of the line's chars: a 2 MB line would fill the shared heap).
+  const at = (k) => String.fromCodePoint(line.codePointAt(k))
+  let prev = ''
   let i = 0
-  while (i < cs.length) {
-    if (cs[i] === '#' && (i === 0 || WS.test(cs[i - 1]) || cs[i - 1] === '(')) {
+  while (i < line.length && out.length < PAGE_MAX_TAGS) {
+    const c = at(i)
+    if (c === '#' && (i === 0 || WS.test(prev) || prev === '(')) {
       let j = i + 1
-      while (j < cs.length && (ALNUM.test(cs[j]) || cs[j] === '_' || cs[j] === '-' || cs[j] === '/')) j++
-      const tag = cs.slice(i + 1, j).join('')
+      let d
+      while (j < line.length && (ALNUM.test(d = at(j)) || d === '_' || d === '-' || d === '/')) j += d.length
+      const tag = line.slice(i + 1, j)
       if (tag !== '' && !/^[0-9]+$/.test(tag)) out.push(tag)
+      prev = j > i + 1 ? at(j - 1 - (isSurrogate(line.charCodeAt(j - 1)) ? 1 : 0)) : c
       i = j
       continue
     }
-    i++
+    prev = c
+    i += c.length
   }
 }
 
@@ -1142,8 +1179,8 @@ export function scanPage(path, text, size = 0, mtime = 0) {
     }
     const hashes = /^#*/.exec(t)[0].length
     if (hashes >= 1 && hashes <= 6 && t.slice(hashes).startsWith(' ')) {
-      const h = rsTrim(rsTrim(t.slice(hashes)).replace(/#+$/, ''))
-      if (h !== '') headings.push([hashes, h])
+      const h = rsTrim(trimEndOf(rsTrim(t.slice(hashes)), '#'))
+      if (h !== '' && headings.length < PAGE_MAX_HEADINGS) headings.push([hashes, h])
       return
     }
     const plain = outsideCode(line)
@@ -1205,7 +1242,7 @@ export function allowedTags(text) {
 
 /** The vault's tag taxonomy among its taxonomy files (`detected.taxonomies`), or null. */
 export function tagTaxonomy(taxonomies) {
-  return (taxonomies || []).find((t) => t.toUpperCase().includes('TAG') || asciiLower(t).endsWith('tags.md')) ?? null
+  return (taxonomies || []).find((t) => t.replace(/[a-z]/g, (c) => c.toUpperCase()).includes('TAG') || asciiLower(t).endsWith('tags.md')) ?? null
 }
 
 /** The tag meeting notes get: the user's choice (`minutes.tag`), else the taxonomy's first `meeting…` tag, else

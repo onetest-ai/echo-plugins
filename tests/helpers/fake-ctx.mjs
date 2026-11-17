@@ -10,11 +10,12 @@
  *  keeps is handed back first by `get` as {token, from: 'echo'}; it is in `keptNow` ({host: token}). */
 /** `threads`: Echo's values per thread for `ctx.threads` ({thread: {key: value}}; leave it out for an Echo without it);
  *  `work`: true for `ctx.work`; `hints`: true for `ctx.view.hints`. */
+/** `profiles`: what `ctx.profiles()` gives ({default, profiles: [{id, name}]}); leave it out for an Echo without it. */
 /** `agent`: true for `ctx.agent.set` (its part for Claude in Echo), checked as Echo checks it; the last set is `agentNow`.
  *  `sessions`: true for `ctx.sessions.skills` / `read` (the last of each: `sessionsNow`). `folders`: the folders the
  *  user gave it (`ctx.fs.folders()`). `echo`: Echo's data for `ctx.echo.read` ({clients, threads, …}). `inbox`: true
  *  for `ctx.inbox` (`inboxNow`). The store's files are at `/store/<path>` (`ctx.store.path`). */
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false } = {}) {
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false, profiles } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
   const ctx = {
@@ -26,8 +27,21 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
     store: {
       read: (path) => (path in files ? files[path] : null),
       write: (path, text) => { files[path] = String(text) },
-      list: (dir = '') => Object.keys(files).filter((p) => p.startsWith(dir)),
-      remove: (path) => { delete files[path] },
+      // The names in a folder of the store, sorted (as Echo's `store.list`).
+      list: (dir = '') => {
+        const pre = dir ? `${dir.replace(/\/+$/, '')}/` : ''
+        return [...new Set(Object.keys(files).filter((p) => p.startsWith(pre)).map((p) => p.slice(pre.length).split('/')[0]))].sort()
+      },
+      // A file, or a folder with all in it (as Echo's `store.remove`).
+      remove: (path) => { for (const p of Object.keys(files)) if (p === path || p.startsWith(`${path}/`)) delete files[p] },
+      // Read, change, write (as Echo's `store.update`): `fn(text | null)`; undefined, null or the same text writes nothing.
+      update: (path, fn) => {
+        const cur = path in files ? files[path] : null
+        const next = fn(cur)
+        if (next === undefined || next === null || String(next) === cur) return cur
+        files[path] = String(next)
+        return files[path]
+      },
       path: (path = '') => `/store/${path}`,
     },
     settings: {
@@ -80,6 +94,7 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   const sessionsNow = { skills: null, read: null }
   if (sessions) ctx.sessions = { skills: (list) => { sessionsNow.skills = JSON.parse(JSON.stringify(list || [])) }, read: (dirs) => { sessionsNow.read = [...(dirs || [])] } }
   if (folders !== undefined) ctx.fs = { folders: () => [...folders] }
+  if (profiles !== undefined) ctx.profiles = () => JSON.parse(JSON.stringify(profiles))
   if (echo !== undefined) ctx.echo = { read: (kind) => JSON.parse(JSON.stringify(echo[kind] || [])) }
   const inboxNow = {}
   if (inbox) ctx.inbox = { set: (key, item) => { inboxNow[key] = item }, clear: (key) => { delete inboxNow[key] } }

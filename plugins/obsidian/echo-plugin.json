@@ -1,27 +1,23 @@
 {
   "id": "obsidian",
-  "name": "Obsidian vaults",
-  "version": "0.8.0",
-  "echo": ">=0.9.9",
-  "summary": "Connect the Obsidian vaults you already have: Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
+  "name": "Knowledge",
+  "version": "1.0.0",
+  "echo": ">=0.9.15",
+  "summary": "Your notes as Knowledge: connect the folders of notes you keep (an Obsidian vault, any folder of Markdown); Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "agent": {
-    "summary": "The user's Obsidian vaults and Echo's Knowledge: which vault to look in, asking Echo's index of them, adding notes in each vault's own way",
+    "summary": "The user's Knowledge vaults (Obsidian vaults and other folders of notes): which vault to look in, asking Echo's index of them, adding notes in each vault's own way",
     "prefix": "kb"
   },
   "uses": {
     "folders": {
-      "what": "Obsidian vaults"
+      "what": "folders of notes (Knowledge vaults)",
+      "write": true
     },
     "claude": {},
     "echo": {
       "read": [
         "clients",
-        "threads",
-        "dictionary",
-        "sources"
-      ],
-      "write": [
-        "dictionary"
+        "threads"
       ]
     },
     "sessions": {
@@ -37,19 +33,11 @@
         "tags",
         "where",
         "tasks",
-        "unresolved"
+        "unresolved",
+        "rename_plan"
       ]
     }
   },
   "main": "main.js",
-  "client": "client.js",
-  "settings": [
-    {
-      "key": "knowledge",
-      "label": "Knowledge",
-      "type": "bool",
-      "default": false,
-      "help": "Echo keeps the lasting facts it learns from your calls and mail as its own Obsidian vault — Knowledge → Notes; Claude in Echo answers from it."
-    }
-  ]
+  "client": "client.js"
 }

@@ -26,7 +26,11 @@
 // runs) and `vaults/<id>/ingest/<run>/` (a run's notices, changes and review), `locks/` (one run of a kind per vault),
 // `vaults.md`, `runs/<id>/`, `calls/<stamp>.json` (where a call's minutes went: by its stamp, Echo #772, so a retitle
 // is the same call; Echo 0.10.0 gives every call a stamp of its own), `global-skills.json` (the name each vault's
-// twin skill was added under in the user's own Claude Code, from the window).
+// twin skill was added under in the user's own Claude Code, from the window), `vaults/<id>/people.json` (the person pages
+// Echo wrote and the ones the user deleted) and `people-seen.json` (the day the person pages were last caught up).
+// Person pages: Echo's people (`echo.read('people')`) as `<pages>/people/<Name>.md` in the vaults their threads route
+// to, only Echo's own properties merged in (origin, echo, reports_to, reports, threads) — with a call's minutes, once a
+// day on start (vaults whose minutes are Automatic), or on `people_sync`.
 // Tags: an AI check's fix, an Ingest run's pages and Health's tag fix take Echo's dictionary's name for a tag
 // (`echo.read('dictionary')`, read only), the vault's own tag taxonomy winning.
 // It reaches only web pages the user adds as sources (`ctx.web.read`, Echo #764): on a site listed in its settings
@@ -2040,6 +2044,149 @@ export function routeCall(threads, look) {
   if (byClient) return { vaults: byClient, from: byClient.length ? 'client' : 'none', gone }
   if (look.def && look.has(look.def)) return { vaults: [{ id: look.def, from: 'default', by: null }], from: 'default', gone }
   return { vaults: [], from: 'none', gone }
+}
+
+// ── person pages: Echo's people (`echo.read('people')`) as pages in the vault, `<pages>/people/<Name>.md` ──
+// Echo writes only its own properties (PERSON_KEYS); the rest of the frontmatter and the whole body are the user's and
+// Ingest's, never written over.
+
+/** The properties of a person page that are Echo's: merged into a page's frontmatter, nothing else of it touched. */
+export const PERSON_KEYS = ['origin', 'echo', 'reports_to', 'reports', 'threads']
+
+/** A person's page file name: their name on one line, made safe as a note's name is (no `/ \ : * ? " < > | #`, no
+ *  control character, no dot or space at either end, never a device name or a path) and without the marks a
+ *  [[link]] can't hold (`[ ] ^`); `person.md` when nothing is left. */
+export function personFileName(name) {
+  const clean = trimDotsWs(rsTrim(oneLine(name).replace(BAD_NAME, '-').replace(/[[\]^]/g, '-')))
+  const safe = safeName(`${clean || 'person'}.md`)
+  return safe === '.md' || safe.startsWith('.') ? 'person.md' : safe
+}
+
+/** A [[link]] to a person's page by its file's stem, their name as its text when the stem isn't it. */
+export function personWikilink(stem, name) {
+  const alias = oneLine(name).replace(/[[\]|]/g, '')
+  return !alias || alias === stem ? `[[${stem}]]` : `[[${stem}|${alias}]]`
+}
+
+/** A person's threads in Echo's open threads (`open`: a Set of ids): where People places them, with their role and
+ *  stance (null when unset), then the other threads they were seen in, with none. */
+export function personThreads(p, open) {
+  const out = []
+  const seen = new Set()
+  for (const pl of (p && Array.isArray(p.places) ? p.places : [])) {
+    const t = pl && typeof pl.thread === 'string' ? pl.thread : null
+    if (!t || !open.has(t) || seen.has(t)) continue
+    seen.add(t)
+    out.push({ thread: t, role: typeof pl.role === 'string' && rsTrim(pl.role) ? pl.role : null, stance: typeof pl.stance === 'string' && rsTrim(pl.stance) ? pl.stance : null })
+  }
+  for (const t of (p && Array.isArray(p.threads) ? p.threads : [])) {
+    if (typeof t !== 'string' || !open.has(t) || seen.has(t)) continue
+    seen.add(t)
+    out.push({ thread: t, role: null, stance: null })
+  }
+  return out
+}
+
+/** The people whose pages go into vault `id`, each with only the threads routed there (`vaultsOf(thread)` → the ids of
+ *  the vaults a thread routes to: thread → client → default). A person with none isn't in this vault. */
+export function peopleOfVault(people, id, open, vaultsOf) {
+  const out = []
+  for (const p of people || []) {
+    if (!p || typeof p.key !== 'string' || !p.key) continue
+    const threads = personThreads(p, open).filter((t) => vaultsOf(t.thread).includes(id))
+    if (threads.length) out.push({ person: p, threads })
+  }
+  return out
+}
+
+/** Echo's properties of a person page, as frontmatter lines in PERSON_KEYS' order. `linkOf({key, name})` → a [[link]]
+ *  to their page in this vault, or null (their name then). */
+export function personProps(p, threads, linkOf) {
+  const out = ['origin: echo', `echo: ${yamlQuoted(personLink(p.key))}`]
+  const ref = (x) => yamlQuoted(linkOf(x) || oneLine(x.name || x.key))
+  const boss = p.reports_to && typeof p.reports_to === 'object' && p.reports_to.key ? p.reports_to : null
+  if (boss) out.push(`reports_to: ${ref(boss)}`)
+  const reports = (Array.isArray(p.reports) ? p.reports : []).filter((x) => x && x.key)
+  if (reports.length) out.push(`reports: [${reports.map(ref).join(', ')}]`)
+  if (threads.length) {
+    out.push('threads:')
+    for (const t of threads) {
+      out.push(`  - thread: ${yamlValue(t.thread)}`)
+      if (t.role) out.push(`    role: ${yamlValue(t.role)}`)
+      if (t.stance) out.push(`    stance: ${yamlValue(t.stance)}`)
+    }
+  }
+  return out
+}
+
+/** A frontmatter's lines as blocks: `{key, from, to}` per top-level key (its value's indented and `- ` lines with it;
+ *  a blank or comment line ends a block). */
+function fmBlocks(lines) {
+  const out = []
+  let cur = null
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]
+    const cont = l.startsWith(' ') || l.startsWith('\t') || l.startsWith('- ') || l === '-'
+    if (cont && cur) { cur.to = i + 1; continue }
+    cur = null
+    if (rsTrim(l) === '' || rsTrimStart(l).startsWith('#') || cont) continue
+    const at = l.indexOf(':')
+    if (at <= 0) continue
+    cur = { key: asciiLower(rsTrim(l.slice(0, at))), from: i, to: i + 1 }
+    out.push(cur)
+  }
+  return out
+}
+
+/** Echo's properties as they are in a frontmatter (`raw`, as fmSplit gives it): their blocks in PERSON_KEYS' order,
+ *  each line without trailing space — what tells whether Echo's properties changed. */
+export function personPropsIn(raw) {
+  const lines = textLines(String(raw || '')).map((l) => rsTrimEnd(l))
+  const blocks = fmBlocks(lines)
+  const parts = []
+  for (const k of PERSON_KEYS) for (const b of blocks.filter((x) => x.key === k)) parts.push(lines.slice(b.from, b.to).join('\n'))
+  return parts.join('\n')
+}
+
+/** `text` with Echo's properties (`props`, lines) in its frontmatter: Echo's keys taken out wherever they were and put
+ *  where the first of them was (else after the user's), every other line as it was; no frontmatter: one put on top.
+ *  The body is never touched, and the frontmatter keeps the file's line ending (CRLF when its `---` line has one). */
+export function withPersonProps(text, props) {
+  const crlf = text.startsWith('---\r\n') || (!text.startsWith('---\n') && withLineEndings(text, '\n') === '\r\n')
+  const eol = crlf ? '\r\n' : '\n'
+  const [raw, body] = fmSplit(text)
+  if (raw === null) return `---${eol}${props.join(eol)}${eol}---${eol}${text}`
+  const start = text.indexOf('\n') + 1
+  const end = start + raw.length
+  const lines = raw === '' ? [] : raw.split('\n').map((l) => trimEndOf(l, '\r'))
+  const drop = new Set()
+  let at = -1
+  for (const b of fmBlocks(lines)) {
+    if (!PERSON_KEYS.includes(b.key)) continue
+    if (at < 0) at = b.from
+    for (let i = b.from; i < b.to; i++) drop.add(i)
+  }
+  const out = []
+  for (let i = 0; i < lines.length; i++) {
+    if (i === at) out.push(...props)
+    if (!drop.has(i)) out.push(lines[i])
+  }
+  if (at < 0) out.push(...props)
+  const head = text.slice(0, start)
+  const rest = text.slice(end, text.length - body.length)
+  // An empty frontmatter (`---` then `---`): its closing line starts right after the opening one.
+  return `${head}${out.join(eol)}${raw === '' ? eol : ''}${rest}${body}`
+}
+
+/** A new person page: Echo's properties, then their name as its title. */
+export function personPageText(name, props) {
+  return `---\n${props.join('\n')}\n---\n\n# ${oneLine(name)}\n`
+}
+
+/** The index row's description of a person page: their name, with their title and organisation when Echo knows them. */
+export function personRowDesc(p) {
+  const more = [p.title, p.organisation].map((x) => oneLine(x || '')).filter(Boolean).join(', ')
+  return cutChars(more ? `${oneLine(p.name || p.key)} — ${more}` : oneLine(p.name || p.key), 300)
 }
 
 // ── sources.rs: Ingest's sources, as they came, in the vault's sources folder ──
@@ -4576,7 +4723,8 @@ export function apply(ctx) {
       vault: { id: v.id }, skills, has_twin: skills.some((k) => k.name === 'twin' && k.kind !== 'agents'), global_twin: globalTwinOf(v), global_twin_name: v.id.includes('twin') ? v.id : `${v.id}-twin`, twin_made: v.template === TWIN,
       tags: taxText != null ? allowedTags(taxText).length : null, terms: null, tag_file: tagTax, meeting_tag: meetingTag(v.minutes.tag, taxText),
       index_bytes: ist && ist.kind === 'file' ? ist.size : 0, pages: typeof d.md_files === 'number' ? d.md_files : null, cache_bytes: null,
-      past: (() => { try { return pastCountOf(v) } catch { return null } })(), templates, in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
+      past: (() => { try { return pastCountOf(v) } catch { return null } })(), templates,
+      people: (() => { try { const l = readJson(peoplePath(v.id), EMPTY_PEOPLE); return { dir: peopleDirOf(v), pages: Object.keys(l.pages || {}).length, last: l.last || null } } catch { return { dir: peopleDirOf(v), pages: 0, last: null } } })(), in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
     }
   })
   // The editor's preview: the text as the page would read, nothing written.
@@ -5594,6 +5742,203 @@ export function apply(ctx) {
     if (!commitId(commit) || !paths.length) return
     try { updateJson(pendingPath(v.id), { at: 0, items: [], calls: [] }, (q) => { q.items = (q.items || []).filter((it) => !paths.includes(it.path)) }) } catch (e) { ctx.log(`pending of ${v.id}: ${errText(e)}`) }
   }
+  // ── person pages (Echo's people, `<pages>/people/<Name>.md`): written in batches, never per event, no model ──
+  // (a) with a call's minutes note, its participants' pages, in the note's batch and commit, when the vault's minutes
+  // are Automatic; (b) the catch-up on start, at most once a day, into the vaults whose minutes are Automatic; (c)
+  // `people_sync` / the vault's Settings → People button, whatever its mode — the only one that recreates a page the
+  // user deleted. A page is this person's by its `echo:` property (a renamed or moved page stays theirs); its ledger
+  // (`vaults/<id>/people.json`: {pages: {key: path}, gone: {key: day}, last}) remembers what Echo wrote and what the
+  // user deleted. Only Echo's properties are merged in, only over the text read, only when they changed.
+  const peoplePath = (id) => `vaults/${id}/people.json`
+  const EMPTY_PEOPLE = { pages: {}, gone: {}, last: null }
+  // The people folder: one the pages folder has already (`people`, any case), else `<pages>/people`.
+  const peopleDirOf = (v) => {
+    const pf = vaultPath(v, 'pages')
+    try {
+      const hit = (ctx.fs.list(v.root, pf || '') || []).find((e) => e.dir && asciiLower(e.name) === 'people')
+      if (hit) return relJoin(pf, hit.name)
+    } catch { /* not there yet */ }
+    return relJoin(pf, 'people')
+  }
+  // Echo's people, read once for a few saves close together (a batch of past minutes).
+  let peopleHeld = null
+  const peopleNow = () => {
+    if (peopleHeld && Date.now() - peopleHeld.at < 5000) return peopleHeld.list
+    const list = ctx.echo.read('people') || []
+    peopleHeld = { at: Date.now(), list: Array.isArray(list) ? list : [] }
+    return peopleHeld.list
+  }
+  // The pages of a vault that name a person (`echo: echo://person/…`), by that link → vault-relative path.
+  const personPagesOf = async (v) => {
+    const out = new Map()
+    try {
+      const ix = await index(v)
+      for (const n of ix.notes.values()) {
+        const k = Object.keys(n.props).find((x) => lc(x) === 'echo')
+        if (!k) continue
+        const val = [].concat(n.props[k]).map(String)[0]
+        if (val && val.startsWith('echo://person/') && !out.has(val)) out.set(val, toVaultRel(v, n.p))
+      }
+    } catch (e) { ctx.log(`person pages of ${v.id}: ${errText(e)}`) }
+    return out
+  }
+  // Whose page a file is: its `echo:` property, or null.
+  const echoOfPage = (v, rel) => {
+    const t = readStrict(v, rel, EDIT_MAX)
+    if (t == null) return undefined
+    const [raw] = fmSplit(t)
+    const p = raw === null ? null : fmGet(fmParse(raw), 'echo')
+    return p ? propText(p) : null
+  }
+  // One batch of person pages into `v`. `o`: {keys (a Set: only these people; null: everyone routed here), recreate,
+  // commit: 'now' (one commit of its own) | 'with' (the caller's batch commits: its paths given back), checked (paths
+  // the caller asked git about already), batch (past minutes' Map of what it wrote)}.
+  // → {dir, added, changed, unchanged, gone, skipped, index, written, dirty, commit}.
+  const writePeople = async (v, o = {}) => {
+    const out = { vault: v.id, dir: null, added: 0, changed: 0, unchanged: 0, gone: [], skipped: [], index: null, written: [], dirty: new Set(), commit: null }
+    if (!available(v) || hiddenText(v.root)) { out.skipped.push({ why: hiddenText(v.root) || `the vault's folder isn't there: ${v.root}` }); return out }
+    const people = o.people || peopleNow()
+    const open = new Set(openThreads().map((t) => t.id))
+    const vs = load()
+    const routes = new Map()
+    const vaultsOf = (t) => { if (!routes.has(t)) routes.set(t, routeOf([t], vs).vaults.map((x) => x.id)); return routes.get(t) }
+    let todo = peopleOfVault(people, v.id, open, vaultsOf)
+    if (o.keys) todo = todo.filter((x) => o.keys.has(x.person.key))
+    const dir = peopleDirOf(v)
+    out.dir = dir
+    if (!todo.length) return out
+    const led = (() => { try { return { ...EMPTY_PEOPLE, ...readJson(peoplePath(v.id), EMPTY_PEOPLE) } } catch { return { ...EMPTY_PEOPLE } } })()
+    const byLink = await personPagesOf(v)
+    const isFile = (rel) => { const st = statSafe(v, rel); return !!st && st.kind === 'file' && st.real != null }
+    // Where each person's page is, or will be: theirs by `echo:`, else a new file (its name taken: `-2`, `-3`…).
+    const plan = new Map() // key → {rel, isNew}
+    const taken = new Set()
+    for (const { person: p } of todo) {
+      const link = personLink(p.key)
+      let rel = byLink.get(link)
+      if (rel && (!isFile(rel) || echoOfPage(v, rel) !== link)) rel = null
+      const had = led.pages[p.key]
+      if (!rel && had && isFile(had)) {
+        const e = echoOfPage(v, had)
+        if (e === link) rel = had
+        // Echo can't read it as text: never a second page beside it.
+        else if (e === undefined) { out.skipped.push({ key: p.key, path: had, why: 'it isn\'t UTF-8 text' }); continue }
+      }
+      if (rel) { plan.set(p.key, { rel, isNew: false }); continue }
+      // Echo wrote it once and it is gone (deleted, or no longer theirs): only `people_sync` writes it again.
+      if ((had || led.gone[p.key]) && !o.recreate) { out.gone.push(p.key); continue }
+      const base = `${dir}/${personFileName(p.name || p.key)}`
+      let cand = base
+      for (let n = 2; isFile(cand) || statSafe(v, cand) || taken.has(asciiLower(cand)); n++) {
+        if (isFile(cand) && echoOfPage(v, cand) === link) break
+        if (n > 999) { cand = null; break }
+        cand = `${base.slice(0, -3)}-${n}.md`
+      }
+      if (!cand) { out.skipped.push({ key: p.key, why: 'no free file name' }); continue }
+      taken.add(asciiLower(cand))
+      plan.set(p.key, { rel: cand, isNew: !isFile(cand) })
+    }
+    // A [[link]] to a person who has a page here (now, or in this batch).
+    const stemOf = (rel) => rel.split('/').pop().replace(/\.md$/i, '')
+    const linkOf = (x) => {
+      const pl = plan.get(x.key)
+      const had = led.pages[x.key]
+      const rel = pl ? pl.rel : byLink.get(personLink(x.key)) || (had && !led.gone[x.key] && isFile(had) ? had : null)
+      return rel ? personWikilink(stemOf(rel), x.name || x.key) : null
+    }
+    const indexRel = (() => { const i = vaultPath(v, 'index'); if (!i) return null; const st = statSafe(v, i); return st && st.kind === 'file' && st.real != null ? st.real : null })()
+    const logRel = logOf(v)
+    const cands = [...[...plan.values()].map((x) => x.rel), indexRel, logRel].filter((p) => p && !(o.checked && o.checked.has(p)))
+    const dirty = v.commit && cands.length ? await dirtyOf(v, cands) : { paths: new Set(), why: null }
+    absorbPending(v, dirty)
+    if (o.batch && dirty.paths.size) for (const [p, it] of o.batch) if (dirty.paths.has(p) && it.sha && (statSafe(v, p, { sha: true }) || {}).sha === it.sha) dirty.paths.delete(p)
+    out.dirty = dirty.paths
+    const added = []
+    for (const { person: p, threads } of todo) {
+      const pl = plan.get(p.key)
+      if (!pl) continue
+      const props = personProps(p, threads, linkOf)
+      try {
+        if (pl.isNew) {
+          const text = personPageText(p.name || p.key, props)
+          ctx.fs.write(v.root, pl.rel, text, { createNew: true })
+          changed(v, pl.rel, 'people', p.key, null, text, null)
+          added.push({ p, rel: pl.rel })
+          out.added++
+        } else {
+          const st = statSafe(v, pl.rel, { sha: true })
+          const cur = readPage(v, pl.rel, st)
+          if (!cur.utf8) { out.skipped.push({ key: p.key, path: pl.rel, why: 'it isn\'t UTF-8 text' }); continue }
+          const [raw] = fmSplit(cur.text)
+          if (raw !== null && personPropsIn(raw) === personPropsIn(props.join('\n'))) { out.unchanged++; led.pages[p.key] = pl.rel; continue }
+          const next = withPersonProps(cur.text, props)
+          ctx.fs.write(v.root, pl.rel, next, { ifSha: cur.sha })
+          changed(v, pl.rel, 'people', p.key, cur.text, next, null)
+          out.changed++
+        }
+        led.pages[p.key] = pl.rel
+        delete led.gone[p.key]
+        out.written.push(pl.rel)
+      } catch (e) { out.skipped.push({ key: p.key, path: pl.rel, why: /changed since you read it|is there already/.test(errText(e)) ? 'it changed while Echo wrote it — next time' : errText(e) }) }
+    }
+    for (const k of out.gone) if (!led.gone[k]) led.gone[k] = today()
+    if (out.written.length) {
+      indexes.delete(v.id)
+      // The new pages' rows, the index read once and written once over what was read.
+      if (added.length) {
+        if (!indexRel) out.index = 'skipped: the vault has no index'
+        else {
+          const ist = statSafe(v, indexRel, { sha: true })
+          const itext = ist && ist.kind === 'file' && ist.real != null ? readPage(v, indexRel, ist) : null
+          if (!itext || !itext.utf8) out.index = 'skipped: the index can\'t be read'
+          else {
+            let text = itext.text, n = 0, why = null
+            for (const a of added) {
+              const got = catalogInsert(text, relativeTo(indexRel, dir), relativeTo(indexRel, a.rel), personRowDesc(a.p), today(), today())
+              if (got.text) { text = got.text; n++ } else if (got.error) why = got.error
+            }
+            if (n) {
+              try { ctx.fs.write(v.root, indexRel, withLineEndings(itext.text, text), { ifSha: itext.sha }); out.written.push(indexRel); out.index = 'added' } catch (e) { out.index = `skipped: ${errText(e)}` }
+            } else out.index = why ? `skipped: ${why}` : 'listed'
+          }
+        }
+      }
+      // One line in the vault's log for the batch.
+      if (logRel) {
+        const lst = statSafe(v, logRel)
+        if (lst && lst.kind === 'file' && lst.real != null) {
+          const old = readSafe(v, logRel, 4 << 20)
+          const n = out.added + out.changed
+          const line = `- ${today()} · people · ${logText(dir)}/ · ${n} person page${n === 1 ? '' : 's'} from Echo (${out.added} new, ${out.changed} changed)`
+          try { ctx.fs.append(v.root, logRel, `${old && old !== '' && !old.endsWith('\n') ? '\n' : ''}${line}`); out.written.push(logRel) } catch (e) { ctx.log(`log of ${v.id}: ${errText(e)}`) }
+        }
+      }
+    }
+    led.last = { at: new Date().toISOString(), added: out.added, changed: out.changed, unchanged: out.unchanged, gone: out.gone.length, skipped: out.skipped.length }
+    try { ctx.store.write(peoplePath(v.id), JSON.stringify(led, null, 2)) } catch (e) { ctx.log(`people of ${v.id}: ${errText(e)}`) }
+    if (o.commit === 'now') {
+      const clean = out.written.filter((p) => !dirty.paths.has(p))
+      if (!v.commit) out.commit = 'off'
+      else if (!out.written.length) out.commit = 'skipped: nothing written'
+      else if (!clean.length) out.commit = `skipped: ${dirty.why || 'the files had changes of yours that weren\'t committed'}`
+      else {
+        const n = out.added + out.changed
+        const r = await commitPaths(v, shaItems(v, clean), `Echo: ${n} person page${n === 1 ? '' : 's'} → ${dir}/`)
+        out.commit = r.commit
+        dropPending(v, r.paths, r.commit)
+        if (commitId(r.commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'people', ref: null, plus: 0, minus: 0, commit: r.commit, also: r.paths })
+      }
+    }
+    return out
+  }
+  // The batch of (a): a call's participants' pages with its note, when the vault's minutes are Automatic. Never fails
+  // the note: what went wrong is logged.
+  const participantsPeople = async (v, src, opts) => {
+    if (v.minutes.mode !== 'auto') return null
+    const keys = new Set((src.participants || []).map((p) => p && p.person).filter((k) => typeof k === 'string' && k))
+    if (!keys.size) return null
+    try { return await writePeople(v, { ...opts, keys, commit: 'with' }) } catch (e) { ctx.log(`person pages of ${v.id}: ${errText(e)}`); return null }
+  }
   // Save a call's minutes into vault `v`. `how`: {manual, new, replace, anyway, stem, transcript, chat};
   // `commit`: 'now' (a command: one commit), 'quiet' (the rule's: one commit per quiet window), 'later' (past minutes:
   // the caller's one commit). → {vault, path, state, index, commit, paths (to commit)}.
@@ -5617,7 +5962,7 @@ export function apply(ctx) {
     const mine = entry && !how.new ? statSafe(v, entry.path, { sha: true }) : null
     // git first: from the check that the note is as Echo left it to the write, nothing slow runs.
     const cands = [mine && mine.kind === 'file' ? entry.path : null, indexRel, logRel].filter(Boolean)
-    const dirty = v.commit && commitMode !== 'off' ? await dirtyOf(v, cands) : CLEAN
+    const dirty = v.commit && commitMode !== 'off' ? await dirtyOf(v, cands) : { paths: new Set(), why: null }
     absorbPending(v, dirty)
     // In a batch (past minutes), a file an earlier save of the batch wrote, unchanged since, is Echo's too.
     if (how.batch && dirty.paths.size) for (const [p, it] of how.batch) if (dirty.paths.has(p) && it.sha && (statSafe(v, p, { sha: true }) || {}).sha === it.sha) dirty.paths.delete(p)
@@ -5671,6 +6016,9 @@ export function apply(ctx) {
         try { ctx.fs.append(v.root, logRel, `${old && old !== '' && !old.endsWith('\n') ? '\n' : ''}${line}`); written.push(logRel) } catch (e) { ctx.log(`log of ${v.id}: ${errText(e)}`) }
       }
     }
+    // Its participants' person pages, in this note's batch and commit (when the vault's minutes are Automatic).
+    const pp = await participantsPeople(v, src, { checked: new Set(cands), batch: how.batch })
+    if (pp) { for (const p of pp.written) if (!written.includes(p)) written.push(p); for (const p of pp.dirty) dirty.paths.add(p) }
     const clean = written.filter((p) => !dirty.paths.has(p))
     const items = v.commit ? shaItems(v, clean) : []
     let commit
@@ -5692,7 +6040,7 @@ export function apply(ctx) {
     changed(v, rel, 'minutes', call, was, n.text, commitId(commit), written.slice(1))
     const entryOut = { vault: v.id, path: rel, sha256: ctx.crypto.sha256(n.text), at: new Date().toISOString(), how: manual ? 'manual' : 'auto', state, index: row, commit, anyway: anyway || !!(entry && entry.anyway), revision: n.revision }
     updateRec(call, (r) => { r.saved = r.saved.filter((e) => e.vault !== v.id); r.saved.push(entryOut); r.failed = r.failed.filter((f) => f.vault !== v.id) })
-    return { vault: v.id, path: rel, state, index: row, commit, paths: v.commit ? clean : [], items }
+    return { vault: v.id, path: rel, state, index: row, commit, paths: v.commit ? clean : [], items, ...(pp ? { people: { added: pp.added, changed: pp.changed, unchanged: pp.unchanged } } : {}) }
   }
   const failed = (call, v, e, { batch = false } = {}) => {
     updateRec(call, (r) => { r.failed = r.failed.filter((f) => f.vault !== v.id); r.failed.push({ vault: v.id, at: new Date().toISOString(), error: errText(e) }) })
@@ -6078,6 +6426,38 @@ export function apply(ctx) {
   // whose record has the vault isn't written again; what the ledger has isn't queued again). The day moves forward
   // only when both reads answered; the first start only notes it (past minutes are the user's command).
   const catchUp = async () => {
+    const r = await catchUpSources()
+    if (load().length) r.people = await peopleCatchUp()
+    return r
+  }
+  // A batch's answer as a command gives it.
+  const peopleBrief = (r) => ({ vault: r.vault, dir: r.dir, added: r.added, changed: r.changed, unchanged: r.unchanged, gone: r.gone.length, skipped: r.skipped, index: r.index, commit: r.commit })
+  // (b) At most once a day, on start: the person pages of every vault whose minutes are Automatic, one batch and one
+  // commit a vault; a page the user deleted stays deleted. The day is kept once Echo's people were read.
+  const peopleCatchUp = async () => {
+    const day = today()
+    let seen = null
+    try { seen = readJson('people-seen.json', null) } catch { /* broken: as never */ }
+    if (seen && seen.day === day) return { done: 'today already' }
+    let list
+    try { list = ctx.echo.read('people') || [] } catch (e) { ctx.log(`catch-up of people: ${errText(e)}`); return { ok: false } }
+    const vaults = {}
+    for (const v of load()) {
+      if (v.minutes.mode !== 'auto' || !available(v) || hiddenText(v.root)) continue
+      try { vaults[v.id] = peopleBrief(await serial(v.id, () => writePeople(v, { people: list, commit: 'now' }))) } catch (e) { ctx.log(`person pages of ${v.id}: ${errText(e)}`) }
+    }
+    ctx.store.write('people-seen.json', JSON.stringify({ day }))
+    return { ok: true, vaults }
+  }
+  // (c) The person pages of one vault now, whatever its minutes' mode: a page the user deleted is written again.
+  ctx.command('people_sync', async ({ id, vault }) => {
+    const v = find(load(), id || vault)
+    if (hiddenText(v.root)) throw new Error(hiddenText(v.root))
+    if (!available(v)) throw new Error(`the vault's folder isn't there: ${v.root}`)
+    try { peopleHeld = null; peopleNow() } catch (e) { throw new Error(`Echo's people can't be read: ${echoWords(e)}`) }
+    return peopleBrief(await serial(v.id, () => writePeople(v, { recreate: true, commit: 'now' })))
+  })
+  const catchUpSources = async () => {
     if (!load().length) return { first: false, ok: false }
     const seen = readJson('seen.json', null)
     const day = today()

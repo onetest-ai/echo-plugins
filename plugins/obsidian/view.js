@@ -827,7 +827,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const change = (key, label, value, sub) => editing === key
       ? `<div class="set-row"><div><b>${label}</b><div class="kn-inline"><input class="search" id="kn-ovr" value="${esc(s.ovr.value)}" aria-label="${esc(label)}" spellcheck="false"><button class="btn primary sm" data-kn="ovr-save">Save</button><button class="btn ghost sm" data-kn="ovr-cancel">Cancel</button>${(v.overrides || {})[key] ? '<button class="btn ghost sm" data-kn="ovr-reset">As detected</button>' : ''}</div>${s.ovr.error ? `<div class="error">${esc(s.ovr.error)}</div>` : ''}</div><div></div></div>`
       : row(label, `${value ? `<code>${esc(value)}</code>` : '<span class="set-sub">none found</span>'}${sub ? ` — ${sub}` : ''}${(v.overrides || {})[key] ? ' <span class="tag">changed by you</span>' : ''}`, `<button class="btn ghost sm" data-kn="ovr" data-key="${key}" data-value="${esc(value || '')}">Change</button>`)
-    const nav = [['vs-about', 'What Claude knows'], ['vs-structure', 'Structure'], ['vs-minutes', 'Meeting minutes'], ['vs-ingest', 'Ingest'], ['vs-ask', 'Ask'], ['vs-schema', 'Schema & vocabulary'], ['vs-skills', 'Skills'], ['vs-git', 'Git & AI']]
+    const nav = [['vs-about', 'What Claude knows'], ['vs-structure', 'Structure'], ['vs-minutes', 'Meeting minutes'], ['vs-people', 'People'], ['vs-ingest', 'Ingest'], ['vs-ask', 'Ask'], ['vs-schema', 'Schema & vocabulary'], ['vs-skills', 'Skills'], ['vs-git', 'Git & AI']]
     const m = v.minutes || {}
     const sel = (key, opts, val) => `<select class="set-in" data-kn-set="${key}" aria-label="${esc(key)}">${opts.map(([k, l]) => `<option value="${k}"${k === val ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`
     const past = x.past && x.past.count ? row(`Save past minutes <span class="tag">${x.past.count}</span>`, `Earlier calls that fit this rule and aren't saved here yet${x.past.first && x.past.first.length ? `: ${x.past.first.slice(0, 3).map((f) => esc(f.title)).join(', ')}${x.past.count > 3 ? '…' : ''}` : ''}. One note each${v.commit ? ', one commit' : ''}.`, `<button class="btn sm" data-kn="past"${s.busy.past ? ' disabled' : ''}>${s.busy.past ? 'Saving…' : `Save ${x.past.count}…`}</button>`) : ''
@@ -858,6 +858,9 @@ export async function createKnowledge(ctx, hooks = {}) {
         ${row('Also include', 'The transcript and the meeting chat stay in Echo unless you add them.', `<label class="kn-check"><input type="checkbox" data-kn-set="transcript"${m.transcript ? ' checked' : ''}> Transcript</label><label class="kn-check"><input type="checkbox" data-kn-set="chat"${m.chat ? ' checked' : ''}> Chat</label>`)}
         ${row('Preview', 'How a call lands here: the newest call\'s note and its index row. Nothing is written.', '<button class="btn ghost sm" data-kn="sample">Preview…</button>')}
         ${past}
+      </div></section>
+      <section class="set-sec" id="vs-people"><h3>People</h3><div class="set-card">
+        ${row('Person pages', `Echo's people of the threads whose calls come here, a page each in <code>${esc((x.people || {}).dir || 'people')}/</code>. Echo writes only its own properties — <code>origin</code>, <code>echo</code>, <code>reports_to</code>, <code>reports</code>, <code>threads</code>; the rest of a page is yours. ${m.mode === 'auto' ? 'Updated with each call\'s minutes and once a day.' : 'Only when you click: this vault\'s minutes aren\'t saved automatically.'}${(x.people || {}).last ? ` Last: ${esc(String(x.people.last.at || '').slice(0, 10))}, ${many(x.people.last.added || 0, 'new page')}, ${x.people.last.changed || 0} changed.` : ''}`, `<button class="btn sm" data-kn="people-sync"${s.busy.people ? ' disabled' : ''}>${s.busy.people ? 'Updating…' : 'Update person pages'}</button>`)}
       </div></section>
       <section class="set-sec" id="vs-ingest"><h3>Ingest</h3><div class="set-card">
         ${row('The ingest skill', ingSkill ? `Runs on a copy of the vault when you prepare changes. In <code>${esc(ingSkill.path)}</code>.` : 'None found: Ingest offers the starter\'s <code>process-inbox</code>.', skillSel)}
@@ -1896,7 +1899,7 @@ export async function createKnowledge(ctx, hooks = {}) {
       <p class="note-line">${IC.info}<span>Your name, from Settings → About me, goes into the profile and the README. Nothing else is yours yet.</span></p>
       ${x.error ? `<p class="error">${esc(x.error)}</p>` : ''}`
     const blocked = x.picked && (!x.picked.empty || x.picked.refused)
-    const foot = `<span class="set-sub grow">23 files in a new folder.</span><button class="btn ghost" data-kn="sheet-close">Cancel</button><button class="btn primary" data-kn="new-go"${blocked || s.busy.new ? ' disabled' : ''}>${s.busy.new ? 'Creating…' : 'Create'}</button>`
+    const foot = `<span class="set-sub grow">24 files in a new folder.</span><button class="btn ghost" data-kn="sheet-close">Cancel</button><button class="btn primary" data-kn="new-go"${blocked || s.busy.new ? ' disabled' : ''}>${s.busy.new ? 'Creating…' : 'Create'}</button>`
     return sheet('Start a new vault', body, foot, IC.plus)
   }
   function newPageSheet() {
@@ -2703,6 +2706,10 @@ export async function createKnowledge(ctx, hooks = {}) {
           try { const r = await run('kn_past', { id: v.id, apply: true }, 'past'); await loadSettings(); await loadTree(); done(`${r.saved} note${r.saved === 1 ? '' : 's'} saved${r.skipped ? `; ${r.skipped} skipped` : ''}.`) } catch (err) { say(String(err.message || err)) }
           render()
         })
+      }
+      case 'people-sync': {
+        try { const r = await run('kn_people_sync', { id: v.id }, 'people'); await loadSettings(); await loadTree(); done(r.added + r.changed ? `${many(r.added, 'new person page')}, ${r.changed} changed${v.commit && r.commit && !String(r.commit).startsWith('skipped') && r.commit !== 'off' ? ', one commit' : ''}.` : 'The person pages are up to date.') } catch (err) { say(String(err.message || err)) }
+        return render()
       }
       case 'twin-add': return askFirst(`Add the twin skill to ${v.name}?`, 'Echo writes only .claude/skills/twin/SKILL.md.', 'Add', async () => { try { await run('kn_twin', { id: v.id, op: 'add' }, 'twin'); await run('kn_reread', { id: v.id }); await refreshAll(); await loadSettings(); render(); done('The twin skill is in the vault.') } catch (err) { say(String(err.message || err)) } })
       case 'sample': { const x = s.sheet = { kind: 'sample' }; render(); try { x.preview = await get(`api/kn/${enc(v.id)}/sample`) } catch (err) { x.preview = null; say(String(err.message || err)) } return st().sheet === x ? render() : undefined }

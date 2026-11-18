@@ -14,6 +14,7 @@ knowledge/
 ├── profile/          → who I am: role, expertise, opinions, how I write
 ├── topics/           → domain knowledge: concepts, how things work
 ├── clients/          → clients and organisations I work with
+├── people/           → the people of my threads (Echo keeps their `origin: echo` properties)
 ├── activities/       → projects and initiatives I run
 ├── notes/            → meeting notes and observations (YYYY-MM-DD-{slug}.md)
 ├── media/            → articles, talks, interviews, public positions
@@ -47,6 +48,11 @@ knowledge/
 |------|-------------|------------|
 
 ## Clients
+
+| File | Description | Date Added |
+|------|-------------|------------|
+
+## People
 
 | File | Description | Date Added |
 |------|-------------|------------|

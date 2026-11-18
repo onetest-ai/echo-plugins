@@ -391,6 +391,18 @@
    "title": "In the native desktop with the person's own accounts (#17's TC-004): the system's folder and file pickers, a file dropped on Ingest, Open in Obsidian opening Obsidian, Ask the vault on a signed-in Claude Code, an Ingest run and AI checks on the profile chosen, mail and Teams from a connected Microsoft 365, the panel's session closed when the plugin is turned off; macOS and Windows",
    "priority": "high",
    "check": "person"
+  },
+  {
+   "id": "F-OB-72",
+   "title": "Echo's people as person pages (<pages>/people/<Name>.md — a people folder the pages folder has, else people/ in it: knowledge/people/ in a twin): in the vaults their threads route to (thread → client → default), each page listing only that vault's threads with their role and stance; Echo writes only its own properties (origin, echo, reports_to and reports — a [[link]] when that person has a page in the vault, else the name — and threads), merged into the frontmatter over the text read, line endings kept, the user's other properties and the body never touched; a page is the person's by its echo: property (renamed, still theirs); a name taken by another page gets a file beside it (-2); a name made a safe file name; a new page gets a row in the index's People table",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-73",
+   "title": "Person pages are written in batches — never per event, no model — only when Echo's properties changed, one commit of Echo's own files and one log.md line a batch: with a call's minutes note (its participants, in the note's commit) when the vault's minutes are Automatic; the catch-up on start, at most once a day (Automatic vaults); people_sync and the vault's Settings → People → Update person pages, in any mode; a page the user deleted is written again only by people_sync",
+   "priority": "critical",
+   "check": "agent"
   }
  ]
 }

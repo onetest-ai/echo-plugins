@@ -367,6 +367,12 @@
    "title": "Tags through Echo's dictionary (read only): a tag the dictionary knows by another name is that name in what Echo proposes — an Ingest run's pages (said on the change), an AI check's fix, Health's fix of a tag the taxonomy doesn't allow (the dictionary's tag first); the vault's own taxonomy wins (only a tag it allows); the taxonomy, index and log never retagged; nothing added to the dictionary",
    "priority": "high",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-68",
+   "title": "Folders Echo refuses (Echo #784): a folder picked that is hidden or inside a hidden one is said in Echo's own words in the Connect sheet, nothing connected; a vault whose saved folder is inside a hidden one is read only, said once above its tabs — no Ingest run, save, commit or prepare tried",
+   "priority": "medium",
+   "check": "agent"
   }
  ]
 }

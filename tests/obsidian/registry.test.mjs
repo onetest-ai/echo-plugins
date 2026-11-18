@@ -276,6 +276,14 @@ test('a vault whose folder Echo took back (the plugin removed, installed again) 
   assert.deepEqual(ctx.agentNow.part.entries, [], 'no entry for Claude while the folder isn\'t given')
   await assert.rejects(ctx.run('give_again', { id: 'acme-wiki' }), /that isn't acme-wiki's folder \(\/v\/acme-wiki\)/)
   assert.deepEqual(given, [], 'a wrong folder picked is given back')
+  // A folder the user picked in Connect and hasn't added yet stays given when it is picked here by mistake.
+  given.push('/v/picked-in-connect')
+  answer = '/v/picked-in-connect'
+  ctx.system = { pickFolder: async () => { if (!given.includes(answer)) given.push(answer); return answer } }
+  await assert.rejects(ctx.run('give_again', { id: 'acme-wiki' }), /that isn't acme-wiki's folder/)
+  assert.deepEqual(given, ['/v/picked-in-connect'], 'given before the picker: kept')
+  given.length = 0
+  ctx.system = { pickFolder: async () => { given.push(answer); return answer } }
   answer = '/v/acme-wiki'
   assert.deepEqual(await ctx.run('give_again', { id: 'acme-wiki' }), { id: 'acme-wiki', given: true })
   assert.deepEqual(ctx.agentNow.part.entries.map((e) => e.name), ['acme-wiki'], 'Claude\'s entry is back')

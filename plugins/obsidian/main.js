@@ -4517,10 +4517,13 @@ export function apply(ctx) {
   ctx.command('give_again', async ({ id } = {}) => {
     const v = vaultOf(id)
     if (givenNow(v)) return { id: v.id, given: true }
+    // What Echo gave the plugin before the picker opened (a folder picked in Connect, not added yet, among them): a
+    // wrong folder picked now is given back only when this pick is what gave it.
+    const before = (() => { try { return ctx.fs.folders() } catch { return [] } })()
     const root = await ctx.system.pickFolder(`${v.name}'s folder`)
     if (!root) return { cancelled: true }
     if (root !== v.root) {
-      if (!load().some((x) => x.root === root)) { try { ctx.fs.forget(root) } catch { /* not given */ } }
+      if (!before.includes(root)) { try { ctx.fs.forget(root) } catch { /* not given */ } }
       throw new Error(`that isn't ${v.name}'s folder (${v.root})`)
     }
     publish()
@@ -6532,6 +6535,8 @@ export function apply(ctx) {
     const f = rec.failed[rec.failed.length - 1]
     return {
       vaults, targets: targetsOf(rec, route, p).map((v) => ({ id: v.id, name: v.name })),
+      // Where its thread, client or the default route it, whatever their mode or profile (the Save sheet's first choice).
+      routed: route.vaults.map((x) => x.id),
       record: { saved: rec.saved, choice: rec.choice }, stale,
       failure: f ? { vault: f.vault, name: (vs.find((v) => v.id === f.vault) || {}).name || f.vault, error: f.error } : null,
       profile: profileOf(p, ps),

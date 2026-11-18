@@ -1145,3 +1145,52 @@ test('a folder picked and not connected is given back: the sheet closed, another
   assert.deepEqual(knUnpickOf({ kind: 'newpage' }, null), [], 'another sheet')
   assert.deepEqual(knUnpickOf(null, null), [])
 })
+
+// ── the review of #32: the Save sheet's vault, the New page folder, the page count, the editing gate ──
+const { knSaveVault, knNewPageFolder, knPagesNow, knPageEditing, knHoldsBox } = load(['kn-window-choices'], ['knSaveVault', 'knNewPageFolder', 'knPagesNow', 'knPageEditing', 'knHoldsBox'])
+
+test('the Save sheet opens on the call\'s own vault — its thread\'s in Ask mode, its client\'s, the default — never another client\'s first', () => {
+  const vaults = [{ id: 'globex-notes', available: true }, { id: 'acme-wiki', available: true }, { id: 'my-twin', available: true }]
+  const k = (more) => ({ vaults, targets: [], routed: [], record: { saved: [] }, ...more })
+  // The thread's vault asks (no target): routed still names it.
+  assert.equal(knSaveVault(k({ routed: ['acme-wiki'] })), 'acme-wiki')
+  // The client's vault, on another profile than the call's (routed, not a target), the call saved elsewhere before.
+  assert.equal(knSaveVault(k({ routed: ['acme-wiki'], record: { saved: [{ vault: 'globex-notes' }] } })), 'acme-wiki')
+  // The default vault, automatic: a target.
+  assert.equal(knSaveVault(k({ targets: [{ id: 'my-twin' }], routed: ['my-twin'] })), 'my-twin')
+  // Saved in its own vault already: that vault again, not another one.
+  assert.equal(knSaveVault(k({ routed: ['acme-wiki'], record: { saved: [{ vault: 'acme-wiki' }] } })), 'acme-wiki')
+  // Two routed, the first saved: the other one.
+  assert.equal(knSaveVault(k({ routed: ['acme-wiki', 'my-twin'], record: { saved: [{ vault: 'acme-wiki' }] } })), 'my-twin')
+  // Routed nowhere ("none"): the first vault not saved in; asked for one: that one.
+  assert.equal(knSaveVault(k({})), 'globex-notes')
+  assert.equal(knSaveVault(k({ routed: ['acme-wiki'] }), 'my-twin'), 'my-twin')
+  // A routed vault whose folder isn't there: not offered first.
+  assert.equal(knSaveVault({ ...k({ routed: ['acme-wiki'] }), vaults: [{ id: 'globex-notes', available: true }, { id: 'acme-wiki', available: false }] }), 'globex-notes')
+  assert.equal(knSaveVault({ vaults: [] }), null)
+})
+
+test('New page: a missing link\'s page in the pages\' top folder (also when that is the vault\'s root, \'\'); else the open page\'s folder', () => {
+  assert.equal(knNewPageFolder('Pricing model', '', 'clients/acme.md'), '')
+  assert.equal(knNewPageFolder('Pricing model', 'knowledge', 'clients/acme.md'), 'knowledge')
+  assert.equal(knNewPageFolder('Pricing model', undefined, 'clients/acme.md'), '')
+  assert.equal(knNewPageFolder('', '', 'clients/acme.md'), 'clients')
+  assert.equal(knNewPageFolder('', 'knowledge', ''), 'knowledge')
+})
+
+test('the header\'s and switcher\'s page count: the tree\'s for its vault, the host\'s for another', () => {
+  const tree = { vault: 'acme-twin', pages: new Array(8).fill({}) }
+  assert.equal(knPagesNow(tree, { id: 'acme-twin', pages: 7 }), 8)
+  assert.equal(knPagesNow(tree, { id: 'acme-wiki', pages: 2 }), 2)
+  assert.equal(knPagesNow(null, { id: 'acme-twin', pages: 7 }), 7)
+})
+
+test('the editing gate: a page is edited only on Pages; a new address always draws', () => {
+  assert.equal(knPageEditing({ edit: { path: 'a.md' }, tab: 'pages' }), true)
+  assert.equal(knPageEditing({ edit: { path: 'a.md' }, tab: 'graph' }), false, 'another tab with an editor left open draws')
+  assert.equal(knPageEditing({ edit: null, tab: 'pages' }), false)
+  assert.equal(knHoldsBox({ force: false, hash: '#a', lastHash: '#a', editing: true }), true)
+  assert.equal(knHoldsBox({ force: false, hash: '#b', lastHash: '#a', editing: true }), false, 'a tab clicked: drawn')
+  assert.equal(knHoldsBox({ force: true, hash: '#a', lastHash: '#a', editing: true }), false)
+  assert.equal(knHoldsBox({ force: false, hash: '#a', lastHash: '#a', editing: false }), false)
+})

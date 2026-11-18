@@ -7,7 +7,7 @@
 
 export async function createKnowledge(ctx, hooks = {}) {
   const v1 = new URL(import.meta.url).search
-  const { KN_BASE, knDecode, knParseRoute, knRouteOf, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knKeepDraft, knRestoreDraft, knDropDraft, knLineDiff, knToolRows, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, knWhen, knHomeCards, knHomeNews, knHomeRecord, knTwinInstall, knTwinRemove } = await import(`./model.js${v1}`)
+  const { KN_BASE, knDecode, knParseRoute, knRouteOf, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knKeepDraft, knRestoreDraft, knDropDraft, knLineDiff, knToolRows, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, knWhen, knHomeCards, knHomeNews, knHomeRecord, knTwinInstall, knTwinRemove, knSaveVault, knNewPageFolder, knPagesNow, knPageEditing } = await import(`./model.js${v1}`)
   const { knRead, knAct, knConnectArgs, knUnpickOf } = await import(`./seam.js${v1}`)
 
   const timing = {}
@@ -358,7 +358,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     return `<h2 class="kn-h2">Knowledge</h2><span class="kn-switch-wrap"><button class="kn-switch" data-kn="switcher" aria-haspopup="menu" aria-expanded="${!!s.switcher}"><span class="kn-gem">${icon}</span><span class="kn-switch-name">${esc(label)}</span><span class="kn-car" aria-hidden="true">▾</span></button>${s.switcher ? switcherMenu() : ''}</span>`
   }
   /** A vault's pages: the tree's when it is that vault's (a page added in Echo counts at once), else as the host said. */
-  const pagesNow = (v) => { const t = st().tree; return t && t.vault === v.id && Array.isArray(t.pages) ? t.pages.length : v.pages }
+  const pagesNow = (v) => knPagesNow(st().tree, v)
   function head() {
     const s = st(), v = vault()
     if (!v) return `<header class="kn-head">${title()}<span class="grow"></span></header>`
@@ -2283,8 +2283,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st(), v = vault()
     // From Home or Health the tree may not be loaded yet: the sheet lists its folders.
     if (!s.tree || s.tree.vault !== v.id) await loadTree()
-    const folder = s.path ? s.path.split('/').slice(0, -1).join('/') : (s.tree && s.tree.root) || ''
-    s.sheet = { kind: 'newpage', name: name || '', folder: name ? ((s.tree && s.tree.root) ?? '') : folder, template: '', row: true, templates: await listTemplates(v) }
+    s.sheet = { kind: 'newpage', name: name || '', folder: knNewPageFolder(name, s.tree ? s.tree.root : undefined, s.path), template: '', row: true, templates: await listTemplates(v) }
     s.focus = 'kn-pname'
     render()
   }
@@ -2443,11 +2442,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   }
   async function openSave(callName, vaultId) {
     const s = st(), k = (S.call && S.call.knowledge) || {}
-    const saved = new Set(((k.record || {}).saved || []).map((e) => e.vault))
-    const vs = (k.vaults || []).filter((v) => v.available)
-    // Where the call's minutes go (its thread's, client's or the default vault) first, then any other not saved in yet.
-    const target = (k.targets || []).map((t) => t && t.id).find((id) => vs.some((v) => v.id === id) && !saved.has(id))
-    const first = vaultId || target || (vs.find((v) => !saved.has(v.id)) || vs[0] || {}).id
+    const first = knSaveVault(k, vaultId)
     if (!first) return say('No vault to save into — connect one in Knowledge first.')
     s.chip = null
     s.sheet = { kind: 'save', call: callName, vault: first, preview: null, transcript: false, chat: false }
@@ -2845,7 +2840,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   return {
     view, after, tick, load, loadVault, route: routeTo, home, overlay, data: () => st().data, vault: () => vault(), callChip, callMenu, countdownLine,
     settingsVaults, paletteActions, dropped, askVault, sheetKind: () => (st().sheet ? st().sheet.kind : null),
-    closeSheet: () => dropSheet(), asking: () => !!st().asking, closeAsking: () => { st().asking = null }, editing: () => !!(S.kn && S.kn.edit && S.kn.tab === 'pages'),
+    closeSheet: () => dropSheet(), asking: () => !!st().asking, closeAsking: () => { st().asking = null }, editing: () => knPageEditing(S.kn),
     badge: () => {
       const s = st(), h = s.hl && s.hl.vault === s.vault && s.hl.data, gi = s.ing && s.ing.vault === s.vault && s.ing.data
       return (gi ? knIngestWaiting(gi.runs) : 0) + (h ? knHealthList(h.findings).needs : 0)

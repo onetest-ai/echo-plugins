@@ -403,7 +403,7 @@ test('a thread whose recent calls are on two profiles (mixed) goes into no vault
   await w2.ctx.run('default', { id: d2.id })
   const r = await w2.ctx.run('people_sync', { id: d2.id })
   assert.ok(!exists(d2.root, `${P}/Grace Hopper.md`))
-  assert.equal(r.unknown, 2, 'pricing and globex-deal')
+  assert.deepEqual(r.unknown.slice().sort(), ['globex-deal', 'pricing'], 'pricing and globex-deal')
 })
 
 test('one call\'s minutes into an Automatic vault read Echo\'s calls once, whatever the threads', async () => {

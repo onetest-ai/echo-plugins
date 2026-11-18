@@ -6673,7 +6673,7 @@ export function apply(ctx) {
     return r
   }
   // A batch's answer as a command gives it.
-  const peopleBrief = (r) => ({ vault: r.vault, dir: r.dir, added: r.added, changed: r.changed, adopted: r.adopted, unchanged: r.unchanged, gone: r.gone.length, theirs: r.theirs.length, unknown: r.unknown.length, skipped: r.skipped, index: r.index, commit: r.commit })
+  const peopleBrief = (r) => ({ vault: r.vault, dir: r.dir, added: r.added, changed: r.changed, adopted: r.adopted, unchanged: r.unchanged, gone: r.gone.length, theirs: r.theirs.length, unknown: r.unknown, skipped: r.skipped, index: r.index, commit: r.commit })
   // (b) At most once a day, on start: the person pages of every vault whose minutes are Automatic, one batch and one
   // commit a vault; a page the user deleted stays deleted. The day is kept once Echo's people were read.
   const peopleCatchUp = async () => {

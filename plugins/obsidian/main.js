@@ -3295,8 +3295,9 @@ export function apply(ctx) {
       v = change((vs) => { const w = find(vs, id); w.state = 'analysing'; w.error = ''; w.started_at = Date.now(); return { ...w } })
     } catch (e) { running.delete(id); throw e }
     publish()
+    let s = null
     try {
-      const s = await survey(v.root)
+      s = await survey(v.root)
       // No notes: nothing to describe — no Claude run, no made-up description; the user writes it or reads it again later.
       if (!s.notes) {
         change((vs) => { const w = vs.find((x) => x.id === id); if (w) Object.assign(w, { state: w.confirmed ? 'ready' : 'empty', error: '', notes: 0, latest: 0, in_git: s.obsidian.git, is_vault: s.obsidian.is_vault, inside: [] }) })
@@ -3350,7 +3351,13 @@ export function apply(ctx) {
         if (!had || !(w.belongs || []).length) w.belongs = belongs
       })
     } catch (e) {
-      change((vs) => { const w = vs.find((x) => x.id === id); if (w) { w.state = w.confirmed ? 'ready' : 'failed'; w.error = String((e && e.message) || e).slice(0, 300) } })
+      // What the survey found stays true when Claude's reading fails (git, Obsidian's settings, how many notes).
+      change((vs) => {
+        const w = vs.find((x) => x.id === id)
+        if (!w) return
+        w.state = w.confirmed ? 'ready' : 'failed'; w.error = String((e && e.message) || e).slice(0, 300)
+        if (s) Object.assign(w, { notes: s.notes, latest: s.latest, in_git: s.obsidian.git, is_vault: s.obsidian.is_vault })
+      })
     } finally {
       running.delete(id)
       publish()
@@ -3405,7 +3412,7 @@ export function apply(ctx) {
   ctx.command('view', () => {
     recover()
     const vs = load()
-    return { vaults: vs.map((v) => ({ ...v, description: description(v.id), proposed: ctx.store.read(`vaults/${v.id}/proposed.md`) ? parse(ctx.store.read(`vaults/${v.id}/proposed.md`)) : null })), default: prefs().default, clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads') }
+    return { vaults: vs.map((v) => ({ ...v, given: givenNow(v), description: description(v.id), proposed: ctx.store.read(`vaults/${v.id}/proposed.md`) ? parse(ctx.store.read(`vaults/${v.id}/proposed.md`)) : null })), default: prefs().default, clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads') }
   })
   // `add` picks a folder; one with no notes comes back as `check` for the user's yes, then `add {root, anyway}`
   // connects it. One connected already comes back as `already`.
@@ -4474,12 +4481,14 @@ export function apply(ctx) {
       return { git: { branch: i.branch, head: i.head, busy: i.busy, changed, remotes: [] }, installed: true }
     } catch (e) { return { git: null, installed: !/isn't installed/.test(String((e && e.message) || e)) } }
   }
+  // Whether Echo gives the plugin this vault's folder now (a removal of the plugin takes its folders back; its data stays).
+  const givenNow = (v) => { try { return ctx.fs.folders().includes(v.root) } catch { return true } }
   const folderThere = (v) => { try { const st = ctx.fs.stat(v.root, ''); return !!st && st.kind === 'dir' } catch { return false } }
   const profilesNow = () => { try { const p = ctx.profiles() || {}; return { profiles: (p.profiles || []).map((x) => ({ id: x.id, name: x.name })), default: p.default || null } } catch { return { profiles: [], default: null } } }
   const proposedOf = (id) => { const t = ctx.store.read(`vaults/${id}/proposed.md`); return t ? parse(t) : null }
   const PATHS = ['pages', 'index', 'notes', 'naming', 'templates', 'sources']
   const vaultValue = (v, there, git, def) => ({
-    ...v, profile: v.profile || def, available: there, git, read_only: hiddenText(v.root),
+    ...v, profile: v.profile || def, available: there, git, read_only: hiddenText(v.root), given: givenNow(v),
     pages: v.detected && typeof v.detected.md_files === 'number' ? v.detected.md_files : null,
     paths: Object.fromEntries(PATHS.map((k) => [k, k === 'naming' ? vaultPath(v, k) || DATE_SLUG : vaultPath(v, k)])),
     description: description(v.id), proposed: proposedOf(v.id),
@@ -4495,9 +4504,27 @@ export function apply(ctx) {
       const there = folderThere(v)
       const g = there && v.id === id ? await gitNow(v) : { git: null, installed: true }
       if (!g.installed) installed = false
-      vaults.push(vaultValue(v, there, g.git, p.default))
+      const row = vaultValue(v, there, g.git, p.default)
+      // The shown vault's pages as Echo's index holds them now (a page Echo or the user added since it was connected).
+      const held = v.id === id ? indexes.get(v.id) : null
+      if (held && held.pf === vaultPath(v, 'pages')) row.pages = held.recs.size
+      vaults.push(row)
     }
     return { vaults, default: prefs().default, default_profile: p.default, profiles: p.profiles, git: installed, clients: ctx.echo.read('clients'), threads: ctx.echo.read('threads') }
+  })
+  // A vault whose folder Echo doesn't give the plugin now (its grant went with a removal of the plugin; the vault's
+  // settings and records stayed): the user picks that folder again, on their click, and everything goes on as before.
+  ctx.command('give_again', async ({ id } = {}) => {
+    const v = vaultOf(id)
+    if (givenNow(v)) return { id: v.id, given: true }
+    const root = await ctx.system.pickFolder(`${v.name}'s folder`)
+    if (!root) return { cancelled: true }
+    if (root !== v.root) {
+      if (!load().some((x) => x.root === root)) { try { ctx.fs.forget(root) } catch { /* not given */ } }
+      throw new Error(`that isn't ${v.name}'s folder (${v.root})`)
+    }
+    publish()
+    return { id: v.id, given: true }
   })
   // The folder picker of the Connect sheet: the folder and what Echo finds in it, nothing written and nothing connected
   // yet — `add {root}` connects it; `unpick` gives it back.
@@ -5703,6 +5730,9 @@ export function apply(ctx) {
   const flushPending = async (v, force = false) => {
     // Nothing is ever written in a vault inside a hidden folder: no commit tried there every quiet window.
     if (hiddenText(v.root)) return null
+    // A folder Echo doesn't give the plugin now (not connected, or its grant gone with a removal): the queue waits for it,
+    // never cleared by a commit that can't read the files.
+    if (!available(v)) return null
     const q = readJson(pendingPath(v.id), null)
     if (!q || !(q.items || []).length) return null
     if (!force && Date.now() - (q.at || 0) < QUIET_MS) return null
@@ -5829,7 +5859,7 @@ export function apply(ctx) {
       if (n.pictures && n.pictures.length && statSafe(v, cand.replace(/\.md$/i, ''))) continue
       try {
         if (n.file) size = (await ctx.fs.copyIn(n.file, v.root, cand, { createNew: true })).size
-        else { text = textFor(cand); ctx.fs.write(v.root, cand, text, { createNew: true }) }
+        else { text = textFor(cand); ctx.fs.write(v.root, cand, text, { createNew: true }); size = (statSafe(v, cand) || {}).size || 0 }
         rel = cand
       } catch (e) { if (!/is there already/.test(errText(e))) throw e }
     }

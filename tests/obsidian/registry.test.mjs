@@ -264,3 +264,19 @@ test('from 0.8: a terminal\'s first load lays out Claude\'s entries again (the f
   apply(ctx)
   assert.equal(ctx.agentNow.sets, 1)
 })
+
+test('a vault whose folder Echo took back (the plugin removed, installed again) is picked again, never another folder', async () => {
+  const given = []
+  const v = normalizeVault({ ...OLD, schema: SCHEMA })
+  const ctx = ctx08({ store: { 'vaults.json': JSON.stringify([v]), 'vaults/acme-wiki/description.md': DESC }, folders: given })
+  let answer = '/v/elsewhere'
+  ctx.system = { pickFolder: async () => { given.push(answer); return answer } }
+  ctx.fs.forget = (root) => { const i = given.indexOf(root); if (i >= 0) given.splice(i, 1) }
+  apply(ctx)
+  assert.deepEqual(ctx.agentNow.part.entries, [], 'no entry for Claude while the folder isn\'t given')
+  await assert.rejects(ctx.run('give_again', { id: 'acme-wiki' }), /that isn't acme-wiki's folder \(\/v\/acme-wiki\)/)
+  assert.deepEqual(given, [], 'a wrong folder picked is given back')
+  answer = '/v/acme-wiki'
+  assert.deepEqual(await ctx.run('give_again', { id: 'acme-wiki' }), { id: 'acme-wiki', given: true })
+  assert.deepEqual(ctx.agentNow.part.entries.map((e) => e.name), ['acme-wiki'], 'Claude\'s entry is back')
+})

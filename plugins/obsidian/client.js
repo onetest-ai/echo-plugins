@@ -157,7 +157,8 @@ export async function apply(ctx) {
       }
     },
     badge: () => { const n = view.badge(); return n > 0 ? n : '' },
-    editing: () => !force && (view.editing() || about.key !== null),
+    // A new address always draws (a tab clicked while a page is being edited); else Echo leaves a box being typed in alone.
+    editing: () => !force && location.hash === lastHash && (view.editing() || about.key !== null),
   })
   // Polled while Knowledge shows (2 s, as #677's window did): a change on disk shows within a tick.
   const tick = setInterval(() => { if (shown()) view.tick().catch(() => {}) }, 2000)

@@ -1092,6 +1092,8 @@ test('the seam: each read #17 made is one of the host half\'s commands, its quer
 
 test('the seam: each kn_* action is one command, its arguments as the host takes them', () => {
   assert.deepEqual(knActionOf('kn_new_page', { id: 'v', folder: 'topics', name: 'Pricing', template: '', row: true }), { command: 'new_page', args: { id: 'v', folder: 'topics', title: 'Pricing', template: null, index_row: true } })
+  // The first open's question answers for the vault shown: the host's `baseline` takes it as `vault`.
+  assert.deepEqual(knActionOf('kn_baseline', { id: 'acme-twin', done: true }), { command: 'baseline', args: { vault: 'acme-twin', done: true } })
   assert.deepEqual(knActionOf('kn_add', { pick: '/notes/acme', name: 'Acme', minutes: 'ask', commit: 1, profile: '' }), { command: 'add', args: { root: '/notes/acme', name: 'Acme', minutes: 'ask', commit: true, profile: '', anyway: true } })
   assert.deepEqual(knActionOf('kn_save_page', { id: 'v', path: 'a.md', text: 'x', base: 'b', message: 'm' }), { command: 'save_page', args: { id: 'v', path: 'a.md', text: 'x', base: 'b', message: 'm' } })
   assert.deepEqual(knActionOf('kn_confirm_structure', { id: 'v' }), { command: 'confirm_structure', args: { id: 'v' } })

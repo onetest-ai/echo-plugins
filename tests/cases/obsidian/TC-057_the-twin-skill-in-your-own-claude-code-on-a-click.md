@@ -1,6 +1,6 @@
 ---
 id: TC-057
-title: The twin skill for every Claude Code session — shown first, added to your own Claude Code only on your click (Install, Update…, Remove), never over a skill that is there already; on test data only in the test's own Claude Code folder
+title: The twin skill for every Claude Code session — shown first, added to your own Claude Code only on your click (Install, Update…, Remove), one name a vault, never over a skill that is there already, its record forgotten when Echo no longer has it; on test data only in the test's own Claude Code folder
 priority: high
 type: functional
 requirements: [F-OB-64, F-OB-41]
@@ -28,3 +28,6 @@ tags: [obsidian, knowledge, skills, twin, window]
 | 4 | *Remove* | "/my-twin is out of your Claude Code."; the row offers *Install…* again; `$CLAUDE_CONFIG_DIR/skills` empty, the record `{}` |
 | 5 | A made-up skill of the user's own: `mkdir -p "$CLAUDE_CONFIG_DIR/skills/my-twin"` and a `SKILL.md` in it ("Mine."); *Install…* → *Install* | The sheet says "your Claude Code has a skill “my-twin” already: Knowledge doesn't change it"; the user's file as it was; then remove that made-up folder by its literal path |
 | 6 | `echoctl plugin set obsidian skills global`; `mkdir -p "$VAULTS/solo"`; New vault in the window is the system's folder picker (not pressed): `ECHOCTL_PICK_FOLDER="$VAULTS/solo" echoctl plugin call obsidian new_vault '{"name":"Solo"}'`, then `#obsidian:knowledge/solo/settings`; `echoctl plugin set obsidian skills vault` | `skills.offer` "twin" and no `.claude/skills/twin` in the vault; its Settings → Skills has the row with *Install…* (the vault made from the twin preset) |
+| 7 | my-twin: *Install…* → *Install* (as /my-twin), then *Update…*, the name typed `my-notes`, *Install* | The sheet says "Installed now as /my-twin: Install takes that one out and adds /my-notes."; after it "/my-notes is in your Claude Code…"; `ls "$CLAUDE_CONFIG_DIR/skills"` only `my-notes`, Echo's record `{"my-notes": "obsidian"}` — one name a vault |
+| 8 | acme-notes (a twin-preset vault): *Install…*, the name `my-notes` | "/my-notes is My twin's twin skill already: choose another name."; *Install* off; its own default is `acme-notes-twin` (never another vault's) |
+| 9 | `echoctl plugin remove obsidian` (data kept) — Echo takes its skills out; `echoctl plugin install obsidian --from local --yes`; my-twin's folder given again (`ECHOCTL_PICK_FOLDER="$VAULTS/my-twin" obs add '{"wait":true}'` → `"already": true`); my-twin → Skills | The row still says "installed as /my-notes" (Knowledge's own record kept with its data); *Remove* → "/my-notes was no longer in your Claude Code (removed with the plugin, or by you): forgotten here." and *Install…* again — Echo's "isn't a skill Knowledge added" understood |

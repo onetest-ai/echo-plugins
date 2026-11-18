@@ -3,7 +3,7 @@ name: Monday asks
 order: 2
 description: Monday morning: what you owe this week, what others owe you, and what to ask whom at which meeting.
 schedule: mon 09:00
-tools: read
+tools: auto
 deliver: mail
 skip_empty: true
 ---

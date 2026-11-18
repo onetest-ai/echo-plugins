@@ -3,7 +3,7 @@ name: Meeting prep
 order: 3
 description: Early each workday: for today's meetings with outside people — last time, open items, what to ask.
 schedule: weekdays 07:45
-tools: read
+tools: auto
 deliver: mail
 skip_empty: true
 ---

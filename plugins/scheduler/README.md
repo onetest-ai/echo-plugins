@@ -20,12 +20,15 @@ asks, a Friday wrap-up, meeting prep — and get the answer in Telegram, Teams o
   `--model` (a full id, a model your company's gateway names). A light routine on Haiku, a heavy one on Opus; the
   routine's row shows its model when one is set.
 - **Templates** to start from: `templates/` (Plan for the day, Monday asks, Meeting prep, Friday wrap-up).
-- **Permissions are yours to pick** per routine: read only (Echo's guard), your Echo folder session's, or none asked.
+- **A routine acts on its own**, as you pick per routine: **Auto** (Claude Code's auto mode decides each action; on a
+  model without it, edits are accepted) or **Skip all permission checks** — the choices of Echo's routines setting
+  (Settings → AI & minutes → Claude's permissions). A routine from before set to read only, or to your folder
+  session's permissions, runs and shows as Auto.
 - **Claude in Echo knows your routines**: what runs when, what a run answered or cost, why one failed — and helps you
   write a new one, which you save in the section.
 - Runs on your AI profiles through Echo; costs as Claude Code reports them. Missed runs (Echo off) run once when Echo
   is back.
 
-Needs Echo 0.9.14 or later. `main.js` is its host half (schedule, runs, delivery), `client.js` its client half (the Settings section).
+Needs Echo 0.9.15 or later. `main.js` is its host half (schedule, runs, delivery), `client.js` its client half (the Settings section).
 
 Part of the [Echo plugins](../../README.md) marketplace.

@@ -2289,11 +2289,13 @@ export function stampOf(folder, given) {
 }
 /** Echo's word that a keyed run's gate stayed busy (onetest-ai/echo#783: `run({key})`, `claude.stop(key)`). */
 export const KEY_BUSY = /the run's key is busy/
-/** `fn()` once more, `wait` ms later, when Echo said the run's key was busy; its second refusal is the caller's. */
-export async function busyRetry(fn, wait = 1000, sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
+/** `fn()` once more, `wait` ms later, when Echo said the run's key was busy; its second refusal is the caller's. Stopped
+ *  meanwhile (`stopped()` true after the wait): "Stopped", never a second call. */
+export async function busyRetry(fn, wait = 1000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), stopped = () => false) {
   try { return await fn() } catch (e) {
     if (!KEY_BUSY.test(String((e && e.message) || e))) throw e
     await sleep(wait)
+    if (stopped()) throw new Error('Stopped')
     return fn()
   }
 }
@@ -5399,11 +5401,23 @@ export function apply(ctx) {
   const EMPTY_REC = { choice: null, saved: [], failed: [] }
   const recFile = (key) => `calls/${key}.json`
   const UNREADABLE = 'this call\'s record in Knowledge can\'t be read'
+  const ECHO_UNREAD = 'Knowledge couldn\'t read this call from Echo just now — try again'
   const TWO_CALLS = 'Echo can\'t tell two calls of this second apart — open it and Save again'
   const twoCalls = () => { const e = new Error(TWO_CALLS); e.twoCalls = true; return e }
   const readRec = (key) => { try { return readJson(recFile(key), null) } catch { const e = new Error(UNREADABLE); e.unreadable = true; throw e } }
-  // Does Echo, read by the stamp, name this folder? (Of two calls of one second it names neither.)
-  const stampNames = (st, call) => { try { const s0 = ctx.echo.read('source', `call:${st}`, { transcript: false, chat: false }); return !!s0 && callId(s0.id) === call } catch { return false } }
+  // Does Echo, read by the stamp, name this folder? 'yes'; 'two' when another call has the stamp too — Echo reads
+  // neither by it (`calls::by_stamp`), and lists two calls with it around its day; 'unknown' when Echo couldn't say
+  // (a read failed): retried, never taken for two calls.
+  const stampNames = (st, call) => {
+    try { const s0 = ctx.echo.read('source', `call:${st}`, { transcript: false, chat: false }); if (s0) return callId(s0.id) === call ? 'yes' : 'two' } catch { /* asked otherwise, next */ }
+    if (!datedStamp(st)) return 'unknown'
+    try {
+      const day = st.slice(0, 10), shift = (n) => new Date(Date.parse(`${day}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10)
+      const rows = ctx.echo.read('calls', { since: shift(-1), until: shift(1), limit: 500 }) || []
+      return rows.filter((c) => stampOf(c.id, c.stamp) === st).length > 1 ? 'two' : 'unknown'
+    } catch { return 'unknown' }
+  }
+  const echoUnread = () => { const e = new Error(ECHO_UNREAD); e.retry = true; return e }
   // The key of a call's record — its stamp — and, with `write`, the record made or its folder brought up to date (only
   // over the folder decided on: the app and a terminal never take it from each other). Throws for the second folder of
   // an old stamp (`twoCalls`), and for a record it can't read (never taken over).
@@ -5412,7 +5426,11 @@ export function apply(ctx) {
     const key = callKey(st, ctx.crypto.sha256)
     const r = readRec(key)
     const saw = r ? r.folder || null : null
-    if (saw && saw !== call && !stampNames(st, call)) throw twoCalls()
+    if (saw && saw !== call) {
+      const named = stampNames(st, call)
+      if (named === 'two') throw twoCalls()
+      if (named === 'unknown') throw echoUnread()
+    }
     if (!write || saw === call) return key
     updateJson(recFile(key), EMPTY_REC, (x) => {
       if (x.folder && x.folder !== call && x.folder !== saw) throw twoCalls()
@@ -5556,6 +5574,8 @@ export function apply(ctx) {
     const transcript = how.transcript != null ? !!how.transcript : v.minutes.transcript
     const chat = how.chat != null ? !!how.chat : v.minutes.chat
     const src = source(call, { transcript, chat })
+    // The call's record claimed before anything is written (never another call's, never one that can't be read).
+    claimKey(call, src.stamp, true)
     if (!sameProfile(src.profile, v) && (!manual || !how.anyway)) throw mismatch(src.profile, v)
     const anyway = !sameProfile(src.profile, v)
     const n = await noteOf(v, src, call, { transcript, chat })
@@ -5650,7 +5670,11 @@ export function apply(ctx) {
       try { ctx.inbox.set(`minutes:${callKey(call, ctx.crypto.sha256)}`.slice(0, 80), { title: `The minutes couldn't be saved to ${v.name}`, why: errText(e), go: `call/${call}`, actions: [{ label: 'Save again', command: 'save_minutes', args: { call, vault: v.id }, primary: true }] }) } catch { /* an Echo without the Inbox */ }
     }
   }
-  const cleared = (call) => { if (ctx.inbox && !callRec(call).failed.length) { try { ctx.inbox.clear(`minutes:${callKey(call, ctx.crypto.sha256)}`.slice(0, 80)) } catch { /* none */ } } }
+  const cleared = (call) => {
+    if (!ctx.inbox) return
+    try { ctx.inbox.clear(`minutes-of:${call}`.slice(0, 80)) } catch { /* none */ }
+    if (!callRec(call).failed.length) { try { ctx.inbox.clear(`minutes:${callKey(call, ctx.crypto.sha256)}`.slice(0, 80)) } catch { /* none */ } }
+  }
   // A save the user asked for (`save_minutes`), or the rule's: failures are kept on the call, never the minutes touched.
   // One process at a time writes a call's note into a vault (the app's handler, a terminal's `save_minutes`): a marker
   // in the store, taken over after two minutes.
@@ -5782,7 +5806,7 @@ export function apply(ctx) {
     if (n.once && n.from) {
       const had = Object.entries(l.sources).find(([, e]) => e.from === n.from)
       if (had) {
-        updateLedger(v, (x) => { delete x.queued[n.from]; if (n.queueId) delete x.queued[n.queueId] })
+        updateLedger(v, (x) => { delete x.queued[n.from] })
         return { path: had[0], committed: 'already', size: 0, paths: [], items: [], duplicate: true }
       }
     }
@@ -5829,7 +5853,6 @@ export function apply(ctx) {
       // A mail added by the user is known by its message's id too: the queue never takes it again.
       if (n.message && !x.mails.includes(`m365:${n.message}`)) x.mails.push(`m365:${n.message}`)
       if (n.from) delete x.queued[n.from]
-      if (n.queueId) delete x.queued[n.queueId]
     })
     const items = v.commit ? shaItems(v, [...written.map((w) => w.rel), ...parts].filter((p) => !dirty.paths.has(p))) : []
     let commit = v.commit ? 'pending' : 'off'
@@ -5893,11 +5916,18 @@ export function apply(ctx) {
   }
   // A call as a source: Echo's minutes (and the transcript and chat when asked), `echo/<date>-<slug>.md`.
   // `call`: its folder, or its stamp (a queued call's: Echo reads the call that has that stamp now, retitled or not).
-  // `queueId`: the queue entry it is prepared for — refused when the call read isn't that one, and that entry taken out.
+  // `queueId`: the queue entry it is prepared for — refused when the call read isn't that one (the source's `from` is
+  // then that id: the entry goes when it is written).
   const callSource = async (v, call0, { transcript = false, chat = false, anyway = false, noCommit = false, once = false, queueId = null } = {}) => {
     const src = source(call0, { transcript, chat })
     const call = src && src.id ? callId(src.id) : call0
     if (queueId && srcIdOf(call, src.stamp) !== queueId) throw new Error(`Echo read another call (${call}) for ${queueId}: nothing written`)
+    // Never another call's id: a record that can't be read, or a stamp Echo doesn't name this call by (two calls of an
+    // old stamp: neither is a source; a read that failed: try again), adds nothing.
+    claimKey(call, src.stamp)
+    const named = datedStamp(stampOf(call, src.stamp)) ? stampNames(stampOf(call, src.stamp), call) : 'yes'
+    if (named === 'two') throw twoCalls()
+    if (named === 'unknown') throw echoUnread()
     const across = !sameProfile(src.profile, v)
     if (across && !anyway) throw mismatch(src.profile, v)
     const entry = callRec(call, src.stamp).saved.find((e) => e.vault === v.id)
@@ -5905,7 +5935,7 @@ export function apply(ctx) {
     const memo = src.memo || src.kind === 'memo'
     const date = src.date || today()
     const { title, text } = callSourceText({ title: src.title, date, memo, participants: src.participants || src.attendees, duration: src.duration_min, link: src.link || `echo://call/${call}`, note, text: src.text, transcript: transcript ? src.transcript : null, chat: chat ? chatPart(src.chat) : '' })
-    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: srcIdOf(call, src.stamp), queueId, anyway: across, text, noCommit, once })
+    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: srcIdOf(call, src.stamp), anyway: across, text, noCommit, once })
   }
   // A mail as a source: its own text read from Microsoft 365 now — for a queued one only when a batch is prepared (the
   // queue keeps Recall's facts, never a message's words). Its AI profile is Recall's (its threads'); a mail Recall
@@ -5938,11 +5968,13 @@ export function apply(ctx) {
     // The second folder of an old stamp (data from before Echo 0.10.0) gets nothing, and the Inbox says why.
     let key
     try { key = claimKey(call, p.stamp, true) } catch (e) {
-      if (!e.twoCalls && !e.unreadable) throw e
-      if (ctx.inbox) { try { ctx.inbox.set(`minutes-of:${call}`.slice(0, 80), { title: `The minutes of “${oneLine(p.title || call)}” weren't saved to Knowledge`, why: errText(e), go: `call/${call}` }) } catch { /* an Echo without the Inbox */ } }
+      if (!e.twoCalls && !e.unreadable && !e.retry) throw e
+      // Said in the Inbox, with Save again (the event handled again from Echo's call: saved and queued as it routes).
+      if (ctx.inbox) { try { ctx.inbox.set(`minutes-of:${call}`.slice(0, 80), { title: `The minutes of “${oneLine(p.title || call)}” weren't saved to Knowledge`, why: errText(e), go: `call/${call}`, actions: [{ label: 'Save again', command: 'minutes_again', args: { call }, primary: true }] }) } catch { /* an Echo without the Inbox */ } }
       ctx.log(`minutes of ${call}: ${errText(e)}`)
-      return { saved: [], queued: [], refused: errText(e) }
+      return { saved: [], queued: [], refused: errText(e), retry: !!e.retry }
     }
+    if (ctx.inbox) { try { ctx.inbox.clear(`minutes-of:${call}`.slice(0, 80)) } catch { /* none */ } }
     const rec = { ...EMPTY_REC, ...(readJson(recFile(key), null) || {}) }
     const route = routeOf(p.threads || [])
     const out = { saved: [], queued: [] }
@@ -5996,6 +6028,14 @@ export function apply(ctx) {
     if (out.not_queued.length) ctx.log(`not queued (no reader for a channel's posts yet): ${out.not_queued.join(', ')}`)
     return out
   }
+  // Save again (the Inbox's): the call's minutes_written handled once more, from what Echo has of it now.
+  ctx.command('minutes_again', async ({ call: c }) => {
+    const call = callId(c)
+    const src = source(call, { transcript: false, chat: false })
+    const out = await onMinutes({ ...src, call: callId(src.id || call) })
+    if (out.refused) throw new Error(out.refused)
+    return out
+  })
   if (ctx.on) {
     ctx.on('minutes_written', (p) => onMinutes(p).catch((e) => ctx.log(`minutes_written: ${errText(e)}`)))
     ctx.on('sources_changed', (p) => { try { onSources(p) } catch (e) { ctx.log(`sources_changed: ${errText(e)}`) } })
@@ -6491,7 +6531,7 @@ export function apply(ctx) {
   // The twin skill: into the vault (`add`, the starter's — Echo writes a vault's `.claude/skills/<name>/SKILL.md`, onetest-ai/echo#776).
   // For every Claude Code session it is the window half's to add, on the user's click (`ctx.claude.installSkill`): the
   // host half only remembers which name it went in as (`installed`, `removed`), to show it in the vault's Settings.
-  ctx.command('twin', async ({ id, op, name }) => {
+  own('twin', async ({ id, op, name }) => {
     const v = find(load(), id)
     if (op === 'add') {
       if (statSafe(v, TWIN_SKILL)) throw new Error('This vault already has a twin skill')
@@ -6526,15 +6566,19 @@ export function apply(ctx) {
     throw new Error('op: add, reserve, installed, release or removed')
   })
   // The vault's twin skill as `global` would write it: its own (else the starter's), named, its paths made absolute.
-  ctx.command('twin_text', ({ id, name }) => {
+  // `reserve`: the name kept for this vault (two minutes) as the sheet shows it, so Install needs no round trip before
+  // Echo's own (its click guard is the page's transient activation: `copyAllowed`).
+  ctx.command('twin_text', async ({ id, name, reserve }) => {
     const v = find(load(), id)
-    const own = readSafe(v, '.claude/skills/twin/SKILL.md', 1 << 20)
+    const mine = readSafe(v, '.claude/skills/twin/SKILL.md', 1 << 20)
     // The name asked for; else this vault's own, else one no other vault holds (`acme-twin`, `acme-twin-2`…).
     const base = (v.id.includes('twin') ? v.id : `${v.id}-twin`).slice(0, 60)
     let n = String(name || '') || globalTwinOf(v) || base
     for (let k = 2; !name && globalHolderOf(n, v.id) && k < 100; k++) n = `${base}-${k}`
     const holder = globalHolderOf(n, v.id)
-    return { name: n, taken_by: holder ? holder.name : null, installed: globalTwinOf(v), own: own !== null, text: twinSkillText(own ?? ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md') ?? '', { id: v.id, name: v.name, root: v.root }, n) }
+    let reserved = null
+    if (reserve && !holder) { try { await own.twin({ id: v.id, op: 'reserve', name: n }); reserved = Date.now() } catch { /* taken meanwhile: said at Install */ } }
+    return { name: n, taken_by: holder ? holder.name : null, reserved_at: reserved, installed: globalTwinOf(v), own: mine !== null, text: twinSkillText(mine ?? ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md') ?? '', { id: v.id, name: v.name, root: v.root }, n) }
   })
   // The system's file picker, for the Add a source sheet: names and sizes, the handles kept by the sheet.
   ctx.command('pick_files', async () => {
@@ -6737,7 +6781,7 @@ export function apply(ctx) {
       await waitQuiet(token, (w) => { updateLintRun(v, run, (r) => { r.waiting = w }); if (w) lintEvent(v, run, { type: 'notice', kind: 'waiting', text: w }) })
       if (token.stop) return
       if (token.stop) return
-      const res = await busyRetry(() => ctx.claude.run({ folder: v.root, path: '', mode: 'read', profile: v.profile || '', title: `AI checks of ${v.name}`, prompt: lintPrompt(pages), dir: `vaults/${v.id}/lint-runs/${run}`, timeout: 20, key: `lint-${run}` }))
+      const res = await busyRetry(() => ctx.claude.run({ folder: v.root, path: '', mode: 'read', profile: v.profile || '', title: `AI checks of ${v.name}`, prompt: lintPrompt(pages), dir: `vaults/${v.id}/lint-runs/${run}`, timeout: 20, key: `lint-${run}` }), 1000, undefined, () => !!token.stop)
       const u = (res && res.usage) || {}
       const cost = typeof u.cost_usd === 'number' ? u.cost_usd : null
       const spent = { cost, tokens_in: u.input_tokens ?? null, tokens_out: u.output_tokens ?? null }
@@ -7083,7 +7127,7 @@ export function apply(ctx) {
       const exclude = await copyExclude(v, batch)
       // Stopped while the run was made ready: Claude Code never starts.
       if (token.stop) return
-      const res = await busyRetry(() => ctx.claude.run({ folder: v.root, path: '', mode: 'copy', profile: v.profile || '', title: `Ingest into ${v.name}`, prompt: ingestPrompt(skill.name, batch, notes), dir: `${ingDir(v.id, run)}/claude`, timeout: 20, key: `ingest-${run}`, ...(exclude.length ? { exclude } : {}) }))
+      const res = await busyRetry(() => ctx.claude.run({ folder: v.root, path: '', mode: 'copy', profile: v.profile || '', title: `Ingest into ${v.name}`, prompt: ingestPrompt(skill.name, batch, notes), dir: `${ingDir(v.id, run)}/claude`, timeout: 20, key: `ingest-${run}`, ...(exclude.length ? { exclude } : {}) }), 1000, undefined, () => !!token.stop)
       snap = res && res.snapshot ? res.snapshot : null
       const u = (res && res.usage) || {}
       const spent = { cost: typeof u.cost_usd === 'number' ? u.cost_usd : null, tokens_in: u.input_tokens ?? null, tokens_out: u.output_tokens ?? null }

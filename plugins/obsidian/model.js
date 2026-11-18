@@ -878,20 +878,38 @@ function knHomeRecord(minutes = {}, paths = {}) {
 // a new name is installed before the old one is taken out, so a failed install loses nothing ──
 /** Echo's word for a skill it no longer has as this plugin's (removed with the plugin, or by the user). */
 const KN_SKILL_GONE = /isn't a skill .* added/
+/** Echo's click guard refusing (the page's transient activation passed: `copyAllowed`). */
+const KN_CLICK_GONE = /only on your click/
 /** Install `text` as `/name` for vault `vault` (`old`: the name it has now). `claude` the window half's ctx.claude,
- *  `call(command, args)` the host's commands. → {name, old: {name, gone, error} | null}; throws when not installed. */
-async function knTwinInstall({ claude, call, vault, name, text, old = null }) {
-  await call('twin', { id: vault, op: 'reserve', name })
+ *  `call(command, args)` the host's commands. `reservedAt`: when the sheet's text reserved the name (twin_text
+ *  `reserve`) — fresh, Echo's install is the click's first round trip; else the name is reserved first. A new name goes
+ *  in before the old one comes out, right after it (still the click's). Echo refusing for a click gone stale: the name
+ *  stays reserved and the error says click again (`again`). The host failing to record it after Echo wrote it: the
+ *  record tried twice, else the skill taken out again before the name is released. → {name, old}; throws. */
+async function knTwinInstall({ claude, call, vault, name, text, old = null, reservedAt = null, now = Date.now() }) {
+  if (!(reservedAt && now - reservedAt < 90 * 1000)) await call('twin', { id: vault, op: 'reserve', name })
   try { await claude.installSkill(name, text) } catch (e) {
+    const m = String((e && e.message) || e)
+    if (KN_CLICK_GONE.test(m)) { const x = new Error(`Knowledge kept /${name} for you — click Install again`); x.again = true; throw x }
     try { await call('twin', { id: vault, op: 'release', name }) } catch { /* it lapses by itself */ }
     throw e
   }
-  await call('twin', { id: vault, op: 'installed', name })
-  if (!old || old === name) return { name, old: null }
-  try { await claude.removeSkill(old); return { name, old: { name: old, gone: false, error: null } } } catch (e) {
-    const m = String((e && e.message) || e)
-    return { name, old: { name: old, gone: KN_SKILL_GONE.test(m), error: KN_SKILL_GONE.test(m) ? null : m } }
+  let oldOut = null
+  if (old && old !== name) {
+    try { await claude.removeSkill(old); oldOut = { name: old, gone: false, error: null } } catch (e) {
+      const m = String((e && e.message) || e)
+      oldOut = { name: old, gone: KN_SKILL_GONE.test(m), error: KN_SKILL_GONE.test(m) ? null : m }
+    }
   }
+  for (let k = 0; ; k++) {
+    try { await call('twin', { id: vault, op: 'installed', name }); break } catch (e) {
+      if (k < 1) continue
+      try { await claude.removeSkill(name) } catch { /* the click may be gone: Echo's own record still names Knowledge */ }
+      try { await call('twin', { id: vault, op: 'release', name }) } catch { /* lapses */ }
+      throw e
+    }
+  }
+  return { name, old: oldOut }
 }
 /** Take `/name` out of the user's Claude Code and forget it for `vault`; one Echo no longer has as this plugin's is
  *  forgotten too (`gone`). Throws on any other refusal. */
@@ -903,4 +921,4 @@ async function knTwinRemove({ claude, call, vault, name }) {
 }
 
 
-export { KN_BASE, KN_TABS, knDecode, knParseRoute, knRouteOf, KN_CALLS_RULE, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knRepel, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knDraftKey, knKeepDraft, knRestoreDraft, knDropDraft, knEditText, knLineDiff, KN_FOLD, knToolRow, knFoldLabel, knToolRows, KN_HEALTH_GROUPS, knS, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, KN_INGEST_GROUPS, KN_CHANGE_KINDS, knUsd, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, KN_HOME_ROWS, KN_DAYS, KN_MONTHS, knWhen, knHomeCards, knHomeNews, knHomeRecord, KN_SKILL_GONE, knTwinInstall, knTwinRemove }
+export { KN_BASE, KN_TABS, knDecode, knParseRoute, knRouteOf, KN_CALLS_RULE, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knRepel, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knDraftKey, knKeepDraft, knRestoreDraft, knDropDraft, knEditText, knLineDiff, KN_FOLD, knToolRow, knFoldLabel, knToolRows, KN_HEALTH_GROUPS, knS, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, KN_INGEST_GROUPS, KN_CHANGE_KINDS, knUsd, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, KN_HOME_ROWS, KN_DAYS, KN_MONTHS, knWhen, knHomeCards, knHomeNews, knHomeRecord, KN_SKILL_GONE, KN_CLICK_GONE, knTwinInstall, knTwinRemove }

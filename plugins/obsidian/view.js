@@ -1946,7 +1946,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     // Only the text the sheet shows, as it shows it (its name typed since: read again first).
     if (!t || t.name !== name) return say2('Wait for the skill\'s text to show, then Install.')
     let r
-    try { r = await knTwinInstall({ claude: ctx.claude, call, vault: v.id, name, text: t.text, old: (s.settings && s.settings.global_twin) || null }) } catch (err) { return say2(String(err.message || err)) }
+    try { r = await knTwinInstall({ claude: ctx.claude, call, vault: v.id, name, text: t.text, old: (s.settings && s.settings.global_twin) || null, reservedAt: t.reserved_at }) } catch (err) { if (err.again) t.reserved_at = Date.now(); return say2(String(err.message || err)) }
     if (x && st().sheet === x) s.sheet = null
     await loadSettings(); render()
     const oldNote = r.old && r.old.error ? ` /${r.old.name} is still there: ${r.old.error}.` : r.old ? ` /${r.old.name} is out.` : ''
@@ -1965,7 +1965,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st(), x = s.sheet, v = vault()
     if (!x || x.kind !== 'twin' || !v) return
     const want = x.name || ''
-    try { const t = await get(`api/kn/${enc(v.id)}/twin-text?name=${enc(want)}`); if (st().sheet === x && (x.name || '') === want) { x.text = t; if (!x.name) x.name = t.name } } catch (err) { x.error = String(err.message || err) }
+    try { const t = await get(`api/kn/${enc(v.id)}/twin-text?name=${enc(want)}&reserve=1`); if (st().sheet === x && (x.name || '') === want) { x.text = t; if (!x.name) x.name = t.name } } catch (err) { x.error = String(err.message || err) }
     render()
   }
   function sampleSheet() {

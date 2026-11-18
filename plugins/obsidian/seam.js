@@ -51,7 +51,7 @@ export function knReadOf(path) {
     }
     case 'calls': return { command: 'source_calls', args: { id, q: q.q || '' } }
     case 'm365': return { command: 'source_m365', args: { id, q: q.q || '' } }
-    case 'twin-text': return { command: 'twin_text', args: { id, name: q.name || '' } }
+    case 'twin-text': return { command: 'twin_text', args: { id, name: q.name || '', reserve: q.reserve === '1' } }
     case 'preview': return { command: 'minutes_preview', args: { id, call: q.call || '', stem: q.stem || '' } }
   }
   return null

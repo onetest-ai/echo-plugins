@@ -12,7 +12,7 @@ import { skillMdProblem, hiddenOk } from '../helpers/echo-rules.mjs'
 import { knTwinInstall, knTwinRemove, KN_SKILL_GONE } from '../../plugins/obsidian/model.js'
 import { knUnpickOf } from '../../plugins/obsidian/seam.js'
 import { fakeCtx } from '../helpers/fake-ctx.mjs'
-import { CALL } from './echo-data.mjs'
+import { CALL, echoData } from './echo-data.mjs'
 
 const STAMP = '2026-11-05_090012'
 const ledgerOf = (ctx, id) => JSON.parse(ctx.files[`vaults/${id}/ingest.json`] || '{"queued":{},"sources":{},"calls":[]}')
@@ -468,12 +468,16 @@ test('Install: the name reserved by the host before Echo writes, the new skill i
   assert.deepEqual(c2.log, [['install', 'acme-notes'], ['remove', 'acme-twin']])
   assert.deepEqual(r.old, { name: 'acme-twin', gone: false, error: null })
   assert.equal((await w.ctx.run('vault_settings', { id: a.id })).global_twin, 'acme-notes')
-  // A failed install: nothing removed, the name released, the old one still the vault's.
+  // Echo's click guard gone stale: nothing removed, the name kept for a second click, the old one still the vault's.
   const c3 = fakeClaude({ failInstall: 'A skill is added to your Claude Code only on your click' })
-  await assert.rejects(knTwinInstall({ claude: c3, call, vault: a.id, name: 'acme-new', text: 'x', old: 'acme-notes' }), /only on your click/)
+  await assert.rejects(knTwinInstall({ claude: c3, call, vault: a.id, name: 'acme-new', text: 'x', old: 'acme-notes' }), /Knowledge kept \/acme-new for you — click Install again/)
   assert.deepEqual(c3.log, [['install', 'acme-new']])
   assert.equal((await w.ctx.run('vault_settings', { id: a.id })).global_twin, 'acme-notes')
-  assert.equal((await w.ctx.run('twin_text', { id: b.id, name: 'acme-new' })).taken_by, null, 'released')
+  assert.equal((await w.ctx.run('twin_text', { id: b.id, name: 'acme-new' })).taken_by, 'Acme', 'kept for the second click')
+  // Any other refusal: the name released.
+  const c3b = fakeClaude({ failInstall: 'your Claude Code has a skill “acme-other” already: Knowledge doesn\'t change it' })
+  await assert.rejects(knTwinInstall({ claude: c3b, call, vault: a.id, name: 'acme-other', text: 'x' }), /already/)
+  assert.equal((await w.ctx.run('twin_text', { id: b.id, name: 'acme-other' })).taken_by, null, 'released')
   // Another vault's name: refused by the host before Echo is asked.
   const c4 = fakeClaude()
   await assert.rejects(knTwinInstall({ claude: c4, call, vault: b.id, name: 'acme-notes', text: 'x' }), /is Acme's twin skill already/)
@@ -568,20 +572,106 @@ test('a folder Echo refuses when picked (hidden, or inside a hidden one: Echo #7
   assert.deepEqual(knUnpickOf({ kind: 'connect', picked: null }, p), [], 'nothing to give back')
 })
 
-test('a vault whose saved folder is inside a hidden one: read only, said once — no run, no save, no commit tried again', async () => {
+test('a vault whose saved folder is inside a hidden one: read only, said once — no run, no save, no commit, no prepare tried again', async () => {
   const base = tmp()
   const root = npath.join(base, '.vaults', 'twin')
   nfs.mkdirSync(root, { recursive: true })
   twin(root)
   write(root, '.claude/skills/process-inbox/SKILL.md', '---\nname: process-inbox\ndescription: x\n---\n# P\n')
   let runs = 0
-  const ctx = await vault(nfs.realpathSync(root), { claude: async () => { runs++; return { answer: 'x' } } })
+  const data = echoData({ calls: [call(CALL, 'Weekly delivery sync')] })
+  const ctx = await vault(nfs.realpathSync(root), { terminal: false, claude: async () => { runs++; return { answer: 'x' } }, echo: { ...data.read, clients: [], threads: [] } })
   const v = (await ctx.run('kn', {})).vaults[0]
   assert.match(v.read_only, /inside a hidden folder \(“\.vaults”\), where Echo changes nothing: it is read only here/)
+  // No Ingest run (its changes could never be written).
   await assert.rejects(ctx.run('ingest_go', { id: 'twin', sources: ['raw_inbox/deck.pdf'], wait: true }), /read only here/)
-  assert.equal(runs, 0, 'no Claude run whose changes could never be written')
+  // No save: said plainly, before Echo is asked to write.
+  await assert.rejects(ctx.run('save_minutes', { call: CALL, vault: 'twin' }), /read only here/)
+  // No commit every quiet window: what waits stays waiting, untouched.
+  const pending = JSON.stringify({ at: 0, items: [{ path: 'knowledge/notes/x.md', sha: null }], calls: [] })
+  ctx.files['vaults/twin/pending.json'] = pending
+  // No prepare rule: a batch due, never started.
+  await ctx.run('set', { id: 'twin', key: 'ingest.calls', value: 'prepare' })
+  await ctx.run('set', { id: 'twin', key: 'ingest.batch_sources', value: '1' })
+  const l = JSON.parse(ctx.files['vaults/twin/ingest.json'] || '{"baseline":null,"sources":{},"queued":{},"calls":[],"mails":[],"runs":[],"keys":"stamp"}')
+  l.queued = { [`call:${STAMP}`]: { id: `call:${STAMP}`, kind: 'call', title: 'x', rule: 'prepare', state: 'queued', added: new Date(Date.now() - 48 * 3600e3).toISOString() } }
+  ctx.files['vaults/twin/ingest.json'] = JSON.stringify(l)
+  await ctx.tick()
+  assert.equal(ctx.files['vaults/twin/pending.json'], pending, 'no commit tried')
+  assert.deepEqual(await ctx.run('prepare_rule', {}), [])
+  const q = JSON.parse(ctx.files['vaults/twin/ingest.json']).queued[`call:${STAMP}`]
+  assert.deepEqual([q.why, q.tries, (JSON.parse(ctx.files['vaults/twin/ingest.json']).runs || []).length], [undefined, undefined, 0], 'not even tried: no failure noted, no run made')
+  assert.equal(runs, 0, 'no Claude run, by hand or by the rule')
   assert.equal(hiddenText('/Users/sam/Notes/acme'), null)
   assert.equal(hiddenPart('/Users/sam/.obsidian-vaults/acme'), '.obsidian-vaults')
+})
+
+test('a record\'s folder is written only over the one the claim decided on: another process\'s change meanwhile is never overwritten', async () => {
+  const w = world({ calls: [call(CALL, 'Weekly delivery sync')] })
+  const v = await w.vault('My twin', { minutes: 'auto' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.fire('minutes_written', w.data.payload(CALL))
+  const NEW = `${STAMP}-weekly-renamed`
+  w.data.calls[0].folder = NEW
+  // Between the claim's decision (the record names CALL, Echo names NEW by the stamp: a retitle) and its write, another
+  // process (a terminal) writes the record.
+  const upd = w.ctx.store.update
+  let raced = false
+  w.ctx.store.update = (path, fn) => {
+    if (path === `calls/${STAMP}.json` && !raced) { raced = true; const r = JSON.parse(w.ctx.files[path]); r.folder = `${STAMP}-taken-meanwhile`; w.ctx.files[path] = JSON.stringify(r) }
+    return upd(path, fn)
+  }
+  await assert.rejects(w.ctx.run('call_choice', { call: NEW, vault: 'none' }), /two calls of this second/)
+  const r = JSON.parse(w.ctx.files[`calls/${STAMP}.json`])
+  assert.deepEqual([r.folder, r.choice], [`${STAMP}-taken-meanwhile`, null], 'the other\'s write kept, nothing of this one written over it')
+  assert.equal(notesOf(v).length, 1)
+})
+
+test('the reviewer\'s repros: an old duplicate saved by hand, added as a source, and a failed read — nothing written, nothing taken, the right words', async () => {
+  const A = `${STAMP}-acme-sync`, B = `${STAMP}-memo`
+  const w = world({ calls: [call(A, 'Acme sync'), call(B, 'A memo', { memo: true })] })
+  const v = await w.vault('My twin', { minutes: 'auto' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.run('set', { id: v.id, key: 'ingest.calls', value: 'add' })
+  // add_source of B before A's minutes: refused, never `call:<stamp>`.
+  await assert.rejects(w.ctx.run('add_source', { vault: v.id, kind: 'call', call: B }), /two calls of this second apart/)
+  await w.ctx.fire('minutes_written', w.data.payload(A))
+  assert.ok(ledgerOf(w.ctx, v.id).queued[`call:${STAMP}`], 'A queued')
+  assert.equal(notesOf(v).length, 1)
+  for (let k = 0; k < 2; k++) await assert.rejects(w.ctx.run('save_minutes', { call: B, vault: v.id }), /two calls of this second apart/)
+  assert.equal(notesOf(v).length, 1, 'Save again on B writes no note')
+  // A retitle while Echo can't be read by the stamp: retryable, no second note, the notice cleared once it saves.
+  const w2 = world({ calls: [call(`${STAMP}-weekly`, 'Weekly')] })
+  const v2 = await w2.vault('Two', { minutes: 'auto' })
+  await w2.ctx.run('default', { id: v2.id })
+  await w2.ctx.fire('minutes_written', w2.data.payload(`${STAMP}-weekly`))
+  const NEW = `${STAMP}-weekly-acme`
+  w2.data.calls[0].folder = NEW
+  const rd = w2.ctx.echo.read
+  let down = true
+  w2.ctx.echo.read = (k, id, o) => { if (down && k === 'source' && id === `call:${STAMP}`) throw new Error('Echo busy'); return rd.call(w2.ctx.echo, k, id, o) }
+  await assert.rejects(w2.ctx.run('save_minutes', { call: NEW, vault: v2.id }), /couldn't read this call from Echo just now — try again/)
+  await w2.ctx.fire('minutes_written', w2.data.payload(NEW, true))
+  const notice = w2.ctx.inboxNow[`minutes-of:${NEW}`]
+  assert.ok(notice && /try again/.test(notice.why) && notice.actions[0].command === 'minutes_again', JSON.stringify(w2.ctx.inboxNow))
+  assert.equal(notesOf(v2).length, 1)
+  down = false
+  await w2.ctx.run('minutes_again', { call: NEW })
+  assert.equal(notesOf(v2).length, 1, 'updated in place')
+  assert.ok(!w2.ctx.inboxNow[`minutes-of:${NEW}`], 'the notice cleared once it saved')
+  // An unreadable record: never a new note over it.
+  const w3 = world({ calls: [call(CALL, 'Weekly delivery sync')] })
+  const v3 = await w3.vault('Three', { minutes: 'auto' })
+  w3.ctx.files[`calls/${STAMP}.json`] = '{ broken'
+  await assert.rejects(w3.ctx.run('save_minutes', { call: CALL, vault: v3.id }), /record in Knowledge can't be read/)
+  assert.equal(notesOf(v3).length, 0)
+})
+
+test('Stop during a busy key\'s second: Claude Code is never started', async () => {
+  let n = 0
+  const sleep = async () => {}
+  await assert.rejects(busyRetry(async () => { n++; throw new Error('the run\'s key is busy: try again') }, 1000, sleep, () => true), /^Error: Stopped$/)
+  assert.equal(n, 1, 'no second call after Stop')
 })
 
 test('skill_md_ok as on Echo main (#784): the frontmatter ends only at a line `---`; ~~~! and ```! blocks, !$ and a lone CR refused; the twin\'s skills pass', () => {
@@ -592,3 +682,22 @@ test('skill_md_ok as on Echo main (#784): the frontmatter ends only at a line `-
   for (const md of ['~~~!\nid\n~~~', '```!\nid\n```', 'Run !$0', 'a\rb']) assert.ok(skillMdProblem(md), md)
   for (const n of ['twin', 'process-inbox']) assert.equal(skillMdProblem(read(PKG, `starter/twin/.claude/skills/${n}/SKILL.md`)), null, n)
 })
+
+test('Install as the click\'s first round trip: the sheet\'s text reserved the name, so Echo is asked before the host; the host failing to record it takes the skill out again', async () => {
+  const w = world()
+  const a = await w.vault('Acme')
+  const order = []
+  const call = async (c, args) => { order.push(['host', args.op]); return w.ctx.run(c, args) }
+  const t = await w.ctx.run('twin_text', { id: a.id, reserve: true })
+  assert.ok(t.reserved_at, 'reserved as the sheet shows it')
+  const c1 = { installSkill: async (n) => { order.push(['install', n]) }, removeSkill: async (n) => { order.push(['remove', n]) } }
+  await knTwinInstall({ claude: c1, call, vault: a.id, name: t.name, text: t.text, old: 'acme-older', reservedAt: t.reserved_at })
+  assert.deepEqual(order, [['install', 'acme-twin'], ['remove', 'acme-older'], ['host', 'installed']], 'Echo first, the old one right after; the host last')
+  // `installed` refused twice: the skill taken out again, the name released.
+  order.length = 0
+  const failing = async (c, args) => { order.push(['host', args.op]); if (args.op === 'installed') throw new Error('the store is busy'); return w.ctx.run(c, args) }
+  await assert.rejects(knTwinInstall({ claude: c1, call: failing, vault: a.id, name: 'acme-x', text: 'x', reservedAt: null }), /store is busy/)
+  assert.deepEqual(order, [['host', 'reserve'], ['install', 'acme-x'], ['host', 'installed'], ['host', 'installed'], ['remove', 'acme-x'], ['host', 'release']])
+  assert.equal((await w.ctx.run('twin_text', { id: (await w.vault('Other')).id, name: 'acme-x' })).taken_by, null)
+})
+

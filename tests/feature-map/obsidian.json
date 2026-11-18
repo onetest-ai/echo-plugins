@@ -208,7 +208,7 @@
   },
   {
    "id": "F-OB-41",
-   "title": "What later versions bring says so where #17 showed it, never made up: a web page as a source (until Echo reads web pages), the twin skill for every Claude Code session and the starter's process-inbox written into a vault (Echo writes no hidden file for a plugin: it says how)",
+   "title": "What #17 drew as coming is real: a web page as a source (Echo's own reader), the twin skill for every Claude Code session (added on the user's click), the starter's process-inbox written into a vault on the user's word — never a promise of a later version",
    "priority": "high",
    "check": "agent"
   },
@@ -256,7 +256,7 @@
   },
   {
    "id": "F-OB-49",
-   "title": "The twin preset: a new vault in a new or empty folder from #677's 23 files (shipped in the plugin), name, owner and day filled in, git init and one first commit when asked, registered as twin@1 with commits on; what Echo can't write for a plugin (hidden files, ~/.claude/skills) is said, never worked around",
+   "title": "The twin preset: a new vault in a new or empty folder from #677's 23 files (shipped in the plugin), name, owner and day filled in, its .gitignore and .claude/skills (twin, process-inbox — Markdown Echo checks runs nothing) written too, git init and one first commit of them all when asked, registered as twin@1 with commits on; Obsidian's settings for knowledge/ left out and said (Echo writes .obsidian only at a folder's top); the setting \"global\" keeps the twin skill out of the vault and offers it for the user's own Claude Code",
    "priority": "high",
    "check": "agent"
   },
@@ -268,13 +268,13 @@
   },
   {
    "id": "F-OB-51",
-   "title": "Sources the user adds: files handed over (picked or dropped) copied as they are under a safe name, never over a file, (2) for a taken one or one the ledger or log.md knows; the folder made with the preset's README; a call (another profile only \"anyway\"); a web page only by Echo's own reader; the first open's question; a skip with a note",
+   "title": "Sources the user adds: files handed over (picked or dropped) copied as they are under a safe name, never over a file, (2) for a taken one or one the ledger or log.md knows; the folder made with the preset's README; a call (another profile only \"anyway\"); a web page only by Echo's own reader (TC-059); the first open's question; a skip with a note",
    "priority": "medium",
    "check": "agent"
   },
   {
    "id": "F-OB-52",
-   "title": "The Knowledge activity's step-4 sheets work on the host's commands: a call's chip and save sheet save (call_knowledge without `later`), Ingest's queue and Add a source (a call, files, mail and Teams search, a web page said as not yet), a vault's Settings preview a call and save the past minutes, the New vault sheet makes a twin",
+   "title": "The Knowledge activity's step-4 sheets work on the host's commands: a call's chip and save sheet save (call_knowledge without `later`), Ingest's queue and Add a source (a call, files, mail and Teams search, a web page read by Echo), a vault's Settings preview a call and save the past minutes, the New vault sheet makes a twin",
    "priority": "high",
    "check": "agent"
   },
@@ -329,6 +329,42 @@
   {
    "id": "F-OB-61",
    "title": "The activity's badge and Home: Ingest's number counts the changes still waiting for an answer, Health's the findings only the user can decide, the badge both; Home's Coming in shows the changes waiting by run, the new sources by kind and the run going",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-62",
+   "title": "The activity corrects its own address in place, never a step in the window's history (Echo's ctx.go replace): Knowledge opened names its vault, a discarded run's address goes, a removed vault's goes — Back skips them; a tab, page or run the user opens is a step",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-63",
+   "title": "A call is known by its stamp (the YYYY-MM-DD_HHMMSS its folder starts with, kept when it is retitled): its record (where its minutes went, the user's choice), its id in a vault's queue and ledger (call:<stamp>), the recording's events — a retitled call is the same call: its note updated in place, queued and prepared once, read by its stamp as named now; two calls of the same second kept apart by folder; a ledger of before (by folder) read and kept by stamp",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-64",
+   "title": "The twin skill for every Claude Code session: the vault's Settings → Skills (or a new twin vault when the setting says global) shows the skill first, its paths absolute to the vault, and adds it to the user's own Claude Code only on their click (Install; Update…, Remove), never over a skill that is there already and not the plugin's, on test data only in the test's own Claude Code folder",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-65",
+   "title": "A web page as a source: read once, when the user adds it (Ingest → Add a source → A web page), as Echo's safe Markdown with who wrote it and when, its pictures saved beside it in a folder of its name (part of the page, not sources of their own, in the copy with it) — at once on a site listed in the plugin's settings, else after the user types its address in Echo's own box; cancelled adds nothing; a page that needs JavaScript or that moved adds nothing, said; the same page twice is refused; never read again by itself",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-66",
+   "title": "Pages are read strictly (Echo #763): a page that isn't UTF-8 is shown as Echo reads it and not editable, a save only over the text read; a version restored only when it is UTF-8 (a U+FFFD that is the page's own is kept); links resolved by how Echo says each was written (markdown.links detail); a run's text file in another encoding shown read-only in the review, never written",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-67",
+   "title": "Tags through Echo's dictionary (read only): a tag the dictionary knows by another name is that name in what Echo proposes — an Ingest run's pages (said on the change), an AI check's fix, Health's fix of a tag the taxonomy doesn't allow (the dictionary's tag first); the vault's own taxonomy wins (only a tag it allows); the taxonomy, index and log never retagged; nothing added to the dictionary",
    "priority": "high",
    "check": "agent"
   }

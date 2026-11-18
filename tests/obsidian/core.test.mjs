@@ -300,3 +300,19 @@ test('Ingest: the run\'s pages\' tags as Echo\'s dictionary names them, said on 
   assert.deepEqual(c.retagged.map((x) => [x.from, x.to]), [['idea', 'concept'], ['akme', 'acme-corp']])
   assert.deepEqual(cs.find((x) => x.path === 'knowledge/TAG_TAXONOMY.md').retagged, [], 'never the taxonomy itself')
 })
+
+test('an AI check\'s fix takes the dictionary\'s tag, as shown and as written', async () => {
+  const t = twin()
+  const PAGE = 'knowledge/topics/pricing.md'
+  write(t, PAGE, '---\ntitle: Pricing\ntags: [concept]\n---\n# Pricing\n\nA price per active stream.\nNo summary yet.\n')
+  const claude = async () => ({ answer: JSON.stringify({ findings: [{ kind: 'missing_summary', title: 'Pricing has no summary', pages: [{ path: PAGE, quote: 'A price per active stream' }], fix: { path: PAGE, old: 'No summary yet.', new: 'Summary: one #idea, priced per stream.' } }] }), usage: { cost_usd: 0.1 } })
+  const ctx = await vault(t, { claude, echo: { clients: [], threads: [], calls: [], sources: [], dictionary: { terms: TERMS } } })
+  await ctx.run('lint', { id: 'twin', wait: true })
+  const f = (await ctx.run('health', { id: 'twin' })).findings.find((x) => x.by === 'ai')
+  const fx = (await ctx.run('health_finding', { id: 'twin', key: f.key })).fix
+  const plus = (fx.hunks || []).flat().filter(([k]) => k === '+').map(([, l]) => l)
+  assert.deepEqual(plus, ['Summary: one #concept, priced per stream.'])
+  const r = await ctx.run('fix', { id: 'twin', key: f.key, choice: 'ai', base: fx.base, sha: fx.sha })
+  assert.deepEqual(r.written, [PAGE])
+  assert.ok(read(t, PAGE).includes('Summary: one #concept, priced per stream.'))
+})

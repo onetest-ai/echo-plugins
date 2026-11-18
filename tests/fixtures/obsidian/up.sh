@@ -94,6 +94,25 @@ cp "$here/fake_ingest.py" "$dir/bin/fake_ingest.py"
 chmod +x "$dir/bin/claude"
 
 printf 'export PATH="%s:$PATH"\nexport VAULTS="%s"\nexport MARKET="%s"\n' "$echo_repo/target/debug" "$v" "$dir/market" >> "$dir/env"
+# A made-up web site on this computer only (fake_web.py) for a web page as a source, on <port>+1 (listed as the user's
+# site in a case: `web_sites`) and <port>+2 (not listed: Echo's box gives its address — ECHOCTL_ASK_ADDRESS, a debug
+# build's answer to `ctx.http.askAddress`, never a dialog).
+web1=$((port + 1)); web2=$((port + 2))
+python3 -I "$here/fake_web.py" "$web1" "$web2" --log "$dir/web.log" > /dev/null 2>&1 &
+echo $! > "$dir/web.pid"
+printf 'export FAKE_WEB="http://127.0.0.1:%s"\nexport FAKE_WEB_OTHER="http://127.0.0.1:%s"\nexport ECHOCTL_ASK_ADDRESS="http://127.0.0.1:%s/rollout.html"\n' "$web1" "$web2" "$web2" >> "$dir/env"
+# A made-up dictionary (Recall → Dictionary) in the test data's Recall folder, as Echo keeps it: terms with other names
+# and spellings, for tags through Echo's dictionary (TC-061). The standard data has none.
+home="$(. "$dir/env" && printf '%s' "$ECHOCTL_HOME")"
+case "$home" in "$dir"/*) ;; *) echo "ECHOCTL_HOME isn't inside $dir: stopping" >&2; exit 1;; esac
+mkdir -p "$home/recall/taxonomy"
+cat > "$home/recall/taxonomy/current.json" <<'JSON'
+{"version": 1, "layers": {"shared": {"name": "Your practice"}}, "topics": [], "terms": [
+  {"name": "Concept", "kind": "term", "synonyms": ["idea"], "variants": []},
+  {"name": "Client", "kind": "term", "synonyms": ["customer"], "variants": []},
+  {"name": "Control Plane", "kind": "product", "synonyms": ["CP"], "variants": ["controlplane"]}
+], "aliases": {}, "history": []}
+JSON
 from="${OBSIDIAN_FROM:-}"
 case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;; esac
 
@@ -137,4 +156,5 @@ case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;;
 for _ in $(seq 40); do curl -s -o /dev/null "http://127.0.0.1:$port/" && break; sleep 0.5; done
 # Its own window, not another one on that port: the process is still there.
 { curl -s -o /dev/null "http://127.0.0.1:$port/" && kill -0 "$(cat "$dir/pid")" 2> /dev/null; } || { echo "the window didn't start (is port $port taken?): see $dir/serve.log" >&2; exit 1; }
-echo "base_url=http://127.0.0.1:$port env=$dir/env vaults=$v"
+for _ in $(seq 20); do curl -s -o /dev/null "http://127.0.0.1:$web1/_log" && break; sleep 0.25; done
+echo "base_url=http://127.0.0.1:$port env=$dir/env vaults=$v web=http://127.0.0.1:$web1 web_other=http://127.0.0.1:$web2"

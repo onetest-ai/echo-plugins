@@ -1754,7 +1754,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     } else {
       const a = knAddState(x)
       body = `<div class="kn-field"><span>Address</span><input class="search kn-in kn-url" id="kn-src-url" placeholder="https://" aria-label="The page's address" value="${esc(x.url)}" autocomplete="off" spellcheck="false"></div><div id="kn-src-note" class="set-sub kn-indent">${esc(a.note || '')}</div>
-        <div class="kn-note-line">${IC.info}<span>Echo reads a page on a site you listed in Knowledge's settings (Settings → Plugins → Knowledge) at once. Any other page, Echo asks you for its address in its own box — leave this empty to go straight there.</span></div>
+        <div class="kn-note-line">${IC.info}<span>Echo reads a page on a site you listed in Knowledge's settings (Settings → Plugins → Knowledge → Its settings) at once. Any other page, Echo asks you for its address in its own box — leave this empty to go straight there.</span></div>
         <div class="kn-note-line">${IC.lock}<span>Read once, now — never again by itself. Only the address is sent — no cookies, nothing from your vault. Echo keeps the page's main text as Markdown and its pictures beside it; menus, footers and scripts are left out. A page that builds itself with JavaScript isn't read yet.</span></div>${create}`
     }
     const err = x.error && x.tab !== 'mail' ? `<p class="error" role="alert">${esc(x.error)}</p>` : ''
@@ -1783,7 +1783,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const folder = d.folder || 'raw_inbox'
     const commits = added.map((a) => String(a.committed || '')).filter((c) => /^skipped: /.test(c))
     const pics = r.pictures ? ` with ${many(r.pictures, 'picture')}` : ''
-    const picsLeft = r.pictures_failed ? ` ${many(r.pictures_failed, 'picture')} couldn't be saved and keep${r.pictures_failed === 1 ? 's' : ''} its web address.` : ''
+    const picsLeft = r.pictures_failed ? ` ${many(r.pictures_failed, 'picture')} couldn't be saved and ${r.pictures_failed === 1 ? 'keeps its web address' : 'keep their web addresses'}.` : ''
     const text = [added.length === 1 ? `Added ${added[0].path}${pics}.${picsLeft}` : added.length ? `Added ${nf(added.length)} files to ${folder}/.` : '',
       refused.length ? `Not added: ${refused.map((f) => (String(f.why).includes(f.name) ? String(f.why) : `${f.name} — ${f.why}`).replace(/\.$/, '')).join('; ')}.` : '',
       commits.length ? `Not committed: ${commits[0].slice(9).replace(/\.$/, '')}.` : ''].filter(Boolean).join(' ')

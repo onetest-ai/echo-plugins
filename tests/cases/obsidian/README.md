@@ -67,3 +67,18 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   their git would.
 - Window steps with headless Playwright; never the user's browser. `<dir>/serve.log` lines starting `plugin obsidian:` are
   the plugin's.
+
+### Echo core's newer APIs and tags through the dictionary (TC-055 on)
+- Run after TC-038 on the minutes environment (TC-055 to TC-061, in order); each case says which vaults it connects.
+- **The web** is a fake site on this computer only (`tests/fixtures/obsidian/fake_web.py`, started by `up.sh`): the same
+  made-up pages on `$FAKE_WEB` (`<port>+1`, the site a case lists in the plugin's `web_sites`) and `$FAKE_WEB_OTHER`
+  (`<port>+2`, not listed). Echo's own box for an address (`ctx.http.askAddress`) is answered in this development build
+  by `ECHOCTL_ASK_ADDRESS` (`up.sh` sets it to `$FAKE_WEB_OTHER/rollout.html` for the window; a CLI step may set its own,
+  empty for a cancel) — no dialog opens. A step may `curl` the fake's pages and `/_log` (what Echo asked), and
+  `curl -X DELETE …/_log`. Nothing reaches the internet: a picture on another host is refused by Echo unreached.
+- **Your own Claude Code** is the test's (`$CLAUDE_CONFIG_DIR`, inside `<dir>`): on test data Echo adds a plugin's skill
+  only there, and refuses when it isn't set. Check it is inside `<dir>` and `ECHOCTL_TEST_OPEN_LOG_ONLY` is set before any
+  step that installs a skill; a step may write and remove a made-up skill of the user's own there (TC-057).
+- **Echo's dictionary** is `up.sh`'s made-up one (Concept, Client, Control Plane with their other names), written into the
+  test data's Recall folder as Echo keeps it; a step reads it with `echoctl brain taxonomy show`.
+- A step may also rename a call with `echoctl title <call> <title>` (TC-056: Echo keeps its stamp).

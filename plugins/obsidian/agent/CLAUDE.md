@@ -70,6 +70,11 @@ without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `wher
   yourself: when the user asks, `echoctl plugin call obsidian save_minutes '{"call":"<call folder>"}'` (it writes, so
   it asks first); `route {"call"}` says where a call would go and why.
 - A vault's sources folder (`raw_inbox/` and the like) holds what came in as it came: never edit or delete a source.
+  A web page there (`raw_inbox/web/`, `kind: web`, its `url`) was read once when the user added it, its pictures in the
+  folder of its name; never fetch it again to "refresh" it.
+- Tags: use the vault's tag taxonomy (its `TAG_TAXONOMY.md` or `tags.md`) when it has one; Echo's dictionary
+  (Recall → Dictionary) names the user's clients, products and terms — prefer its name for a tag the taxonomy
+  allows. Echo turns tags into the dictionary's names in what it proposes from Ingest and the AI checks.
 - Turning sources into pages is the vault's own ingest skill, run by Echo on a copy of the vault when the user prepares
   changes (the Knowledge activity's Ingest tab); every change waits for the user's review there. Health's AI checks
   run only on the user's click. Neither starts while Echo records or transcribes a call (Echo tells the plugin), and
@@ -80,3 +85,7 @@ without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `wher
 - Connecting, reading again, correcting a vault's description, whom it is for, removing it, browsing its pages and
   graph: the Knowledge activity (⌘K "Connect a folder…"), the vault's Settings tab.
 - Where a thread's or client's calls go: its Profile → Knowledge vault.
+- A vault's skills (`.claude/skills/`: `twin`, `process-inbox`): its Settings → Skills; `/twin` for every Claude Code
+  session is added there on the user's click (Install), never by you.
+- A web page as a source: Ingest → Add a source → A web page. Sites it reads without asking: Settings → Plugins →
+  Knowledge → Its settings (Sites Knowledge reads pages from).

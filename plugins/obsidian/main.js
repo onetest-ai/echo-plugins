@@ -24,8 +24,13 @@
 // `vaults/<id>/health.json` (score points, ignored findings, the last AI check), `vaults/<id>/lint.json` and
 // `vaults/<id>/lint/<run>.json` (AI checks and the findings kept), `vaults/<id>/ingest.json` (the sources ledger and its
 // runs) and `vaults/<id>/ingest/<run>/` (a run's notices, changes and review), `locks/` (one run of a kind per vault),
-// `vaults.md`, `runs/<id>/`.
-// It reaches no host.
+// `vaults.md`, `runs/<id>/`, `calls/<stamp>.json` (where a call's minutes went: by its stamp, Echo #772, so a retitle
+// is the same call; `<stamp>~<sha>` for a second call of the same second), `global-skills.json` (the name each vault's
+// twin skill was added under in the user's own Claude Code, from the window).
+// Tags: an AI check's fix, an Ingest run's pages and Health's tag fix take Echo's dictionary's name for a tag
+// (`echo.read('dictionary')`, read only), the vault's own tag taxonomy winning.
+// It reaches only web pages the user adds as sources (`ctx.web.read`, Echo #764): on a site listed in its settings
+// (`web_sites`, `network.hosts_from`), or the one address the user types in Echo's own box (`ctx.http.askAddress`).
 
 const SECTIONS = [
   ['when', 'When Claude looks here'],

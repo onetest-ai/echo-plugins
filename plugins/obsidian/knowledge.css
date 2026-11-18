@@ -593,6 +593,8 @@ button.kn-leg:hover { background: var(--line); color: var(--text); }
 .kn-qt.none { border-left-color: var(--line-strong); color: var(--text-3); }
 .kn-left-out { font-size: 12px; color: var(--warn); padding: 7px 12px; border-top: 1px solid var(--line); display: flex; gap: 6px; align-items: flex-start; background: color-mix(in srgb, var(--warn) 6%, transparent); }
 .kn-chg-h + .kn-left-out { border-top: 0; }
+/* A change's tags as Echo's dictionary names them (step 7). */
+.kn-chg-retag { padding: 7px 12px; border-top: 1px solid var(--line); }
 .kn-left-out > svg { width: 13px; height: 13px; flex: none; margin-top: 2px; }
 .kn-left-out > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .kn-left-l { font-family: var(--mono); font-size: 11px; color: var(--text-3); text-decoration: line-through; overflow-wrap: anywhere; }

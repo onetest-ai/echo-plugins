@@ -4,12 +4,13 @@ the edits a scenario names, then prints one made-up `result` line as Claude Code
     python3 -I fake_ingest.py <dir>/fake-ingest.json
 
 The scenario: {"write": {path: text}, "append": {path: text}, "rows": [[index, heading, row]], "changes": {...},
-"answer": text, "cost": n}. Paths are relative to the copy (never `..`, never absolute); `rows` puts a table row at the
+"answer": text, "cost": n, "hang": true (it runs until stopped, its pid in <dir>/fake-running.pid)}. Paths are relative to the copy (never `..`, never absolute); `rows` puts a table row at the
 end of the table under `## <heading>`; `changes` becomes `.echo-ingest/changes.json`. No scenario: nothing changes.
 """
 import json
 import os
 import sys
+import time
 
 
 def inside(rel):
@@ -24,6 +25,12 @@ def main():
             s = json.load(f)
     except OSError:
         s = {}
+    if s.get("hang"):
+        # A run that goes on until it is stopped (a case's Stop): its pid in <dir>/fake-running.pid, nothing changed.
+        with open(os.path.join(os.path.dirname(sys.argv[1]), "fake-running.pid"), "w") as f:
+            f.write(str(os.getpid()))
+        time.sleep(300)
+        sys.exit(1)
     for rel, text in (s.get("write") or {}).items():
         os.makedirs(os.path.dirname(inside(rel)) or ".", exist_ok=True)
         with open(rel, "w", encoding="utf-8") as f:

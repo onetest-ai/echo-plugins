@@ -37,6 +37,7 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   const files = { ...store }
   // Store files whose bytes aren't UTF-8 (a snapshot's): read only with `{lossy: true}`, as Echo's `store.read`.
   const binaryStore = new Set()
+  const binaryShas = new Map() // a binary store file's bytes' sha256 (its text here is lossy)
   const ctx = {
     id,
     terminal,
@@ -183,7 +184,9 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   if (claude !== undefined) {
     // jshost/folders.rs `snapshot` (with `hidden`): the folder's files into `cache/snapshots/<hex>/` — never a link, a
     // `.git` folder or `.obsidian/plugins`.
-    const snapshot = (root) => {
+    const snapshot = (root, exclude = []) => {
+      if (!Array.isArray(exclude) || exclude.length > 100) throw new Error('exclude names 100 paths at most')
+      const out = (p) => exclude.some((e) => { const x = String(e).replace(/\/+$/, '').toLowerCase(); const q = p.toLowerCase(); return q === x || q.startsWith(`${x}/`) })
       const r = nfs.realpathSync.native(String(root))
       if (!(folders || []).map((f) => nfs.realpathSync.native(f)).includes(r)) throw new Error(`${root} isn't one of the folders you gave this plugin`)
       if (Object.keys(files).filter((p) => p.startsWith('cache/snapshots/')).map((p) => p.split('/')[2]).filter((x, i, a) => a.indexOf(x) === i).length >= 3) throw new Error('this plugin keeps 3 snapshots already: remove one (ctx.store.remove) first')
@@ -194,12 +197,12 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
         const rel = stack.pop()
         for (const e of nfs.readdirSync(npath.join(r, rel), { withFileTypes: true })) {
           const p = rel ? `${rel}/${e.name}` : e.name
-          if (e.isSymbolicLink() || e.name.toLowerCase() === '.git' || p.toLowerCase().endsWith('.obsidian/plugins')) continue
+          if (e.isSymbolicLink() || e.name.toLowerCase() === '.git' || p.toLowerCase().endsWith('.obsidian/plugins') || out(p)) continue
           if (e.isDirectory()) { stack.push(p); continue }
           if (!e.isFile()) continue
           const buf = nfs.readFileSync(npath.join(r, p))
           let text
-          try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf) } catch { text = buf.toString('utf8'); binaryStore.add(`${at}/${p}`) }
+          try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf) } catch { text = buf.toString('utf8'); binaryStore.add(`${at}/${p}`); binaryShas.set(`${at}/${p}`, sha256(buf)) }
           files[`${at}/${p}`] = text
           n++
           bytes += buf.length
@@ -207,30 +210,48 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
       }
       return { path: at, files: n, bytes, skipped: 0, why: { large: 0, unreadable: 0 } }
     }
-    if (ctx.fs) ctx.fs.snapshot = async (root) => snapshot(root)
+    if (ctx.fs) ctx.fs.snapshot = async (root, o = {}) => snapshot(root, o.exclude || [])
+    // ctx.store.walk (core #778): the store's files under `path` with their sizes (UTF-8 bytes here) and shas.
+    ctx.store.walk = async (path, o = {}) => {
+      const pre = path ? `${String(path).replace(/\/+$/, '')}/` : ''
+      return Object.keys(files).filter((p) => p.startsWith(pre) && (o.hidden || !p.slice(pre.length).split('/').some((c) => c.startsWith('.')))).sort().map((p) => {
+        const row = { path: p, size: Buffer.byteLength(files[p]), mtime: 0 }
+        if (o.sha) row.sha = binaryShas.get(p) || sha256(files[p])
+        return row
+      })
+    }
+    // ctx.claude.run's keys and ctx.claude.stop (core #778): a run under a key stopped rejects with `stopped`.
+    const keyed = new Map()
     // ctx.claude.run (service_async.rs `claude.run`): `{answer, model, usage, actions}`, and `snapshot` for `copy`.
     ctx.claude = {
       run: async (opts = {}) => {
         claudeLog.push(JSON.parse(JSON.stringify(opts)))
         if (!String(opts.prompt || '').trim()) throw new Error('a Claude run needs a prompt')
-        const snap = opts.folder && opts.mode === 'copy' ? snapshot(opts.folder) : null
+        if (opts.key != null && !/^[A-Za-z0-9._-]{1,64}$/.test(opts.key)) throw new Error('a run\'s key is 1–64 letters, digits, . _ -')
+        const key = opts.key != null ? String(opts.key).toLowerCase() : null
+        if (key && keyed.has(key)) throw new Error(`a run with key “${opts.key}” is running already`)
+        const snap = opts.folder && opts.mode === 'copy' ? snapshot(opts.folder, opts.exclude || []) : null
         const inSnap = (rel) => { const s = String(rel).replace(/^\.\//, ''); if (!snap || !s || s.split('/').some((c) => c === '..' || c === '')) throw new Error(`“${rel}” isn't in the copy`); return `${snap.path}/${s}` }
         const run = {
           snapshot: snap,
           read: (rel) => files[inSnap(rel)] ?? null,
-          write: (rel, text) => { const k = inSnap(rel); binaryStore.delete(k); files[k] = String(text) },
-          writeBytes: (rel, text) => { const k = inSnap(rel); binaryStore.add(k); files[k] = String(text) },
+          write: (rel, text) => { const k = inSnap(rel); binaryStore.delete(k); binaryShas.delete(k); files[k] = String(text) },
+          writeBytes: (rel, text) => { const k = inSnap(rel); binaryStore.add(k); binaryShas.set(k, sha256(`bytes:${text}`)); files[k] = String(text) },
           remove: (rel) => { delete files[inSnap(rel)] },
         }
+        let stopIt
+        const stopped = new Promise((_, reject) => { stopIt = () => reject(new Error('stopped')) })
+        if (key) keyed.set(key, stopIt)
         try {
-          const out = (await claude(JSON.parse(JSON.stringify(opts)), run)) || {}
+          const out = (await Promise.race([claude(JSON.parse(JSON.stringify(opts)), run), stopped])) || {}
           return { answer: out.answer ?? '', model: out.model ?? '', usage: { input_tokens: 0, output_tokens: 0, cost_usd: 0, ...(out.usage || {}) }, actions: [], ...(snap ? { snapshot: snap } : {}) }
         } catch (e) {
           // A run that fails removes its snapshot.
           if (snap) for (const p of Object.keys(files)) if (p.startsWith(`${snap.path}/`)) { delete files[p]; binaryStore.delete(p) }
           throw e
-        }
+        } finally { if (key) keyed.delete(key) }
       },
+      stop: async (k) => { const f = keyed.get(String(k).toLowerCase()); if (!f) return false; f(); return true },
     }
   }
   const inboxNow = {}

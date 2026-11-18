@@ -51,7 +51,9 @@ with it and what to leave alone. You correct the description, and from then on C
   links worth adding, missing summaries; a finding is kept only when every quote is on its page and its fix's text is
   there once, and is checked again each time Health looks. Ignore any finding; *Show ignored* lists them.
 - **Ingest** — *Prepare changes* runs the vault's own ingest skill (Settings → Ingest, else `process-inbox`) on a copy
-  of the vault, over a batch of its sources (20 at most), never while Echo records or transcribes a call. Nothing is
+  of the vault (the other sources left out), over a batch of its sources (20 at most), never while Echo records or
+  transcribes a call — Echo says whether it does ("whether Echo is recording or transcribing a call now" on the
+  install sheet). *Stop* ends the run's Claude Code at once. Nothing is
   written until you review each change: its diff and the source words it came from (checked; a PDF's can't be);
   approve, reject, edit or take the run's. Index rows and log lines land on the files as they are then; any other file
   only if it hasn't changed since the run. Then one commit, the sources done. Instruction files, hidden files and the

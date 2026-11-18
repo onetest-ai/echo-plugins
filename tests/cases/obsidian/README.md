@@ -59,7 +59,10 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   pure one: an Ingest run (its prompt asks for a vault's ingest skill, its working folder a copy of the vault in the
   plugin's store) makes, in that copy only, the edits `<dir>/fake-ingest.json` names (`fake_ingest.py`); anything else
   is the data's fake's — an AI check answers from `<dir>/fake-answers.tsv` by a phrase of its prompt, else it is refused.
-  A step may write and remove `<dir>/fake-ingest.json` and append to `<dir>/fake-answers.tsv`.
+  A step may write and remove `<dir>/fake-ingest.json` and append to `<dir>/fake-answers.tsv`. A scenario `{"hang": true}`
+  runs until stopped (its pid in `<dir>/fake-running.pid`; a step may `ps` it).
+- Echo's own word that a call transcribes (TC-051): a step may write a call's `.transcribing` marker naming a `sleep` it
+  started, then `kill` that process and remove the marker (by its literal path), as Echo's `plugins/TC-217` does.
 - In acme-twin a step may also commit the user's own edits made in the step before (`git -C "$T" commit -qam …`), as
   their git would.
 - Window steps with headless Playwright; never the user's browser. `<dir>/serve.log` lines starting `plugin obsidian:` are

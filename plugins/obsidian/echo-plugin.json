@@ -21,7 +21,8 @@
         "source",
         "sources",
         "calls",
-        "me"
+        "me",
+        "recording"
       ]
     },
     "sessions": {

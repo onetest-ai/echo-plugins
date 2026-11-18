@@ -85,8 +85,9 @@ printf -- '# Current\n' > "$h/current.md"
 
 # The cases' fake Claude Code (fake-claude.sh) in front of Echo's own test fake (moved to bin/claude-echo): an Ingest
 # run makes the edits <dir>/fake-ingest.json names, in its copy of the vault only (fake_ingest.py); anything else is
-# Echo's fake's. Echo's must be the pure test fake (no `exec` of a real Claude Code), else nothing is set up.
-if [ ! -f "$dir/bin/claude" ] || grep -q 'exec' "$dir/bin/claude"; then echo "$dir/bin/claude isn't Echo's pure test fake: stopping" >&2; exit 1; fi
+# Echo's fake's. Echo's must be the pure test fake (no `exec` of a real Claude Code: `--ai local|virtual` data), else
+# nothing is set up.
+if [ ! -f "$dir/bin/claude" ] || grep -qE 'exec [^ ]*claude|ANTHROPIC_BASE_URL' "$dir/bin/claude"; then echo "$dir/bin/claude isn't Echo's pure test fake: stopping" >&2; exit 1; fi
 mv "$dir/bin/claude" "$dir/bin/claude-echo"
 cp "$here/fake-claude.sh" "$dir/bin/claude"
 cp "$here/fake_ingest.py" "$dir/bin/fake_ingest.py"

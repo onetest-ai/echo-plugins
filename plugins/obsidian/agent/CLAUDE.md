@@ -70,6 +70,10 @@ without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `wher
   yourself: when the user asks, `echoctl plugin call obsidian save_minutes '{"call":"<call folder>"}'` (it writes, so
   it asks first); `route {"call"}` says where a call would go and why.
 - A vault's sources folder (`raw_inbox/` and the like) holds what came in as it came: never edit or delete a source.
+- Turning sources into pages is the vault's own ingest skill, run by Echo on a copy of the vault when the user prepares
+  changes (the Knowledge activity's Ingest tab); every change waits for the user's review there. Health's AI checks
+  run only on the user's click. Neither starts while Echo records or transcribes a call (Echo tells the plugin), and
+  neither is yours to start: point the user to Ingest or Health.
 
 ## Where the user manages it
 

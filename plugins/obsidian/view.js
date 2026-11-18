@@ -2601,6 +2601,8 @@ export async function createKnowledge(ctx, hooks = {}) {
         if (d.knDo === 'edit') return openChangeEdit(d.path)
         // A change made in the vault since the run: its overwrite diff first, then *Take the run's*.
         if (d.knDo === 'compare') { if (rv) rv.cmp[d.path] = !rv.cmp[d.path]; render(); return focusOn(`#${t.id.replace(/-compare$/, '-take')}`, `#${t.id}`) }
+        // *Take the run's* over the vault's file as Compare showed it: a later edit refuses it (the host checks the sha).
+        if (d.knDo === 'take') { const c = ((rv && rv.data && rv.data.changes) || []).find((x) => x.path === d.path); return decide(d.path, 'take', c && c.vault_sha !== undefined ? { sha: c.vault_sha } : {}) }
         return decide(d.path, d.knDo)
       }
       case 'ing-more': { const rv = ing().review; if (rv) rv.more[d.path] = true; render(); return focusOn(`#${t.id.replace(/-more$/, '-diff')}`) }

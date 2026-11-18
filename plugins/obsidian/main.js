@@ -2915,7 +2915,9 @@ export function mentions(line, page, dir) {
  *  `changes`: `[{path, kind, state, edited, left (base), text, rows, dropped, note}]`, changed in place; `fill(c)`
  *  recomputes a change's diff. */
 export function dropRejected(changes, fill) {
-  const rejected = changes.filter((c) => c.kind === 'new' && c.state === 'rejected').map((c) => c.path)
+  // A new page Echo can't write (blocked) takes its lines along as a rejected one does: never written, never held (A3).
+  const rejected = changes.filter((c) => c.kind === 'new' && (c.state === 'rejected' || c.state === 'blocked')).map((c) => c.path)
+  const blockedOnes = new Set(changes.filter((c) => c.kind === 'new' && c.state === 'blocked').map((c) => c.path))
   if (!rejected.length) return
   for (const c of changes) {
     if (!['index', 'log'].includes(c.kind) || c.edited || ['written', 'blocked'].includes(c.state)) continue
@@ -2932,7 +2934,9 @@ export function dropRejected(changes, fill) {
     c.text = text
     c.rows = c.rows.filter(([, l]) => !c.dropped.includes(l))
     const n = c.dropped.length
-    c.note = `${n} line${n === 1 ? '' : 's'} left out: ${n === 1 ? 'it links' : 'they link'} to ${[...pages].sort(cmpStr).join(', ')}, which you rejected`
+    const all = [...pages].sort(cmpStr), cant = all.filter((x) => blockedOnes.has(x)).length
+    const which = cant === all.length ? 'which can\'t be written' : cant ? 'which you rejected or can\'t be written' : 'which you rejected'
+    c.note = `${n} line${n === 1 ? '' : 's'} left out: ${n === 1 ? 'it links' : 'they link'} to ${all.join(', ')}, ${which}`
     fill(c)
   }
 }
@@ -6256,26 +6260,39 @@ export function apply(ctx) {
   // A pause that lets Echo's host breathe between long stretches of JavaScript (its 5-second slice ends at an await of
   // Echo's own): an empty read.
   const breathe = (v) => ctx.fs.readMany(v.root, [], 1)
+  // A run's Claude Code stopped by its key (core #778); an Echo without `ctx.claude.stop` lets it finish on its own.
+  const stopClaude = async (key) => { try { return ctx.claude && ctx.claude.stop ? !!(await ctx.claude.stop(key)) : false } catch (e) { ctx.log(`stop ${key}: ${errText(e)}`); return false } }
 
   // ── Echo records or transcribes a call: runs wait (X-S2, "recording has priority") ──
   // Heard from Echo's events; Echo tells no plugin what is going when it starts, so a recording already going when the
   // plugin loads isn't known (a core gap, said in the PR).
   const calls = { recording: new Map(), transcribing: new Map(), waiters: new Set() }
-  // A recording not heard of again within 3 hours is let go; a transcription within 30 minutes (a recording_stopped
-  // that never gets its `transcribed`: a memo or a call Echo doesn't transcribe holds nothing for long).
+  // Echo's own word first (`echo.read('recording')`, core #778), then what its events told: a recording not heard of
+  // again within 3 hours is let go; a transcription after the call's own length (at least 30 minutes, A7) — a
+  // recording_stopped that never gets its `transcribed` holds nothing for long.
+  const recordingNow = () => { try { const r = ctx.echo && ctx.echo.read('recording'); return r && typeof r.state === 'string' ? r.state : null } catch { return null } }
   const busyCall = () => {
-    for (const [m, ms] of [[calls.recording, 3 * 3600 * 1000], [calls.transcribing, 30 * 60 * 1000]]) for (const [k, t] of m) if (t < Date.now() - ms) m.delete(k)
-    return calls.recording.size ? 'Waiting for a call\'s recording to finish' : calls.transcribing.size ? 'Waiting for a call\'s transcription to finish' : null
+    for (const [m, ms] of [[calls.recording, 3 * 3600 * 1000], [calls.transcribing, 0]]) for (const [k, x] of m) if (x.at < Date.now() - Math.max(ms, x.for || 0)) m.delete(k)
+    const state = recordingNow()
+    if (state === 'recording' || calls.recording.size) return 'Waiting for a call\'s recording to finish'
+    if (state === 'transcribing' || calls.transcribing.size) return 'Waiting for a call\'s transcription to finish'
+    return null
   }
   const wake = () => { for (const w of [...calls.waiters]) w() }
   const hear = (event, fn) => { try { const r = ctx.on(event, (p) => { try { fn(p || {}) } catch (e) { ctx.log(`${event}: ${errText(e)}`) } }); if (r && r.catch) r.catch(() => {}) } catch { /* an Echo without the event */ } }
   if (ctx.on) {
-    hear('recording_started', (p) => { calls.recording.set(String(p.call || 'call'), Date.now()) })
-    hear('recording_stopped', (p) => { const c = String(p.call || 'call'); calls.recording.delete(c); calls.transcribing.set(c, Date.now()); wake() })
+    hear('recording_started', (p) => { calls.recording.set(String(p.call || 'call'), { at: Date.now() }) })
+    hear('recording_stopped', (p) => { const c = String(p.call || 'call'); calls.recording.delete(c); calls.transcribing.set(c, { at: Date.now(), for: Math.max(30 * 60, 2 * (Number(p.duration_s) || 0)) * 1000 }); wake() })
     hear('transcribed', (p) => { calls.transcribing.delete(String(p.call || 'call')); wake() })
   }
   // Until no call is recorded or transcribed (or the run is stopped): `say(why | null)` as it waits.
+  // A terminal's command hears no events and has no timer to look again: it doesn't start while Echo records.
+  const refuseInTerminal = () => {
+    const own = recordingNow()
+    if (ctx.terminal && (own === 'recording' || own === 'transcribing')) throw new Error(`${busyCall()}: Echo records first — try again once it is done`)
+  }
   const waitQuiet = async (token, say) => {
+    refuseInTerminal()
     let said = null
     for (let w = busyCall(); w && !token.stop; w = busyCall()) {
       if (said !== w) { say(w); said = w }
@@ -6322,6 +6339,7 @@ export function apply(ctx) {
     const judged = [...ix.recs.keys()].filter(inScope).map((p) => ({ path: p, mtime: ix.recs.get(p).m || 0, links: pageOf(ix, p).links }))
     const r = resolverOf(ix)
     const sc = lintScope(judged, (from, l) => r.resolve(from, l), Date.now())
+    refuseInTerminal()
     if (!sc.pages.length) throw new Error(sc.of === 0 ? 'The vault has no pages to check yet' : 'No page changed in the last 30 days, and the vault has over 300: AI checks have nothing to read')
     const run = runId()
     if (!takeRunLock(lintLock(v.id), run)) throw new Error('An AI check of this vault is going')
@@ -6349,7 +6367,8 @@ export function apply(ctx) {
     try {
       await waitQuiet(token, (w) => { updateLintRun(v, run, (r) => { r.waiting = w }); if (w) lintEvent(v, run, { type: 'notice', kind: 'waiting', text: w }) })
       if (token.stop) return
-      const res = await ctx.claude.run({ folder: v.root, path: '', mode: 'read', profile: v.profile || '', title: `AI checks of ${v.name}`, prompt: lintPrompt(pages), dir: `vaults/${v.id}/lint-runs/${run}`, timeout: 20 })
+      if (token.stop) return
+      const res = await ctx.claude.run({ folder: v.root, path: '', mode: 'read', profile: v.profile || '', title: `AI checks of ${v.name}`, prompt: lintPrompt(pages), dir: `vaults/${v.id}/lint-runs/${run}`, timeout: 20, key: `lint-${run}` })
       const u = (res && res.usage) || {}
       const cost = typeof u.cost_usd === 'number' ? u.cost_usd : null
       const spent = { cost, tokens_in: u.input_tokens ?? null, tokens_out: u.output_tokens ?? null }
@@ -6388,8 +6407,8 @@ export function apply(ctx) {
     const events = (r.events || []).filter((e) => e.n > (Number(from) || 0))
     return { ...lintPublic(r), seconds: seconds(r.at, r.ended), events, next: events.length ? events[events.length - 1].n : Number(from) || 0 }
   })
-  // *Stop*: a check this Echo started. Echo can't end a Claude Code run a plugin started (a core gap): the run is
-  // stopped here — nothing of it is kept — and its Claude Code finishes on its own; the vault's marker stays until it does.
+  // *Stop*: a check this Echo started — stopped here, nothing of it kept, and its Claude Code ended by its key
+  // (`ctx.claude.stop`, core #778); the vault's marker goes as soon as the run has ended.
   ctx.command('lint_stop', ({ id, run }) => {
     const v = vaultOf(id)
     if (!runOk(run) || !lintRuns(v).some((r) => r.id === run)) throw new Error(`no AI check ${run} in this vault`)
@@ -6398,7 +6417,9 @@ export function apply(ctx) {
     token.stop = 'Stopped'
     updateLintRun(v, run, (r) => { if (r.state === 'running') Object.assign(r, { state: 'stopped', reason: 'Stopped', ended: nowIso(), waiting: null }) })
     if (token.wake) token.wake()
-    return { run, state: 'stopped' }
+    // Its Claude Code ends now (core #778), wherever it runs.
+    const ended = stopClaude(`lint-${run}`)
+    return ended.then(() => ({ run, state: 'stopped' }))
   })
 
   // ── Ingest runs (ingest.rs, ingest/review.rs) ──
@@ -6448,9 +6469,11 @@ export function apply(ctx) {
       let waiting = 0
       for (const r of runs) {
         if (r.state !== 'review') continue
-        const stale = Date.now() - Date.parse(r.ended || r.at) >= 30 * 864e5
+        // Its last answer or write, else when it ended (A6).
+        const touched = Math.max(Date.parse(r.ended || r.at) || 0, Number((readJson(`${ingDir(v.id, r.id)}/review.json`, {}) || {}).touched) || 0)
+        const stale = Date.now() - touched >= 30 * 864e5
         if (++waiting <= 10 && !stale) continue
-        if (writingNow.has(r.id)) continue
+        if (writing(v, r.id)) continue
         Object.assign(r, { state: 'discarded', reason: 'It waited for review over 30 days, or past the 10 newest runs waiting' })
         release(l, r.id, 'new')
         gone.push(r.id)
@@ -6469,7 +6492,8 @@ export function apply(ctx) {
     // Snapshots no run holds (an Echo that quit mid-run left one): Echo keeps 3 a plugin, so they would block every
     // later run until its cache is swept (finding 7). Only when no ingest run goes — here or in another process.
     const others = (() => { try { return ctx.store.list('locks') || [] } catch { return [] } })().filter((n) => n.startsWith('ingest-') && n !== `ingest-${v.id}.json`)
-    const busy = ingLive.size > 0 || others.some((n) => { const j = lockOfRun(`locks/${n}`); return !!j && Date.now() - (Number(j.at) || 0) < RUN_STALE })
+    // Another vault's marker, fresh or not, may be a terminal's run that never refreshes it: its snapshot stays (A6).
+    const busy = ingLive.size > 0 || others.length > 0
     if (!busy) for (const s of (() => { try { return ctx.store.list('cache/snapshots') || [] } catch { return [] } })()) if (/^[0-9a-f]+$/.test(s)) { try { ctx.store.remove(`cache/snapshots/${s}`) } catch { /* swept */ } }
   }
   const skillOf = (v) => ingestSkill(v.detected && v.detected.skills, v.ingest.skill)
@@ -6486,6 +6510,7 @@ export function apply(ctx) {
   // sources (none named: every New one; 20 a run) on a copy. → {run, sources, left, p (its life)}.
   const ingestStart = async (v, { wanted = [], again = null, auto = false } = {}) => {
     if (!available(v)) throw new Error(`the vault's folder isn't there: ${v.root}`)
+    refuseInTerminal()
     const skill = skillOf(v)
     if (!skill) throw new Error('This vault has no ingest skill: add the starter\'s process-inbox, or choose one in Settings → Ingest')
     if (again) {
@@ -6572,26 +6597,36 @@ export function apply(ctx) {
     // A file of the copy as text, strictly: one that isn't UTF-8 is `binary` (Echo refuses it before any text reaches
     // the plugin's heap; it is never compared lossily here).
     const readCopy = (rel) => { try { return { text: ctx.store.read(`${snap}/${rel}`) } } catch (e) { return /UTF-8/i.test(errText(e)) ? { binary: true } : null } }
-    for (const rel of await snapshotFiles(v, snap)) {
+    // Core #778's `ctx.store.walk`: the copy's files with their sizes and shas, nothing read to know what changed; an
+    // older Echo: listed and read (strictly) as before.
+    let listed = null
+    if (ctx.store.walk) {
+      try { listed = (await ctx.store.walk(snap, { sha: true, max: 100000 })).map((f) => ({ rel: f.path.slice(snap.length + 1), size: f.size, sha: f.sha || null })) } catch (e) { ctx.log(`walk of the copy: ${errText(e)}`) }
+    }
+    const rows = listed || (await snapshotFiles(v, snap)).map((rel) => ({ rel, size: null, sha: null }))
+    for (const { rel, size, sha } of rows) {
       if (++k % 100 === 0) await breathe(v)
+      if (rel.split('/').some((c) => c.startsWith('.'))) continue
       const base = bases.get(rel) || null
-      // A file Echo doesn't write back is looked at only to say it was left out: a new one, or a small text one changed.
-      // A file of the vault over 2 MB is never read here: Echo writes none (when core gives the snapshot's shas, it is
-      // compared too).
-      if (base && base.size > READ_MAX) continue
+      if (sha && base && sha === base.sha) continue
+      // A file Echo doesn't write back is looked at only to say it was left out: a new one, or one changed.
       if (!ingestWritable(rel, srcDir)) {
-        if (!base) { refused++; continue }
+        if (!base || sha) { refused++; continue }
+        if (base.size > READ_MAX) continue
         const r = readCopy(rel)
         if (r && !r.binary && ctx.crypto.sha256(r.text) !== base.sha) refused++
         continue
       }
-      const r = readCopy(rel)
+      // Over 2 MB: Echo writes none — the copy's (its size known) blocked unread, a vault file of that size never read.
+      const tooBig = size != null ? size > READ_MAX : !!base && base.size > READ_MAX
+      if (tooBig && size == null) continue
+      const r = tooBig ? { big: true } : readCopy(rel)
       if (!r) continue
-      // A binary file the vault has: not compared (Echo writes text only, and can't tell it changed without reading it).
-      if (r.binary && base) continue
-      if (!r.binary && base && ctx.crypto.sha256(r.text) === base.sha) continue
+      // A binary file the vault has: changed only when its sha says so (Echo writes text only); unknown, not compared.
+      if (r.binary && base && !sha) continue
+      if (!r.binary && !r.big && base && ctx.crypto.sha256(r.text) === base.sha) continue
       const why0 = pathProblem(rel)
-      const big = !r.binary && utf8Len(r.text) > READ_MAX
+      const big = !!r.big || (!r.binary && utf8Len(r.text) > READ_MAX)
       const blocked = why0 ? `can't be written: ${why0}` : r.binary ? 'can\'t be written: Echo writes text files only' : big ? 'can\'t be written: Echo writes text files up to 2 MB' : null
       const n = notes.get(rel) || { why: null, quotes: [] }
       const q = ingestQuotes(sources, n.quotes, textOf)
@@ -6605,6 +6640,23 @@ export function apply(ctx) {
     }
     ctx.store.write(`${dir}/review.json`, JSON.stringify({ found, answers: {}, refused }, null, 2))
     return { n: found.length, blocked: found.filter((f) => f.blocked).length, refused }
+  }
+  // What the copy leaves out: the sources folder's files not in the batch — by the top folder that holds none of the
+  // batch where it can, file by file else; past 100 paths, the files of the largest such folders first stay in.
+  const copyExclude = async (v, batch) => {
+    const dir = sourcesDirOf(v)
+    const keep = new Set(batch)
+    const files = (await sourceFiles(v)).map((f) => f.path).filter((p) => !keep.has(p))
+    const groups = new Map()
+    for (const p of files) { const sub = p.slice(dir.length + 1).split('/'); const g = sub.length > 1 ? `${dir}/${sub[0]}` : p; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(p) }
+    const out = []
+    for (const [g, list] of [...groups].sort((a, b) => a[1].length - b[1].length || cmpStr(a[0], b[0]))) {
+      const whole = g !== list[0] && !batch.some((b) => b.startsWith(`${g}/`))
+      const add = whole ? [g] : list
+      if (out.length + add.length > 100) continue
+      out.push(...add)
+    }
+    return out.sort(cmpStr)
   }
   // A run's life: the wait for a call, the vault's files' shas, the run on a copy, its changes found, the copy gone.
   const ingestDrive = async (v, run, batch, skill, token) => {
@@ -6628,7 +6680,12 @@ export function apply(ctx) {
         const n = meetingNoteOf(readSafe(v, s, 64 << 10))
         if (n && pathProblem(n[1]) === null && (statSafe(v, n[1]) || {}).kind === 'file') notes.set(s, n)
       }
-      const res = await ctx.claude.run({ folder: v.root, path: '', mode: 'copy', profile: v.profile || '', title: `Ingest into ${v.name}`, prompt: ingestPrompt(skill.name, batch, notes), dir: `${ingDir(v.id, run)}/claude`, timeout: 20 })
+      // The copy leaves out the sources not in the batch (core #778's `exclude`, 100 paths at most): the batch's stay at
+      // their own paths, which the prompt names.
+      const exclude = await copyExclude(v, batch)
+      // Stopped while the run was made ready: Claude Code never starts.
+      if (token.stop) return
+      const res = await ctx.claude.run({ folder: v.root, path: '', mode: 'copy', profile: v.profile || '', title: `Ingest into ${v.name}`, prompt: ingestPrompt(skill.name, batch, notes), dir: `${ingDir(v.id, run)}/claude`, timeout: 20, key: `ingest-${run}`, ...(exclude.length ? { exclude } : {}) })
       snap = res && res.snapshot ? res.snapshot : null
       const u = (res && res.usage) || {}
       const spent = { cost: typeof u.cost_usd === 'number' ? u.cost_usd : null, tokens_in: u.input_tokens ?? null, tokens_out: u.output_tokens ?? null }
@@ -6697,25 +6754,27 @@ export function apply(ctx) {
         quote_note: f.quote_note || null, dropped: [], note: f.blocked || (unreadable ? 'can\'t be written: the vault\'s file isn\'t UTF-8 text Echo reads whole (over 2 MB, or another encoding)' : null), state, edited: a.text != null,
         new_file: !!f.new, approved: a.state === 'approved' && !f.blocked && !unreadable, force: forced, force_sha: a.force_sha ?? null, base_sha: f.base_sha, base: f.new ? null : base, left, text, rows: rows || [],
       }
+      c.vault_sha = now ? now.sha : null
       fillChange(c)
       out.push(c)
     }
     dropRejected(out, fillChange)
     return out
   }
-  const changePublic = (c) => ({ path: c.path, kind: c.kind, adds_only: c.adds_only, plus: c.plus, minus: c.minus, diff: c.diff, why: c.why, quotes: c.quotes, invented: c.invented, quote_note: c.quote_note, dropped: c.dropped, note: c.note, state: c.state, edited: c.edited })
+  const changePublic = (c) => ({ vault_sha: c.vault_sha, path: c.path, kind: c.kind, adds_only: c.adds_only, plus: c.plus, minus: c.minus, diff: c.diff, why: c.why, quotes: c.quotes, invented: c.invented, quote_note: c.quote_note, dropped: c.dropped, note: c.note, state: c.state, edited: c.edited })
   const reviewing = (v, run) => {
     const r = ingFind(v, run)
     if (r.state !== 'review' || readJson(`${ingDir(v.id, run)}/review.json`, null) === null) throw new Error('This run\'s changes aren\'t waiting for review')
     return r
   }
-  const updateReview = (v, run, fn) => updateJson(`${ingDir(v.id, run)}/review.json`, { found: [], answers: {} }, (rv) => { rv.answers = rv.answers || {}; return fn(rv) })
+  const updateReview = (v, run, fn) => updateJson(`${ingDir(v.id, run)}/review.json`, { found: [], answers: {} }, (rv) => { rv.answers = rv.answers || {}; rv.touched = Date.now(); return fn(rv) })
 
   // *Write N approved* (K15-09): each approved change into the vault — an *adds only* index or log change as its added
   // lines onto the file as it is now, every other only over its base (or where there still is no file), else "changed in
   // the vault since the run"; one commit of the files written that were clean before; activity lines; the run's
   // sources done (kept N of M); its folder gone once nothing is left to decide.
   const writingNow = new Set() // runs whose write goes in this process
+  const PROC = `${ctx.terminal ? 't' : 'a'}${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}` // this process, as a writer
   const writingPath = (v, run) => `${ingDir(v.id, run)}/writing.json`
   const ingestWrite = (v, run, only = []) => serial(v.id, async () => {
     const r = reviewing(v, run)
@@ -6729,18 +6788,30 @@ export function apply(ctx) {
       // An index row or log line for a new page of the run is written only with that page (finding 3): a new page not
       // written in this same write keeps its lines back, to come with it.
       const withPage = new Set(picked.filter((c) => c.kind === 'new').map((c) => c.path))
-      const pending = all.filter((c) => c.kind === 'new' && c.state !== 'written' && !withPage.has(c.path)).map((c) => c.path)
+      // A blocked new page is never written: its lines are left out (`dropRejected`), never held for it (A3).
+      const pending = all.filter((c) => c.kind === 'new' && !['written', 'blocked', 'rejected'].includes(c.state) && !withPage.has(c.path)).map((c) => c.path)
       const todo = picked.map((c) => { const h = holdPending(c, pending); return h ? { ...c, text: h.text, rows: h.rows, held: h.held } : c })
       const blocked = all.filter((c) => c.state === 'blocked').map((c) => c.path)
-      // What a write of this run that stopped midway (Echo quit) wrote: still as it wrote them, they are Echo's, not
-      // changes of the user's, and go into this commit (finding 6).
+      // What a write of this run that stopped midway (Echo quit) wrote: a file that was clean before Echo wrote it and
+      // still holds what Echo wrote is Echo's, not the user's, and goes into this commit (finding 6); one the user had
+      // changed before stays the user's (A1).
       const before = readJson(writingPath(v, run), { files: {} }).files || {}
       const dirty = v.commit ? await dirtyOf(v, todo.map((c) => c.path)) : CLEAN
-      for (const [p, sha] of Object.entries(before)) if (dirty.paths.has(p) && (statSafe(v, p, { sha: true }) || {}).sha === sha) dirty.paths.delete(p)
+      const wasClean = new Set(todo.map((c) => c.path).filter((p) => !dirty.paths.has(p)))
+      const echos = (p, sha) => { const b = before[p]; return !!b && typeof b === 'object' && b.dirty === false && b.sha === sha }
+      for (const p of [...dirty.paths]) if (echos(p, (statSafe(v, p, { sha: true }) || {}).sha)) { dirty.paths.delete(p); wasClean.add(p) }
       const today = ymd(new Date())
       const out = { written: [], changed_since: [], commit: 'off', committed: [], kept: 0, of: all.length, finished: false }
       const done = [], wrote = new Map()
-      const intend = (p, sha) => updateJson(writingPath(v, run), { files: {} }, (w) => { w.files = w.files || {}; w.files[p] = sha; w.at = Date.now() })
+      // Before each write: what Echo is about to write and whether the file was clean before (its first record kept),
+      // this process as the writer, the time (other processes take a write as going for 2 minutes after it).
+      const intend = (p, sha) => updateJson(writingPath(v, run), { files: {} }, (w) => {
+        w.files = w.files || {}
+        const had = w.files[p]
+        w.files[p] = { sha, dirty: had && typeof had === 'object' ? had.dirty : !wasClean.has(p) }
+        w.owner = PROC
+        w.at = Date.now()
+      })
       for (const c of todo) {
         const st = statSafe(v, c.path, { sha: true })
         const now = st && st.kind === 'file' && st.real != null ? readPage(v, c.path, st) : null
@@ -6750,8 +6821,10 @@ export function apply(ctx) {
           if (c.held) continue
           out.written.push(c.path)
           wrote.set(c.path, now.sha)
-          // Echo's change is in the file (a write that stopped midway, done again): its line and commit.
+          // Echo's change is in the file (a write that stopped midway, done again): its line and commit — an index's
+          // rows or a log's lines too, when Echo's record says it wrote them (partly finding 6).
           if (c.base !== c.text && !c.adds_only) done.push([c.path, c.base, c.text])
+          else if (c.adds_only && echos(c.path, now.sha)) done.push([c.path, c.left, now.text])
           continue
         }
         intend(c.path, ctx.crypto.sha256(o.write))
@@ -6764,15 +6837,16 @@ export function apply(ctx) {
         done.push([c.path, now ? now.text : null, o.write])
       }
       indexes.delete(v.id)
+      // Written only while the file still holds what Echo wrote: an edit that landed meanwhile keeps it unwritten
+      // (finding 10) and out of Echo's commit (A2).
+      const really = out.written.filter((p) => (statSafe(v, p, { sha: true }) || {}).sha === wrote.get(p))
       const first = r.sources[0] || ''
       const title = isMd(first) ? titleOf(first, readSafe(v, first, 64 << 10)) : first.split('/').pop()
-      if (done.length) out.commit = await commitOne(v, done.map(([p]) => p), dirty, ingestMessage(r.sources, title))
+      const toCommit = done.map(([p]) => p).filter((p) => really.includes(p))
+      if (toCommit.length) out.commit = await commitOne(v, toCommit, dirty, ingestMessage(r.sources, title))
       const cid = commitId(out.commit)
-      if (cid) out.committed = done.map(([p]) => p).filter((p) => !dirty.paths.has(p))
-      for (const [path, old, now] of done) changed(v, path, 'ingest', run, old, now, cid && !dirty.paths.has(path) ? cid : null)
-      // Written only while the file still holds what Echo wrote (an edit that landed meanwhile keeps it unwritten); a
-      // change written is never made "changed" again (finding 10).
-      const really = out.written.filter((p) => (statSafe(v, p, { sha: true }) || {}).sha === wrote.get(p))
+      if (cid) out.committed = toCommit.filter((p) => !dirty.paths.has(p))
+      for (const [path, old, now] of done) changed(v, path, 'ingest', run, old, now, cid && out.committed.includes(path) ? cid : null)
       const [kept, finished] = updateReview(v, run, (rv) => {
         for (const p of really) (rv.answers[p] = rv.answers[p] || {}).state = 'written'
         for (const p of out.changed_since) if (rv.answers[p] && rv.answers[p].state !== 'written') rv.answers[p].state = 'changed'
@@ -6792,7 +6866,13 @@ export function apply(ctx) {
     } finally { writingNow.delete(run) }
   })
   // A write of run `run` goes now: here, or in another process (its intentions written in the last 10 minutes).
-  const writing = (v, run) => writingNow.has(run) || Date.now() - (Number(readJson(writingPath(v, run), {}).at) || 0) < 10 * 60 * 1000
+  const writing = (v, run) => {
+    if (writingNow.has(run)) return true
+    let j = {}
+    try { j = readJson(writingPath(v, run), {}) } catch { return false }
+    // Left by this process (a write that threw): not going. Another process's: going while it wrote lately (A5).
+    return j.owner !== PROC && Date.now() - (Number(j.at) || 0) < 2 * 60 * 1000
+  }
 
   // ── Ingest's commands (seam.js names them; view.js draws their answers) ──
   // The queue as the view lists it: the folder, the first open's question, the sources with their state and run, the
@@ -6851,7 +6931,7 @@ export function apply(ctx) {
   })
   // An answer to a change: approve, reject, edit (the user's text), take (the run's over a file changed since);
   // `rest`: every change not answered yet approved.
-  ctx.command('change', ({ id, run, path, decision, text, rest }) => {
+  ctx.command('change', ({ id, run, path, decision, text, rest, sha }) => {
     const v = vaultOf(id)
     reviewing(v, run)
     const all = changesOf(v, run)
@@ -6872,9 +6952,12 @@ export function apply(ctx) {
       else if (decision === 'reject') rv.answers[path] = { state: 'rejected' }
       else if (decision === 'edit') { Object.assign(a, { state: 'approved', text }); delete a.force; delete a.force_sha }
       else {
-        // Taken over the vault's file as it is now (or where none is): a later edit of it is never written over.
+        // Taken over the vault's file as the user saw it in Compare (`sha`; the CLI's: as it is now) — a later edit of
+        // it is never written over (A4).
         const st = statSafe(v, path, { sha: true })
-        Object.assign(a, { state: 'approved', force: true, force_sha: st && st.kind === 'file' ? st.sha : null })
+        const now = st && st.kind === 'file' ? st.sha : null
+        if (sha !== undefined && sha !== now) throw new Error(`${path} changed again since you compared it: look at it again`)
+        Object.assign(a, { state: 'approved', force: true, force_sha: now })
       }
       return rv.answers[path].state
     })
@@ -6915,9 +6998,8 @@ export function apply(ctx) {
       return { requeued: n }
     })
   })
-  // *Stop*: a run this Echo started. Echo can't end a Claude Code run a plugin started (a core gap): the run is stopped
-  // here — its sources New again, nothing of it kept — and its Claude Code finishes on its own; the vault's marker stays
-  // until it does.
+  // *Stop*: a run this Echo started — stopped here, its sources New again, nothing of it kept — and its Claude Code
+  // ended by its key (`ctx.claude.stop`, core #778); the vault's marker goes as soon as the run has ended.
   ctx.command('ingest_stop', ({ id, run }) => {
     const v = vaultOf(id)
     ingFind(v, run)
@@ -6927,7 +7009,7 @@ export function apply(ctx) {
     updateRun(v, run, (l, r) => { if (r.state === 'running') { Object.assign(r, { state: 'stopped', reason: 'Stopped', ended: nowIso(), waiting: null }); release(l, run, 'new') } })
     ingEvent(v, run, { type: 'notice', kind: 'ended', state: 'stopped', text: 'Stopped' })
     if (token.wake) token.wake()
-    return { run, state: 'stopped' }
+    return stopClaude(`ingest-${run}`).then(() => ({ run, state: 'stopped' }))
   })
   // The starter's process-inbox into the vault: Echo writes no hidden file for a plugin (`.claude/…`), so this says how.
   ctx.command('ingest_skill', ({ id }) => {

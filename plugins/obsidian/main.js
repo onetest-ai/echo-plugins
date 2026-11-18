@@ -6764,6 +6764,8 @@ export function apply(ctx) {
       vault: v.id, path: rel, stem: rel.split('/').pop().replace(/\.md$/, ''), index: indexRel, row, commit: v.commit, branch: g.repo ? g.branch : null,
       profile_ok: sameProfile(src.profile, v), call_profile: profileOf(src.profile), vault_profile: profileOf(v.profile),
       transcript: v.minutes.transcript, chat: v.minutes.chat, exists: !!statSafe(v, rel), note: n.text, title: n.title,
+      // An Automatic vault keeps its people's pages with each note: the call's participants Echo lists come along.
+      people: v.minutes.mode === 'auto' && (src.participants || []).some((x) => x && typeof x.person === 'string' && x.person),
     }
   })
   // Past calls' minutes into a vault: the calls routed there since a day, on its profile, not saved there yet and not

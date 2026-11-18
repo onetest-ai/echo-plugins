@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import * as nfs from 'node:fs'
 import * as npath from 'node:path'
-import { personFileName, personWikilink, personThreads, peopleOfVault, personProps, personPropsIn, withPersonProps, fmSplit } from '../../plugins/obsidian/main.js'
+import { personFileName, personWikilink, personThreads, peopleOfVault, personProps, personValuesIn, withPersonProps, fmSplit, catalogInsertMany } from '../../plugins/obsidian/main.js'
 import { CALL, PEOPLE_THREADS, PEOPLE_CLIENTS, people } from './echo-data.mjs'
 import { world, call, read, write, exists, hasGit, gitOut } from './world.mjs'
 
@@ -63,7 +63,7 @@ test('Echo\'s properties merge into a page\'s frontmatter: the user\'s keys and 
   const mine = '---\ntitle: Dana\norigin: echo\nechO: "echo://person/old"\ntags: [person]\nthreads:\n  - thread: old\nmood: calm\n---\n\n# Dana\n\nMy notes.\n'
   const merged = withPersonProps(mine, props)
   assert.equal(merged, `---\ntitle: Dana\n${props.join('\n')}\ntags: [person]\nmood: calm\n---\n\n# Dana\n\nMy notes.\n`)
-  assert.equal(personPropsIn(fmSplit(merged)[0]), personPropsIn(props.join('\n')))
+  assert.equal(personValuesIn(fmSplit(merged)[0]), personValuesIn(props.join('\n')))
   // CRLF stays CRLF; the body isn't touched (its mixed endings too).
   const crlf = '---\r\ntitle: Dana\r\n---\r\nbody\r\nline\n'
   assert.equal(withPersonProps(crlf, ['origin: echo']), '---\r\ntitle: Dana\r\norigin: echo\r\n---\r\nbody\r\nline\n')
@@ -72,7 +72,7 @@ test('Echo\'s properties merge into a page\'s frontmatter: the user\'s keys and 
   assert.equal(withPersonProps('---\n---\n# Dana\n', ['origin: echo']), '---\norigin: echo\n---\n# Dana\n')
   // Echo's keys moved among the user's: the same properties (nothing to write).
   const moved = `---\nthreads:\n  - thread: pilot\n    role: sponsor\n    stance: supportive\ntitle: x\n${props.slice(0, 4).join('\n')}\n---\n`
-  assert.equal(personPropsIn(fmSplit(moved)[0]), personPropsIn(props.join('\n')))
+  assert.equal(personValuesIn(fmSplit(moved)[0]), personValuesIn(props.join('\n')))
 })
 
 // ── the batches ──
@@ -105,7 +105,7 @@ test('a hostile name stays a file in the people folder', async () => {
   await w.ctx.run('people_sync', { id: v.id })
   const eve = ls(v.root).find((f) => f.includes('Eve'))
   assert.ok(eve && !eve.includes('/') && !eve.startsWith('.'), eve)
-  assert.ok(read(v.root, `${P}/${eve}`).includes('\n# ../../Eve <x>/#1\n'))
+  assert.ok(read(v.root, `${P}/${eve}`).includes('\n# ../../Eve \\<x>/#1\n'), 'the name as text: `<` escaped')
 })
 
 test('a page is the person\'s by its echo: property — renamed, it is still theirs; the user\'s lines are kept; only Echo\'s changes write', async () => {
@@ -126,13 +126,14 @@ test('a page is the person\'s by its echo: property — renamed, it is still the
   assert.ok(read(v.root, `${P}/Alex Doe.md`).includes('reports_to: "[[Dana R|Dana Reyes]]"'))
 })
 
-test('a name taken by a page that isn\'t this person\'s: a new file beside it, and links lead there', async () => {
+test('a name taken by another person\'s page (another echo:): a new file beside it, and links lead there', async () => {
   const w = base()
   const v = await w.vault('My twin', { minutes: 'ask' })
   await w.ctx.run('default', { id: v.id })
-  write(v.root, `${P}/Grace Hopper.md`, '# Grace Hopper\n\nThe admiral — not the CFO.\n')
+  const ADMIRAL = '---\necho: "echo://person/admiral@navy.example"\n---\n# Grace Hopper\n\nThe admiral — not the CFO.\n'
+  write(v.root, `${P}/Grace Hopper.md`, ADMIRAL)
   await w.ctx.run('people_sync', { id: v.id })
-  assert.equal(read(v.root, `${P}/Grace Hopper.md`), '# Grace Hopper\n\nThe admiral — not the CFO.\n')
+  assert.equal(read(v.root, `${P}/Grace Hopper.md`), ADMIRAL)
   assert.ok(read(v.root, `${P}/Grace Hopper-2.md`).includes('echo: "echo://person/grace@acme.example"'))
   assert.ok(read(v.root, `${P}/Dana Reyes.md`).includes('reports_to: "[[Grace Hopper-2|Grace Hopper]]"'))
 })
@@ -205,7 +206,7 @@ test('with a call\'s minutes: its participants\' pages in the same batch and com
   assert.deepEqual(ls(s.root), [])
 })
 
-test('a page changed while Echo writes is left for the next batch; one Echo cannot read as text is skipped', async () => {
+test('a page Echo can\'t read as text is skipped — never a second page beside it', async () => {
   const w = base()
   const v = await w.vault('My twin', { minutes: 'ask' })
   await w.ctx.run('default', { id: v.id })
@@ -215,4 +216,161 @@ test('a page changed while Echo writes is left for the next batch; one Echo cann
   const r = await w.ctx.run('people_sync', { id: v.id })
   assert.equal(r.changed, 0)
   assert.ok(r.skipped.some((x) => x.key === 'alex@acme.example'), JSON.stringify(r.skipped))
+})
+
+// ── the review's findings (each was a failing proof first) ──
+
+test('a name with Markdown or HTML is text in the page\'s heading; its index cell is made as a note\'s row is (one line, | as /)', async () => {
+  const ps = people()
+  ps[1].name = '![x](https://evil.example/p.png) | <b>A</b>'
+  const w = base({ people: ps })
+  const v = await w.vault('My twin', { minutes: 'ask' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.run('people_sync', { id: v.id })
+  const f = ls(v.root).find((x) => x.includes('evil'))
+  const t = read(v.root, `${P}/${f}`)
+  assert.ok(t.endsWith('\n# \\!\\[x\\](https://evil.example/p.png) | \\<b>A\\</b>\n'), JSON.stringify(t))
+  const html = w.ctx.markdown(t.split('---\n').pop())
+  assert.ok(!/<img|<b>/.test(html), html)
+  assert.ok(read(v.root, 'knowledge/CATALOG.md').includes('| ![x](https://evil.example/p.png) / <b>A</b> — Acme |'), 'catalogCell, as the notes\' rows')
+})
+
+test('a page of the user\'s with the person\'s file name and no echo: — the catch-up and a call\'s minutes leave it (Settings says so); people_sync adopts it, no -2', async () => {
+  const w = base()
+  const v = await w.vault('My twin', { minutes: 'auto' })
+  await w.ctx.run('default', { id: v.id })
+  nfs.rmSync(npath.join(v.root, P), { recursive: true, force: true })
+  const MINE = '---\ntags: [person]\n---\n# Dana Reyes\n\nMy notes.\n'
+  write(v.root, 'knowledge/People/Dana Reyes.md', MINE)
+  const c = await w.ctx.run('catch_up')
+  assert.equal(c.people.vaults[v.id].theirs, 1)
+  await w.ctx.fire('minutes_written', w.data.payload(CALL))
+  const files = nfs.readdirSync(npath.join(v.root, 'knowledge/People')).sort()
+  assert.ok(!files.some((x) => x.includes('-2')), files.join(', '))
+  assert.equal(read(v.root, 'knowledge/People/Dana Reyes.md'), MINE)
+  assert.equal((await w.ctx.run('vault_settings', { id: v.id })).people.theirs, 1)
+  // Update person pages: adopted — Echo's keys added, the user's property and body kept.
+  const r = await w.ctx.run('people_sync', { id: v.id })
+  assert.equal(r.adopted, 1)
+  const now = read(v.root, 'knowledge/People/Dana Reyes.md')
+  assert.ok(now.startsWith('---\ntags: [person]\norigin: echo\necho: "echo://person/dana@acme.example"\n'), now)
+  assert.ok(now.endsWith('---\n# Dana Reyes\n\nMy notes.\n'))
+  assert.ok(!nfs.readdirSync(npath.join(v.root, 'knowledge/People')).some((x) => x.includes('-2')))
+  assert.ok(read(v.root, 'knowledge/CATALOG.md').includes('(People/Dana%20Reyes.md)'), 'its index row')
+  assert.equal((await w.ctx.run('vault_settings', { id: v.id })).people.theirs, 0)
+})
+
+test('a thread\'s place goes only into a vault on the thread\'s AI profile; a thread whose profile can\'t be known only into one on the default profile', async () => {
+  const w = base({ calls: [call(CALL, 'Weekly delivery sync', { threads: ['pilot'] }), call('2026-11-06_100000-pricing-review', 'Pricing review', { threads: ['pricing'], profile: 'client-x' })] })
+  const d = await w.vault('Mine', { minutes: 'ask' }), x = await w.vault('Client X', { minutes: 'ask' })
+  await w.ctx.run('set', { id: x.id, key: 'profile', value: 'client-x' })
+  await w.ctx.run('default', { id: d.id })
+  await w.ctx.run('thread_vault', { thread: 'pricing', vault: x.id })
+  await w.ctx.run('client_vault', { client: 'globex', vault: x.id })
+  await w.ctx.run('people_sync', { id: d.id })
+  await w.ctx.run('people_sync', { id: x.id })
+  // pricing's calls are on Client X: Grace's place is Client X's.
+  assert.ok(exists(x.root, `${P}/Grace Hopper.md`))
+  assert.ok(!exists(d.root, `${P}/Grace Hopper.md`))
+  // globex-deal has no call: its profile unknown — routed to Client X's vault, written into none but a default one.
+  assert.ok(!exists(x.root, `${P}/Lee Park.md`), 'not into a vault on another profile')
+  assert.ok(read(d.root, `${P}/Lee Park.md`).includes('threads:\n  - thread: pilot\n---'), 'only pilot, on the default profile')
+  // A thread on the default profile, routed to a Client X vault: nothing there.
+  await w.ctx.run('thread_vault', { thread: 'pilot', vault: x.id })
+  const r = await w.ctx.run('people_sync', { id: x.id })
+  assert.ok(!exists(x.root, `${P}/Dana Reyes.md`), JSON.stringify(r))
+})
+
+test('"changed" is by value: Obsidian\'s layout of the same values (block lists, quotes dropped) writes nothing', async () => {
+  const w = base()
+  const v = await w.vault('My twin', { minutes: 'ask' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.run('people_sync', { id: v.id })
+  const f = `${P}/Dana Reyes.md`
+  const obs = read(v.root, f).replace('echo: "echo://person/dana@acme.example"', 'echo: echo://person/dana@acme.example')
+    .replace('reports: ["[[Alex Doe]]"]', 'reports:\n  - "[[Alex Doe]]"').replace('reports_to: "[[Grace Hopper]]"', 'reports_to: [[Grace Hopper]]')
+    .replace('role: sponsor', 'role: "sponsor"')
+  write(v.root, f, obs)
+  const r = await w.ctx.run('people_sync', { id: v.id })
+  assert.deepEqual([r.changed, r.unchanged], [0, 5])
+  assert.equal(read(v.root, f), obs, 'not rewritten')
+  // A value that differs does write.
+  w.data.read.people[0].places[0].role = 'owner'
+  assert.equal((await w.ctx.run('people_sync', { id: v.id })).changed, 1)
+  assert.ok(read(v.root, f).includes('role: owner'))
+  // The pure comparison: flow or block, quoted or not.
+  const a = 'echo: "echo://person/x"\nreports: ["[[A]]", "[[B]]"]\nthreads:\n  - thread: t\n    role: r'
+  const b = 'echo: echo://person/x\nreports:\n  - "[[A]]"\n  - [[B]]\nthreads:\n- thread: "t"\n  role: \'r\''
+  assert.equal(personValuesIn(a), personValuesIn(b))
+  assert.notEqual(personValuesIn(a), personValuesIn(a.replace('role: r', 'role: s')))
+})
+
+test('a blank or comment line inside Echo\'s threads: block is part of it: a stale thread after it is taken out, and seen as a change', () => {
+  const props = ['origin: echo', 'echo: "echo://person/x"', 'threads:', '  - thread: a']
+  const page = '---\norigin: echo\necho: "echo://person/x"\nthreads:\n  - thread: a\n\n  # old\n  - thread: old\n    role: gone\nmood: calm\n---\nbody\n'
+  assert.notEqual(personValuesIn(fmSplit(page)[0]), personValuesIn(props.join('\n')), 'the stale thread counts')
+  assert.equal(withPersonProps(page, props), '---\norigin: echo\necho: "echo://person/x"\nthreads:\n  - thread: a\nmood: calm\n---\nbody\n')
+  // A blank line before the user's next key isn't Echo's.
+  const after = '---\nthreads:\n  - thread: a\n\nmood: calm\n---\n'
+  assert.equal(withPersonProps(after, props), '---\norigin: echo\necho: "echo://person/x"\nthreads:\n  - thread: a\n\nmood: calm\n---\n')
+})
+
+test('a page changed between Echo\'s read and its write (ifSha) is left as the user wrote it, and merged on the next batch', async () => {
+  const w = base()
+  const v = await w.vault('My twin', { minutes: 'ask' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.run('people_sync', { id: v.id })
+  w.data.read.people[0].places[0].role = 'owner'
+  const f = `${P}/Dana Reyes.md`
+  const write0 = w.ctx.fs.write
+  let once = true
+  w.ctx.fs.write = (root, rel, text, opts) => {
+    if (once && rel === f && opts && opts.ifSha) { once = false; nfs.appendFileSync(npath.join(root, rel), '\nThe user typed this meanwhile.\n') }
+    return write0(root, rel, text, opts)
+  }
+  const r = await w.ctx.run('people_sync', { id: v.id })
+  assert.equal(r.changed, 0)
+  assert.deepEqual(r.skipped.map((x) => [x.key, x.why]), [['dana@acme.example', 'it changed while Echo wrote it — next time']])
+  assert.ok(read(v.root, f).includes('role: sponsor') && read(v.root, f).endsWith('The user typed this meanwhile.\n'))
+  w.ctx.fs.write = write0
+  assert.equal((await w.ctx.run('people_sync', { id: v.id })).changed, 1)
+  assert.ok(read(v.root, f).includes('role: owner') && read(v.root, f).endsWith('The user typed this meanwhile.\n'))
+})
+
+test('a batch: the index written once with every new row, one activity row (a count and the first names), and rows a stopped run owed come with the next', async () => {
+  const ps = []
+  for (let i = 0; i < 300; i++) ps.push({ key: `p${i}@acme.example`, name: `Person ${i}`, title: 'Engineer', organisation: 'Acme', threads: ['pilot'], places: [{ thread: 'pilot', role: 'dev', stance: null }], reports_to: null, reports: [] })
+  const w = base({ people: ps })
+  const v = await w.vault('My twin', { minutes: 'ask' })
+  await w.ctx.run('default', { id: v.id })
+  // The index changes under Echo's write once: its rows are owed.
+  const write0 = w.ctx.fs.write
+  let indexWrites = 0, spoil = true
+  w.ctx.fs.write = (root, rel, text, opts) => {
+    if (rel === 'knowledge/CATALOG.md') { indexWrites++; if (spoil) { spoil = false; nfs.appendFileSync(npath.join(root, rel), '\n') } }
+    return write0(root, rel, text, opts)
+  }
+  const r = await w.ctx.run('people_sync', { id: v.id })
+  assert.equal(r.added, 300)
+  assert.match(r.index, /^skipped: .*changed since you read it/)
+  assert.equal(indexWrites, 1, 'one write of the index for the batch')
+  assert.equal(Object.keys(JSON.parse(w.ctx.files[`vaults/${v.id}/people.json`]).unindexed).length, 300)
+  const r2 = await w.ctx.run('people_sync', { id: v.id })
+  assert.deepEqual([r2.added, r2.changed, r2.index], [0, 0, 'added'])
+  assert.equal(indexWrites, 2)
+  const cat = read(v.root, 'knowledge/CATALOG.md')
+  assert.equal((cat.match(/\]\(people\//g) || []).length, 300, 'every page once')
+  assert.deepEqual(JSON.parse(w.ctx.files[`vaults/${v.id}/people.json`]).unindexed, {})
+  const acts = w.ctx.files[`vaults/${v.id}/activity.jsonl`].trim().split('\n').map((l) => JSON.parse(l)).filter((a) => a.by === 'people')
+  assert.equal(acts.length, 1)
+  assert.equal(acts[0].count, 300)
+  assert.equal(acts[0].names.length, 20)
+  const home = await w.ctx.run('home', { id: v.id })
+  const row = (home.whats_new.rows || []).find((x) => x.by === 'people')
+  assert.equal(row.title, '300 person pages from Echo\'s people')
+  // catalogInsertMany alone: one pass, date order kept, what's listed left out.
+  const idx = '# I\n\n## People\n\n| File | Description | Date Added |\n|---|---|---|\n| [a.md](people/a.md) | A | 2026-01-01 |\n\n## Notes\n'
+  const got = catalogInsertMany(idx, 'people', [{ note: 'people/a.md', desc: 'A' }, { note: 'people/B b.md', desc: 'B' }, { note: 'people/c.md', desc: 'C' }], '2026-11-18', '2026-11-18')
+  assert.equal(got.added, 2)
+  assert.ok(got.text.includes('| [a.md](people/a.md) | A | 2026-01-01 |\n| [B b.md](people/B%20b.md) | B | 2026-11-18 |\n| [c.md](people/c.md) | C | 2026-11-18 |\n\n## Notes'), got.text)
 })

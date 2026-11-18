@@ -69,13 +69,20 @@ with it and what to leave alone. You correct the description, and from then on C
   after two quiet minutes, only its own files. `past_minutes` saves the calls since a day in one commit.
 - **Your people as person pages** — Echo's people (People in a thread) get a page each, `people/<Name>.md` in the
   vault's pages folder (`knowledge/people/` in a twin; a `people` folder it has already), in the vaults their threads'
-  calls go to — each page listing only that vault's threads, with their role and stance. Echo writes only its own
-  properties (`origin: echo`, `echo:` the person's link, `reports_to`, `reports` — a [[link]] when that person has a
-  page there — and `threads`); everything else on a page is yours and Ingest's, never written over. A page you rename
-  stays the person's; one you delete stays deleted until you click *Update person pages* (the vault's Settings →
-  People, or `people_sync`). With Automatic minutes, a call's participants' pages are updated with its note, in the
-  same commit, and all of them once a day when Echo starts; otherwise only on your click. A new page gets a row in the
-  index, each batch a line in `log.md` and one commit of Echo's own files.
+  calls go to — each page listing only that vault's threads, with their role and stance, and only threads on the
+  vault's AI profile (as the minutes: a thread whose profile Echo can't tell goes only into a vault on the default
+  profile). Echo writes only its own properties (`origin: echo`, `echo:` the person's link, `reports_to`, `reports` —
+  a [[link]] when that person has a page there — and `threads`), and only when their values changed (Obsidian laying
+  them out its own way is no change); everything else on a page is yours and Ingest's, never written over. A page you
+  rename stays the person's; one you delete stays deleted until you click *Update person pages* (the vault's Settings →
+  People, or `people_sync`). A page of yours with the person's file name and no `echo:` is left alone by everything
+  automatic (Settings → People says how many) and adopted on *Update person pages*: Echo's properties added, the rest
+  of it kept, never a second page beside it; a page that names another person in its `echo:` gets one (`-2`). With
+  Automatic minutes, a call's participants' pages are updated with its note, in the same commit, and all of them once a
+  day when Echo starts; otherwise only on your click. New pages get rows in the index, each batch a line in `log.md`,
+  one line in the vault's activity and one commit of Echo's own files. Known limit: when Echo's key for a person
+  changes (People merges two of them, or their address changes), their page names the old key, and Echo writes a
+  second page for the new one — merge the two by hand (keep the new page's `echo:`).
 - **Sources for Ingest** — a vault's sources folder (`raw_inbox/`): files you hand over (copied as they are, never over
   a file), a call's minutes, a mail thread from Microsoft 365, a web page. A web page is read once, when you add it —
   its main text as Markdown, its pictures saved beside it — never again by itself: a page on a site you list in the

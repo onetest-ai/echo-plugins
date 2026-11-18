@@ -67,7 +67,7 @@ export function echoData({ calls = [], threads = [], clients = [], people = [], 
     return out
   }
   const day = (c) => (c.started_at || '2026-11-05T09:00:12+02:00').slice(0, 10)
-  const callsRead = (o = {}) => calls.filter((c) => (!o.since || day(c) >= o.since) && (!o.until || day(c) <= o.until)).slice().reverse().slice(0, o.limit || 50).map((c) => {
+  const callsRead = (o = {}) => calls.filter((c) => (!o.since || day(c) >= o.since) && (!o.until || day(c) <= o.until) && (!o.thread || (c.threads || []).includes(o.thread))).slice().reverse().slice(0, o.limit || 50).map((c) => {
     const refs = refsOf(c)
     return { id: `call:${c.folder}`, stamp: stampOf(c.folder), date: day(c), ...facts(c), minutes: c.notes != null, transcript: c.transcript != null, chat: !!(c.chat && c.chat.length), people: attendees(c).map((a) => a.name), participants: participants(c), threads: refs, client: clientOf(refs), profile: c.profile === undefined ? 'system' : c.profile }
   })

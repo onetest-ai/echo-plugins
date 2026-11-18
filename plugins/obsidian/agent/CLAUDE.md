@@ -73,7 +73,8 @@ without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `wher
   `echo: echo://person/…`): its properties `origin`, `echo`, `reports_to`, `reports` and `threads` are Echo's — never
   change them; add what you know about the person to the rest of the page (other properties, the body), which is the
   user's. Find a person's page by its `echo:` (`where {"vault","prop":"echo","value":"echo://person/<key>"}`), not by
-  its file name: the user may have renamed it. `people_sync '{"id":"<vault>"}'` brings them up to date (it writes, so
+  its file name: the user may have renamed it. A page of the user's with a person's name and no `echo:` is theirs:
+  Echo adopts it only when the user clicks Update person pages. `people_sync '{"id":"<vault>"}'` brings them up to date (it writes, so
   it asks first); don't create a person's page by hand where Echo keeps them.
 - A vault's sources folder (`raw_inbox/` and the like) holds what came in as it came: never edit or delete a source.
   A web page there (`raw_inbox/web/`, `kind: web`, its `url`) was read once when the user added it, its pictures in the

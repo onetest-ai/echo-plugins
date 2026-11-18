@@ -881,6 +881,34 @@ export function tableOfRow(text, at) {
   return t ? t.heading : null
 }
 
+/** Put many pages of one folder in the index's table for it, in one pass (`catalogInsert` for each would read the
+ *  whole index once a page): `items` [{note, desc}] (relative to the index's folder), all dated `date`. Pages it lists
+ *  already are left out. `{text, added}` | `{already: true}` | `{error}`. */
+export function catalogInsertMany(index, notesDir, items, date, today) {
+  if (!items.length) return { already: true }
+  // Every link target the index has, once.
+  const have = new Set()
+  for (const m of index.matchAll(/\]\(<?([^)>\n]+)>?\)/g)) have.add(m[1])
+  const rows = []
+  for (const it of items) {
+    const encoded = catalogLink(it.note)
+    const k = encoded.lastIndexOf('](')
+    const target = encoded.slice(k + 2, encoded.length - 1)
+    if (have.has(it.note) || have.has(target)) continue
+    have.add(target)
+    rows.push([encoded, it.desc])
+  }
+  if (!rows.length) return { already: true }
+  // The table and the place, as one page would find them (a probe row); then every row in at that place, in one splice.
+  const first = catalogInsert(index, notesDir, items[0].note.replace(/[^/]*$/, '\u0000probe.md'), '', date, today)
+  if (first.error) return { error: first.error }
+  const probeLines = textLines(first.text)
+  const at = probeLines.findIndex((l) => l.includes('\u0000probe.md'))
+  const cols = catalogColumns(probeLines[at])
+  const text = catalogWithRow(index, textLines(index), at, rows.map(([link, desc]) => catalogRow(cols, link, desc, date)).join('\n'), today)
+  return { text, added: rows.length }
+}
+
 /** Put `row`, a whole table line as an ingest run wrote it, into the table under `heading` of the index as it is now,
  *  in date order. `{text}` | `{already: true}` (the same line, or a row with its link) | `{error}` (no such table). */
 export function catalogInsertRow(index, heading, row0, today) {
@@ -2119,17 +2147,25 @@ export function personProps(p, threads, linkOf) {
   return out
 }
 
-/** A frontmatter's lines as blocks: `{key, from, to}` per top-level key (its value's indented and `- ` lines with it;
- *  a blank or comment line ends a block). */
+/** A frontmatter's lines as blocks: `{key, from, to}` per top-level key (its value's indented and `- ` lines with it,
+ *  and a blank or comment line between two of them; one after the block's last line ends it). */
 function fmBlocks(lines) {
   const out = []
   let cur = null
+  const isCont = (l) => l.startsWith(' ') || l.startsWith('\t') || l.startsWith('- ') || l === '-'
+  const isGap = (l) => rsTrim(l) === '' || rsTrimStart(l).startsWith('#')
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
-    const cont = l.startsWith(' ') || l.startsWith('\t') || l.startsWith('- ') || l === '-'
+    const cont = isCont(l)
     if (cont && cur) { cur.to = i + 1; continue }
+    if (cur && isGap(l)) {
+      // Inside the block when a line of it comes after the gap.
+      let j = i + 1
+      while (j < lines.length && isGap(lines[j]) && !isCont(lines[j])) j++
+      if (j < lines.length && isCont(lines[j])) { cur.to = j + 1; i = j; continue }
+    }
     cur = null
-    if (rsTrim(l) === '' || rsTrimStart(l).startsWith('#') || cont) continue
+    if (isGap(l) || cont) continue
     const at = l.indexOf(':')
     if (at <= 0) continue
     cur = { key: asciiLower(rsTrim(l.slice(0, at))), from: i, to: i + 1 }
@@ -2138,14 +2174,63 @@ function fmBlocks(lines) {
   return out
 }
 
-/** Echo's properties as they are in a frontmatter (`raw`, as fmSplit gives it): their blocks in PERSON_KEYS' order,
- *  each line without trailing space — what tells whether Echo's properties changed. */
-export function personPropsIn(raw) {
-  const lines = textLines(String(raw || '')).map((l) => rsTrimEnd(l))
+/** A scalar of Echo's properties as a value: quotes taken off; a [[link]] written without quotes (which YAML reads as
+ *  a list in a list) read back as the link. */
+const personScalar = (p) => {
+  if (!p) return null
+  if (p.t === 'list') return p.v.length === 1 && /^\[.*\]$/.test(p.v[0]) ? `[${p.v[0]}]` : p.v.length ? p.v.join(', ') : null
+  const t = rsTrim(String(p.v))
+  return t === '' || t === 'null' || t === '~' ? null : t
+}
+/** A list of Echo's properties: flow (`[a, "b"]`) or block (`- a`), quoted or not, each [[link]] as itself. */
+const personList = (p) => {
+  if (!p) return []
+  if (p.t === 'list') {
+    // `[[[A]], [[B]]]` (links unquoted in a flow list) is read item by item already; a lone `[[A]]` as a list in a list.
+    return p.v.map((x) => (/^\[[^\]]*\]$/.test(x) && !x.startsWith('[[') ? `[${x}]` : x))
+  }
+  const t = personScalar(p)
+  return t == null ? [] : [t]
+}
+/** The `threads:` block's items `[{thread, role, stance}]` from its lines (`- thread: x` then `role:` / `stance:`). */
+function personThreadItems(lines) {
+  const out = []
+  for (const l0 of lines) {
+    let l = rsTrim(l0)
+    if (l === '' || l.startsWith('#')) continue
+    if (l.startsWith('- ') || l === '-') { out.push({ thread: null, role: null, stance: null }); l = rsTrim(l.slice(1)) }
+    if (!out.length || l === '') continue
+    const at = l.indexOf(':')
+    if (at <= 0) continue
+    const k = asciiLower(rsTrim(l.slice(0, at)))
+    const raw = rsTrim(l.slice(at + 1))
+    const u = raw === '' ? null : unquote(raw)
+    if (['thread', 'role', 'stance'].includes(k)) out[out.length - 1][k] = u === null || u === '' || u === 'null' || u === '~' ? null : u
+  }
+  return out
+}
+
+/** Echo's properties of a person page by value (`raw`, a frontmatter as fmSplit gives it): `{origin, echo, reports_to,
+ *  reports, threads}` as one JSON text — the same for any way YAML or Obsidian lays out the same values (quotes, flow or
+ *  block lists, a link quoted or not). What tells whether Echo's properties changed. */
+export function personValuesIn(raw) {
+  const lines = textLines(String(raw || '')).map((l) => trimEndOf(l, '\r'))
   const blocks = fmBlocks(lines)
-  const parts = []
-  for (const k of PERSON_KEYS) for (const b of blocks.filter((x) => x.key === k)) parts.push(lines.slice(b.from, b.to).join('\n'))
-  return parts.join('\n')
+  const block = (k) => blocks.find((b) => b.key === k) || null
+  const prop = (k) => {
+    const b = block(k)
+    if (!b) return null
+    const got = fmParse(lines.slice(b.from, b.to).join('\n'))
+    return got.length && got[0][0] !== '' ? got[0][1] : null
+  }
+  const tb = block('threads')
+  return JSON.stringify({
+    origin: personScalar(prop('origin')),
+    echo: personScalar(prop('echo')),
+    reports_to: personScalar(prop('reports_to')),
+    reports: personList(prop('reports')),
+    threads: tb ? personThreadItems(lines.slice(tb.from + 1, tb.to)) : [],
+  })
 }
 
 /** `text` with Echo's properties (`props`, lines) in its frontmatter: Echo's keys taken out wherever they were and put
@@ -2180,10 +2265,11 @@ export function withPersonProps(text, props) {
 
 /** A new person page: Echo's properties, then their name as its title. */
 export function personPageText(name, props) {
-  return `---\n${props.join('\n')}\n---\n\n# ${oneLine(name)}\n`
+  return `---\n${props.join('\n')}\n---\n\n# ${mdText(oneLine(name))}\n`
 }
 
-/** The index row's description of a person page: their name, with their title and organisation when Echo knows them. */
+/** The index row's description of a person page: their name, with their title and organisation when Echo knows them —
+ *  made a cell (`catalogCell`: one line, `|` as `/`) as a note's row is, nothing more. */
 export function personRowDesc(p) {
   const more = [p.title, p.organisation].map((x) => oneLine(x || '')).filter(Boolean).join(', ')
   return cutChars(more ? `${oneLine(p.name || p.key)} — ${more}` : oneLine(p.name || p.key), 300)
@@ -4724,7 +4810,7 @@ export function apply(ctx) {
       tags: taxText != null ? allowedTags(taxText).length : null, terms: null, tag_file: tagTax, meeting_tag: meetingTag(v.minutes.tag, taxText),
       index_bytes: ist && ist.kind === 'file' ? ist.size : 0, pages: typeof d.md_files === 'number' ? d.md_files : null, cache_bytes: null,
       past: (() => { try { return pastCountOf(v) } catch { return null } })(), templates,
-      people: (() => { try { const l = readJson(peoplePath(v.id), EMPTY_PEOPLE); return { dir: peopleDirOf(v), pages: Object.keys(l.pages || {}).length, last: l.last || null } } catch { return { dir: peopleDirOf(v), pages: 0, last: null } } })(), in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
+      people: (() => { const l = readPeople(v); return { dir: peopleDirOf(v), pages: Object.keys(l.pages || {}).length, theirs: Object.keys(l.theirs || {}).length, last: l.last || null } })(), in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
     }
   })
   // The editor's preview: the text as the page would read, nothing written.
@@ -5243,6 +5329,8 @@ export function apply(ctx) {
     const title = (rel) => { const p = toPageRel(v, rel); return (p !== null && pageOf(ix, p) && pageOf(ix, p).title) || rel.split('/').pop() }
     const pagePath = (rel) => toPageRel(v, rel) ?? rel
     for (const e of activityRecent(ctx.store.read(actPath(v.id)), since)) {
+      // A batch of person pages: one row, how many and the first names.
+      if (e.by === 'people') { const n = e.count || 0; rows.push({ path: '', title: `${n} person page${n === 1 ? '' : 's'} from Echo's people`, kind: e.kind === 'new' ? 'new' : 'edit', at: e.at, by: 'people', who: 'From Echo', detail: `${(e.names || []).join(', ')}${n > (e.names || []).length ? '…' : ''}` }); continue }
       rows.push({ path: pagePath(e.path), title: title(e.path), kind: e.kind === 'new' ? 'new' : 'edit', plus: e.plus, minus: e.minus, at: e.at, by: e.by, who: e.by === 'new-page' ? 'New in Echo' : 'Edited in Echo', detail: e.commit ? `commit ${String(e.commit).slice(0, 7)}` : '' })
     }
     const g = await gitNow(v)
@@ -5745,12 +5833,22 @@ export function apply(ctx) {
   // ── person pages (Echo's people, `<pages>/people/<Name>.md`): written in batches, never per event, no model ──
   // (a) with a call's minutes note, its participants' pages, in the note's batch and commit, when the vault's minutes
   // are Automatic; (b) the catch-up on start, at most once a day, into the vaults whose minutes are Automatic; (c)
-  // `people_sync` / the vault's Settings → People button, whatever its mode — the only one that recreates a page the
-  // user deleted. A page is this person's by its `echo:` property (a renamed or moved page stays theirs); its ledger
-  // (`vaults/<id>/people.json`: {pages: {key: path}, gone: {key: day}, last}) remembers what Echo wrote and what the
-  // user deleted. Only Echo's properties are merged in, only over the text read, only when they changed.
+  // `people_sync` / the vault's Settings → People button, whatever its mode — the only one that writes again a page the
+  // user deleted, and that adopts a page of the user's with the person's file name and no `echo:`. A page is this
+  // person's by its `echo:` property (a renamed or moved page stays theirs). A thread's place goes only into a vault on
+  // the thread's AI profile (as a call's minutes do). Only Echo's properties are merged in, only over the text read,
+  // only when their values changed. Its ledger, `vaults/<id>/people.json` (written with the store's update):
+  // {pages: {key: path} (what Echo wrote), gone: {key: day} (deleted by the user), theirs: {key: path} (a page of the
+  // user's waiting to be adopted), unindexed: {key: path} (written, its index row not yet), last}.
   const peoplePath = (id) => `vaults/${id}/people.json`
-  const EMPTY_PEOPLE = { pages: {}, gone: {}, last: null }
+  const EMPTY_PEOPLE = { pages: {}, gone: {}, theirs: {}, unindexed: {}, last: null }
+  const PEOPLE_CHUNK = 25 // pages between two breaths of Echo's host
+  const NAMES_MAX = 20 // names an activity row keeps
+  const readPeople = (v) => { try { return { ...EMPTY_PEOPLE, ...readJson(peoplePath(v.id), EMPTY_PEOPLE) } } catch { return { ...EMPTY_PEOPLE } } }
+  // The ledger changed by `fn`, under the store's update (never over another process's write).
+  const updatePeople = (v, fn) => {
+    try { updateJson(peoplePath(v.id), EMPTY_PEOPLE, (l) => { for (const k of Object.keys(EMPTY_PEOPLE)) if (l[k] === undefined) l[k] = JSON.parse(JSON.stringify(EMPTY_PEOPLE[k])); fn(l) }) } catch (e) { ctx.log(`people of ${v.id}: ${errText(e)}`) }
+  }
   // The people folder: one the pages folder has already (`people`, any case), else `<pages>/people`.
   const peopleDirOf = (v) => {
     const pf = vaultPath(v, 'pages')
@@ -5768,6 +5866,19 @@ export function apply(ctx) {
     peopleHeld = { at: Date.now(), list: Array.isArray(list) ? list : [] }
     return peopleHeld.list
   }
+  // A thread's AI profile, as plugins can know it: `echo.read('threads')` doesn't give it, a call does (the profile Echo
+  // pinned on it from its thread) — the profile of the thread's recent calls in it alone, when they agree; else null
+  // (unknown: its place goes only into a vault on the default profile, `sameProfile(null, v)`).
+  const threadProfileOf = (id) => {
+    let rows = []
+    try { rows = ctx.echo.read('calls', { thread: id, limit: 20 }) || [] } catch { return null }
+    const ps = new Set()
+    for (const c of rows) {
+      const ts = (c.threads || []).map((t) => (typeof t === 'string' ? t : t && t.id))
+      if (ts.length === 1 && ts[0] === id) ps.add(profileOf(c.profile))
+    }
+    return ps.size === 1 ? [...ps][0] : null
+  }
   // The pages of a vault that name a person (`echo: echo://person/…`), by that link → vault-relative path.
   const personPagesOf = async (v) => {
     const out = new Map()
@@ -5782,7 +5893,7 @@ export function apply(ctx) {
     } catch (e) { ctx.log(`person pages of ${v.id}: ${errText(e)}`) }
     return out
   }
-  // Whose page a file is: its `echo:` property, or null.
+  // Whose page a file is: its `echo:` property, null (none), or undefined (it can't be read as text).
   const echoOfPage = (v, rel) => {
     const t = readStrict(v, rel, EDIT_MAX)
     if (t == null) return undefined
@@ -5790,30 +5901,41 @@ export function apply(ctx) {
     const p = raw === null ? null : fmGet(fmParse(raw), 'echo')
     return p ? propText(p) : null
   }
-  // One batch of person pages into `v`. `o`: {keys (a Set: only these people; null: everyone routed here), recreate,
-  // commit: 'now' (one commit of its own) | 'with' (the caller's batch commits: its paths given back), checked (paths
-  // the caller asked git about already), batch (past minutes' Map of what it wrote)}.
-  // → {dir, added, changed, unchanged, gone, skipped, index, written, dirty, commit}.
+  // One batch of person pages into `v`. `o`: {keys (a Set: only these people; null: everyone routed here), recreate
+  // (people_sync: a deleted page written again, a page of the user's adopted), commit: 'now' (one commit of its own) |
+  // 'with' (the caller's batch commits: its paths given back), later (past minutes: the vault's index cleared once by
+  // the caller), checked (paths the caller asked git about already), batch (past minutes' Map of what it wrote)}.
+  // → {dir, added, changed, unchanged, adopted, gone, theirs, skipped, index, written, dirty, commit}.
   const writePeople = async (v, o = {}) => {
-    const out = { vault: v.id, dir: null, added: 0, changed: 0, unchanged: 0, gone: [], skipped: [], index: null, written: [], dirty: new Set(), commit: null }
+    const out = { vault: v.id, dir: null, added: 0, changed: 0, unchanged: 0, adopted: 0, gone: [], theirs: [], skipped: [], index: null, written: [], dirty: new Set(), commit: null }
     if (!available(v) || hiddenText(v.root)) { out.skipped.push({ why: hiddenText(v.root) || `the vault's folder isn't there: ${v.root}` }); return out }
     const people = o.people || peopleNow()
     const open = new Set(openThreads().map((t) => t.id))
     const vs = load()
     const routes = new Map()
-    const vaultsOf = (t) => { if (!routes.has(t)) routes.set(t, routeOf([t], vs).vaults.map((x) => x.id)); return routes.get(t) }
+    // A thread's place is this vault's when the thread routes here and is on this vault's AI profile.
+    const vaultsOf = (t) => {
+      if (!routes.has(t)) routes.set(t, routeOf([t], vs).vaults.map((x) => x.id).filter((id) => id !== v.id || sameProfile(threadProfileOf(t), v)))
+      return routes.get(t)
+    }
     let todo = peopleOfVault(people, v.id, open, vaultsOf)
     if (o.keys) todo = todo.filter((x) => o.keys.has(x.person.key))
     const dir = peopleDirOf(v)
     out.dir = dir
-    if (!todo.length) return out
-    const led = (() => { try { return { ...EMPTY_PEOPLE, ...readJson(peoplePath(v.id), EMPTY_PEOPLE) } } catch { return { ...EMPTY_PEOPLE } } })()
+    const led = readPeople(v)
+    // Written before and not in the index yet (a run that stopped midway): their rows come with this batch.
+    const owed = Object.entries(led.unindexed || {}).filter(([k, rel]) => led.pages[k] === rel && statSafe(v, rel))
+    if (!todo.length && !owed.length) return out
     const byLink = await personPagesOf(v)
     const isFile = (rel) => { const st = statSafe(v, rel); return !!st && st.kind === 'file' && st.real != null }
-    // Where each person's page is, or will be: theirs by `echo:`, else a new file (its name taken: `-2`, `-3`…).
-    const plan = new Map() // key → {rel, isNew}
+    // Where each person's page is, or will be: theirs by `echo:`; else a page of the user's with their file name and no
+    // `echo:` — adopted on people_sync, else left alone (said in Settings); else a new file (a name another person's page
+    // holds: `-2`, `-3`…).
+    const plan = new Map() // key → {rel, isNew, adopt}
     const taken = new Set()
+    let k0 = 0
     for (const { person: p } of todo) {
+      if (++k0 % PEOPLE_CHUNK === 0) await breathe(v)
       const link = personLink(p.key)
       let rel = byLink.get(link)
       if (rel && (!isFile(rel) || echoOfPage(v, rel) !== link)) rel = null
@@ -5824,19 +5946,28 @@ export function apply(ctx) {
         // Echo can't read it as text: never a second page beside it.
         else if (e === undefined) { out.skipped.push({ key: p.key, path: had, why: 'it isn\'t UTF-8 text' }); continue }
       }
-      if (rel) { plan.set(p.key, { rel, isNew: false }); continue }
+      if (rel) { plan.set(p.key, { rel, isNew: false, adopt: false }); continue }
       // Echo wrote it once and it is gone (deleted, or no longer theirs): only `people_sync` writes it again.
       if ((had || led.gone[p.key]) && !o.recreate) { out.gone.push(p.key); continue }
       const base = `${dir}/${personFileName(p.name || p.key)}`
-      let cand = base
-      for (let n = 2; isFile(cand) || statSafe(v, cand) || taken.has(asciiLower(cand)); n++) {
-        if (isFile(cand) && echoOfPage(v, cand) === link) break
-        if (n > 999) { cand = null; break }
+      let cand = base, adopt = false, stop = null
+      for (let n = 2; ; n++) {
+        if (!taken.has(asciiLower(cand)) && !statSafe(v, cand)) break
+        if (!taken.has(asciiLower(cand)) && isFile(cand)) {
+          const e = echoOfPage(v, cand)
+          if (e === link) break
+          if (e === undefined) { stop = 'unreadable'; break }
+          // The user's own page of this name, no `echo:`: theirs to give.
+          if (e === null && cand === base) { if (o.recreate) { adopt = true; break } stop = 'theirs'; break }
+        }
+        if (n > 999) { stop = 'full'; break }
         cand = `${base.slice(0, -3)}-${n}.md`
       }
-      if (!cand) { out.skipped.push({ key: p.key, why: 'no free file name' }); continue }
+      if (stop === 'theirs') { out.theirs.push({ key: p.key, path: cand }); continue }
+      if (stop === 'unreadable') { out.skipped.push({ key: p.key, path: cand, why: 'a page of this name isn\'t UTF-8 text' }); continue }
+      if (stop === 'full') { out.skipped.push({ key: p.key, why: 'no free file name' }); continue }
       taken.add(asciiLower(cand))
-      plan.set(p.key, { rel: cand, isNew: !isFile(cand) })
+      plan.set(p.key, { rel: cand, isNew: !isFile(cand), adopt })
     }
     // A [[link]] to a person who has a page here (now, or in this batch).
     const stemOf = (rel) => rel.split('/').pop().replace(/\.md$/i, '')
@@ -5853,82 +5984,92 @@ export function apply(ctx) {
     absorbPending(v, dirty)
     if (o.batch && dirty.paths.size) for (const [p, it] of o.batch) if (dirty.paths.has(p) && it.sha && (statSafe(v, p, { sha: true }) || {}).sha === it.sha) dirty.paths.delete(p)
     out.dirty = dirty.paths
-    const added = []
+    // The pages about to be made, in the ledger before they are written: a run that stops midway still owes their rows.
+    const fresh = [...plan.entries()].filter(([, pl]) => pl.isNew || pl.adopt)
+    if (fresh.length) updatePeople(v, (l) => { for (const [k, pl] of fresh) l.unindexed[k] = pl.rel })
+    const toIndex = owed.map(([k, rel]) => ({ key: k, rel, p: (people.find((x) => x.key === k) || { key: k, name: stemOf(rel) }) }))
+    const names = []
+    const done = new Map() // key → path written (or kept unchanged)
+    const flush = () => updatePeople(v, (l) => { for (const [k, rel] of done) { l.pages[k] = rel; delete l.gone[k]; delete l.theirs[k] } })
+    let k1 = 0
     for (const { person: p, threads } of todo) {
       const pl = plan.get(p.key)
       if (!pl) continue
+      if (++k1 % PEOPLE_CHUNK === 0) { flush(); await breathe(v) }
       const props = personProps(p, threads, linkOf)
       try {
         if (pl.isNew) {
-          const text = personPageText(p.name || p.key, props)
-          ctx.fs.write(v.root, pl.rel, text, { createNew: true })
-          changed(v, pl.rel, 'people', p.key, null, text, null)
-          added.push({ p, rel: pl.rel })
+          ctx.fs.write(v.root, pl.rel, personPageText(p.name || p.key, props), { createNew: true })
+          toIndex.push({ key: p.key, rel: pl.rel, p })
           out.added++
         } else {
           const st = statSafe(v, pl.rel, { sha: true })
           const cur = readPage(v, pl.rel, st)
           if (!cur.utf8) { out.skipped.push({ key: p.key, path: pl.rel, why: 'it isn\'t UTF-8 text' }); continue }
           const [raw] = fmSplit(cur.text)
-          if (raw !== null && personPropsIn(raw) === personPropsIn(props.join('\n'))) { out.unchanged++; led.pages[p.key] = pl.rel; continue }
-          const next = withPersonProps(cur.text, props)
-          ctx.fs.write(v.root, pl.rel, next, { ifSha: cur.sha })
-          changed(v, pl.rel, 'people', p.key, cur.text, next, null)
-          out.changed++
+          if (!pl.adopt && raw !== null && personValuesIn(raw) === personValuesIn(props.join('\n'))) { out.unchanged++; done.set(p.key, pl.rel); continue }
+          ctx.fs.write(v.root, pl.rel, withPersonProps(cur.text, props), { ifSha: cur.sha })
+          if (pl.adopt) { out.adopted++; toIndex.push({ key: p.key, rel: pl.rel, p }) } else out.changed++
         }
-        led.pages[p.key] = pl.rel
-        delete led.gone[p.key]
+        done.set(p.key, pl.rel)
+        if (names.length < NAMES_MAX) names.push(oneLine(p.name || p.key))
         out.written.push(pl.rel)
       } catch (e) { out.skipped.push({ key: p.key, path: pl.rel, why: /changed since you read it|is there already/.test(errText(e)) ? 'it changed while Echo wrote it — next time' : errText(e) }) }
     }
-    for (const k of out.gone) if (!led.gone[k]) led.gone[k] = today()
-    if (out.written.length) {
-      indexes.delete(v.id)
-      // The new pages' rows, the index read once and written once over what was read.
-      if (added.length) {
-        if (!indexRel) out.index = 'skipped: the vault has no index'
+    flush()
+    // The new and adopted pages' rows (and any a stopped run owed): the index read once, written once over what was read.
+    let indexed = []
+    if (toIndex.length) {
+      if (!indexRel) out.index = 'skipped: the vault has no index'
+      else {
+        const ist = statSafe(v, indexRel, { sha: true })
+        const itext = ist && ist.kind === 'file' && ist.real != null ? readPage(v, indexRel, ist) : null
+        if (!itext || !itext.utf8) out.index = 'skipped: the index can\'t be read'
         else {
-          const ist = statSafe(v, indexRel, { sha: true })
-          const itext = ist && ist.kind === 'file' && ist.real != null ? readPage(v, indexRel, ist) : null
-          if (!itext || !itext.utf8) out.index = 'skipped: the index can\'t be read'
+          const got = catalogInsertMany(itext.text, relativeTo(indexRel, dir), toIndex.map((a) => ({ note: relativeTo(indexRel, a.rel), desc: personRowDesc(a.p) })), today(), today())
+          if (got.already) { out.index = 'listed'; indexed = toIndex }
+          else if (got.error) out.index = `skipped: ${got.error}`
           else {
-            let text = itext.text, n = 0, why = null
-            for (const a of added) {
-              const got = catalogInsert(text, relativeTo(indexRel, dir), relativeTo(indexRel, a.rel), personRowDesc(a.p), today(), today())
-              if (got.text) { text = got.text; n++ } else if (got.error) why = got.error
-            }
-            if (n) {
-              try { ctx.fs.write(v.root, indexRel, withLineEndings(itext.text, text), { ifSha: itext.sha }); out.written.push(indexRel); out.index = 'added' } catch (e) { out.index = `skipped: ${errText(e)}` }
-            } else out.index = why ? `skipped: ${why}` : 'listed'
+            try { ctx.fs.write(v.root, indexRel, withLineEndings(itext.text, got.text), { ifSha: itext.sha }); out.written.push(indexRel); out.index = 'added'; indexed = toIndex } catch (e) { out.index = `skipped: ${errText(e)}` }
           }
         }
       }
-      // One line in the vault's log for the batch.
-      if (logRel) {
-        const lst = statSafe(v, logRel)
-        if (lst && lst.kind === 'file' && lst.real != null) {
-          const old = readSafe(v, logRel, 4 << 20)
-          const n = out.added + out.changed
-          const line = `- ${today()} · people · ${logText(dir)}/ · ${n} person page${n === 1 ? '' : 's'} from Echo (${out.added} new, ${out.changed} changed)`
-          try { ctx.fs.append(v.root, logRel, `${old && old !== '' && !old.endsWith('\n') ? '\n' : ''}${line}`); out.written.push(logRel) } catch (e) { ctx.log(`log of ${v.id}: ${errText(e)}`) }
-        }
+    }
+    // Rows that couldn't go in (no index, no table for them) aren't owed again and again: only a run that stopped is.
+    const settled = out.index && !/can't be read|changed since/.test(out.index) ? toIndex : indexed
+    if (out.written.length && !o.later) indexes.delete(v.id)
+    // One line in the vault's log for the batch.
+    if (out.added + out.changed + out.adopted && logRel) {
+      const lst = statSafe(v, logRel)
+      if (lst && lst.kind === 'file' && lst.real != null) {
+        const old = readSafe(v, logRel, 4 << 20)
+        const n = out.added + out.changed + out.adopted
+        const line = `- ${today()} · people · ${logText(dir)}/ · ${n} person page${n === 1 ? '' : 's'} from Echo (${out.added} new, ${out.changed + out.adopted} changed)`
+        try { ctx.fs.append(v.root, logRel, `${old && old !== '' && !old.endsWith('\n') ? '\n' : ''}${line}`); out.written.push(logRel) } catch (e) { ctx.log(`log of ${v.id}: ${errText(e)}`) }
       }
     }
-    led.last = { at: new Date().toISOString(), added: out.added, changed: out.changed, unchanged: out.unchanged, gone: out.gone.length, skipped: out.skipped.length }
-    try { ctx.store.write(peoplePath(v.id), JSON.stringify(led, null, 2)) } catch (e) { ctx.log(`people of ${v.id}: ${errText(e)}`) }
     if (o.commit === 'now') {
       const clean = out.written.filter((p) => !dirty.paths.has(p))
       if (!v.commit) out.commit = 'off'
       else if (!out.written.length) out.commit = 'skipped: nothing written'
       else if (!clean.length) out.commit = `skipped: ${dirty.why || 'the files had changes of yours that weren\'t committed'}`
       else {
-        const n = out.added + out.changed
+        const n = out.added + out.changed + out.adopted
         const r = await commitPaths(v, shaItems(v, clean), `Echo: ${n} person page${n === 1 ? '' : 's'} → ${dir}/`)
         out.commit = r.commit
         dropPending(v, r.paths, r.commit)
-        if (commitId(r.commit)) record(v, { at: new Date().toISOString(), path: '', kind: 'commit', by: 'people', ref: null, plus: 0, minus: 0, commit: r.commit, also: r.paths })
       }
     }
+    // One activity row for the batch: how many, and the first names.
+    const n = out.added + out.changed + out.adopted
+    if (n) record(v, { at: new Date().toISOString(), path: '', kind: out.added ? 'new' : 'edit', by: 'people', ref: dir, plus: null, minus: null, count: n, names, commit: commitId(out.commit) })
+    updatePeople(v, (l) => {
+      for (const a of settled) if (l.unindexed[a.key] === a.rel) delete l.unindexed[a.key]
+      for (const k of out.gone) if (!l.gone[k]) l.gone[k] = today()
+      for (const t of out.theirs) l.theirs[t.key] = t.path
+      for (const [k, rel] of Object.entries(l.theirs)) if (!statSafe(v, rel)) delete l.theirs[k]
+      l.last = { at: new Date().toISOString(), added: out.added, changed: out.changed + out.adopted, unchanged: out.unchanged, gone: out.gone.length, theirs: Object.keys(l.theirs).length, skipped: out.skipped.length }
+    })
     return out
   }
   // The batch of (a): a call's participants' pages with its note, when the vault's minutes are Automatic. Never fails
@@ -6017,7 +6158,7 @@ export function apply(ctx) {
       }
     }
     // Its participants' person pages, in this note's batch and commit (when the vault's minutes are Automatic).
-    const pp = await participantsPeople(v, src, { checked: new Set(cands), batch: how.batch })
+    const pp = await participantsPeople(v, src, { checked: new Set(cands), batch: how.batch, later: commitMode === 'later' })
     if (pp) { for (const p of pp.written) if (!written.includes(p)) written.push(p); for (const p of pp.dirty) dirty.paths.add(p) }
     const clean = written.filter((p) => !dirty.paths.has(p))
     const items = v.commit ? shaItems(v, clean) : []
@@ -6431,7 +6572,7 @@ export function apply(ctx) {
     return r
   }
   // A batch's answer as a command gives it.
-  const peopleBrief = (r) => ({ vault: r.vault, dir: r.dir, added: r.added, changed: r.changed, unchanged: r.unchanged, gone: r.gone.length, skipped: r.skipped, index: r.index, commit: r.commit })
+  const peopleBrief = (r) => ({ vault: r.vault, dir: r.dir, added: r.added, changed: r.changed, adopted: r.adopted, unchanged: r.unchanged, gone: r.gone.length, theirs: r.theirs.length, skipped: r.skipped, index: r.index, commit: r.commit })
   // (b) At most once a day, on start: the person pages of every vault whose minutes are Automatic, one batch and one
   // commit a vault; a page the user deleted stays deleted. The day is kept once Echo's people were read.
   const peopleCatchUp = async () => {

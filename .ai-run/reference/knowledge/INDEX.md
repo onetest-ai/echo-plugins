@@ -70,3 +70,15 @@ The port is complete in `knowledge-1.0` (tracking PR #22 → `main`); Knowledge 
   names none; a link (`reports_to`, `reports`) is `[[<file stem>|<name>]]` to the page as it is named now, else the
   name; manual `save_minutes` into an Ask vault writes no person pages (Ask and Off: only on Update); the twin preset
   gets `knowledge/people/README.md` and a People table.
+- Its review (same branch): the page's heading is the name as text (`mdText`); the index cell is made as a note's row
+  is (`catalogCell`: one line, `|` as `/` — no more, as for the notes); a page of the user's with the person's file
+  name and no `echo:` is left alone by the automatic batches and adopted by `people_sync`; Echo's properties are
+  compared by value; a blank or comment line inside Echo's `threads:` block belongs to it; one index write, one activity
+  row and a breath of Echo's host every 25 pages a batch, rows a stopped run owed kept in the ledger (`unindexed`).
+- **The AI-profile gate on person pages.** A thread's place goes into a vault only when the thread is on the vault's AI
+  profile, as a call's minutes are. `echo.read('threads')` gives no profile, `ctx.threads` holds only the plugin's own
+  values, and a mail source's profile is its threads' only when they agree; the most direct source a plugin has is
+  the thread's calls: `echo.read('calls', {thread})` — each carries the `profile` Echo pinned on it (`ai::call_profile_id`)
+  — taken when the thread's recent calls in it alone (20 at most) all have one profile. Otherwise (no call yet, two
+  profiles) the thread's profile is unknown and its place goes only into a vault on the default profile. A thread's
+  own profile in `echo.read('threads')` would make this exact: an Echo issue to open.

@@ -3,7 +3,7 @@ name: Friday wrap-up
 order: 4
 description: Friday afternoon: what moved this week across your threads — decisions, work done, new risks, slipped dates.
 schedule: fri 16:30
-tools: read
+tools: auto
 deliver: mail
 skip_empty: true
 ---

@@ -8,11 +8,13 @@ const LABEL = { telegram: 'Telegram', teams: 'Teams', mail: 'Mail', today: 'Toda
 const label = (k) => LABEL[k] || k.charAt(0).toUpperCase() + k.slice(1)
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_SHORT = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+// What Claude may do: as Echo's routines setting (Settings → AI & minutes → Claude's permissions). A routine of
+// before with `read` or `folder` is Auto, as Echo runs it.
 const PERMS = [
-  ['read', 'Read only', 'Your calls, threads, the Brain and Echo’s read-only commands. Changes nothing. Recommended.', ''],
-  ['folder', 'As your Echo folder session', 'Whatever your Claude Code settings allow; anything that would ask is refused.', ''],
-  ['skip', 'Everything, no questions', 'Any tool, unattended. Only for prompts you fully trust.', 'warn'],
+  ['auto', 'Auto', 'Claude Code’s auto mode decides each action. On a model without auto mode, edits are accepted and anything else is refused. Recommended.', ''],
+  ['skip', 'Skip all permission checks', 'Any tool, unattended. Only for prompts you fully trust.', 'warn'],
 ]
+const toolOf = (t) => (t === 'skip' ? 'skip' : 'auto')
 const SECTION = 'scheduler:main'
 const CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9 3h6"/></svg>'
 
@@ -146,7 +148,7 @@ export function apply(ctx) {
     return `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} ${tm}`
   }
   const sends = (r) => (r.deliver || []).map((k) => `<span class="sch-ci">${k === 'mail' && r.mail_to && r.mail_to.length ? `Mail → ${r.mail_to.length === 1 ? esc(r.mail_to[0]) : `${r.mail_to.length} people`}` : esc(label(k))}</span>`).join('') || '<span class="sch-sub">Nowhere — kept in its runs</span>'
-  const perm = (t) => (t === 'read' ? 'reads only' : t === 'folder' ? 'your folder session’s permissions' : 'asks nothing')
+  const perm = (t) => (toolOf(t) === 'skip' ? 'Skip all permission checks' : 'Auto')
   const lastLine = (l) => !l ? ['', 'Not run yet']
     : l.state === 'failed' ? ['bad', l.message && l.message.startsWith('Not sent') ? 'Not sent' : 'Failed']
     : l.state === 'empty' ? ['', 'Nothing to send']
@@ -253,7 +255,7 @@ export function apply(ctx) {
     const hrs = v('sch-hours')
     if (hrs != null) edit.hours = Math.max(1, Math.min(24, +hrs || 1))
   }
-  const routineOf = (e) => ({ id: e.id || '', name: e.name, schedule: toSchedule(e), prompt: e.prompt, profile: e.profile || '', model: e.model || '', tools: e.tools || 'read', deliver: e.deliver, mail_to: e.mailOthers ? e.mail_to : [], skip_empty: e.skip_empty !== false, enabled: e.enabled !== false })
+  const routineOf = (e) => ({ id: e.id || '', name: e.name, schedule: toSchedule(e), prompt: e.prompt, profile: e.profile || '', model: e.model || '', tools: toolOf(e.tools), deliver: e.deliver, mail_to: e.mailOthers ? e.mail_to : [], skip_empty: e.skip_empty !== false, enabled: e.enabled !== false })
 
   // ── views ──
   const MODEL_NAMES = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' }
@@ -394,7 +396,7 @@ export function apply(ctx) {
     const u = R.raw
     const kv = R.source === 'user'
       ? `<span>Sends to</span><div>${(u.deliver || []).map((k) => (k === 'mail' && u.mail_to.length ? `Mail — ${esc(u.mail_to.join(', '))}` : k === 'mail' ? 'Mail — you' : esc(label(k)))).join(', ') || 'Nowhere'}</div>
-        <span>Permissions</span><div>${esc(perm(u.tools).replace(/^./, (c) => c.toUpperCase()))}</div>
+        <span>Permissions</span><div>${esc(perm(u.tools))}</div>
         <span>AI</span><div>${esc(profileName(u.profile))}${u.model ? ` · ${esc(modelName(u.model))}` : ''}</div>
         <span>Prompt</span><div class="sch-sub" style="color:var(--text-2)">${esc(u.prompt.replace(/\s+/g, ' ').slice(0, 140))}${u.prompt.length > 140 ? '…' : ''}</div>`
       : `<span>Sends to</span><div>${(R.to || []).map((k) => esc(TO[k] || label(k))).join(', ') || '—'}</div>
@@ -585,7 +587,7 @@ export function apply(ctx) {
         <div class="sch-col">
           <div class="sch-f"><label class="sch-lbl" for="sch-name">Name</label><input class="sch-in" id="sch-name" value="${esc(e.name || '')}" placeholder="Plan for the day"></div>
           <div class="sch-f"><label class="sch-lbl" for="sch-prompt">What Claude should do</label><textarea class="sch-in" id="sch-prompt" placeholder="What do I owe this week, and what is waiting for others? Group by client.">${esc(e.prompt || '')}</textarea>
-            <span class="sch-sub">Claude reads your calls, threads, tasks and the Brain. It writes the answer you get; it can’t send anything itself.</span></div>
+            <span class="sch-sub">Claude reads your calls, threads, tasks and the Brain and acts on its own, as you pick under “What Claude may do”: it may change your Echo data and send as you. Its answer goes where you send it.</span></div>
           <div class="sch-f"><span class="sch-lbl">AI profile</span><div style="display:flex;gap:8px"><select class="sch-in" id="sch-profile" aria-label="AI profile" style="flex:1"><option value=""${!e.profile ? ' selected' : ''}>${esc(profileName(''))}</option>${P.profiles.map((p) => `<option value="${esc(p.id)}"${e.profile === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select><select class="sch-in" id="sch-model-pick" aria-label="Model" style="width:170px">${[['', 'Profile’s default'], ...MODELS, ['other', 'Other…']].map(([v, l]) => `<option value="${v}"${(e.modelPick || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
             ${e.modelPick === 'other' ? `<input class="sch-in" id="sch-model" aria-label="Other model" value="${esc(e.model || '')}" placeholder="a model’s name, e.g. claude-sonnet-4-5">` : ''}
             ${e.modelPick === 'other' ? '<span class="sch-sub">Any name Claude Code takes with --model: a full model id, or one your company’s gateway names. Empty: the profile’s default.</span>' : !e.modelPick ? '<span class="sch-sub">Profile’s default: the model the profile writes minutes with.</span>' : ''}</div>
@@ -600,7 +602,7 @@ export function apply(ctx) {
             ${dest('teams', 'Your chat with yourself', ready.teams ? 'Ready' : 'Sign in to Microsoft 365')}
             ${provided.map((p) => dest(p.kind, p.ready ? `From the ${esc(p.plugin)} plugin` : `<span class="sch-warn">${esc(p.why || 'Not set up yet')}</span>`, p.ready ? 'Ready' : `<u data-sch-connect="${esc(p.plugin)}">Set up…</u>`)).join('')}
             <button class="sch-dest" data-sch-skip style="grid-template-columns:auto minmax(0,1fr);border:0;padding:4px 0"><span class="sch-cb${e.skip_empty !== false ? ' on' : ''}" aria-hidden="true">${e.skip_empty !== false ? '✓' : ''}</span><span class="sch-sub">Send nothing when there’s nothing worth sending</span></button></div>
-          <div class="sch-f"><span class="sch-lbl">What Claude may do</span>${PERMS.map(([v, l, h, w]) => `<button class="sch-perm${(e.tools || 'read') === v ? ' on' : ''}" data-sch-perm="${v}" aria-pressed="${(e.tools || 'read') === v}"><span class="sch-cb round${(e.tools || 'read') === v ? ' on' : ''}" aria-hidden="true">${(e.tools || 'read') === v ? '●' : ''}</span><div><b style="font-weight:600;font-size:12.5px">${l}</b><div class="sch-sub${w ? ' sch-warn' : ''}">${h}</div></div></button>`).join('')}</div>
+          <div class="sch-f"><span class="sch-lbl">What Claude may do</span>${PERMS.map(([v, l, h, w]) => { const on = toolOf(e.tools) === v; return `<button class="sch-perm${on ? ' on' : ''}" data-sch-perm="${v}" aria-pressed="${on}"><span class="sch-cb round${on ? ' on' : ''}" aria-hidden="true">${on ? '●' : ''}</span><div><b style="font-weight:600;font-size:12.5px">${l}</b><div class="sch-sub${w ? ' sch-warn' : ''}">${h}</div></div></button>` }).join('')}</div>
         </div>
       </div>
       ${error ? `<p class="error">${esc(error)}</p>` : ''}
@@ -651,7 +653,7 @@ export function apply(ctx) {
     if (d.schSel) { sel = d.schSel; ctx.showPanel('routine'); return ctx.render() }
     if ('schNew' in d) { picker = !picker; return ctx.render() }
     if (d.schTpl) { const tp = (data.templates || []).find((x) => x.template === d.schTpl); picker = false; trial = null; edit = draftOf({ ...tp, id: '' }); page = 'edit'; return ctx.render() }
-    if ('schBlank' in d) { picker = false; trial = null; edit = draftOf({ id: '', name: '', schedule: 'weekdays 08:30', prompt: '', tools: 'read', deliver: data.deliver && data.deliver.mail ? ['mail'] : [], mail_to: [], skip_empty: true, enabled: true }); page = 'edit'; return ctx.render() }
+    if ('schBlank' in d) { picker = false; trial = null; edit = draftOf({ id: '', name: '', schedule: 'weekdays 08:30', prompt: '', tools: 'auto', deliver: data.deliver && data.deliver.mail ? ['mail'] : [], mail_to: [], skip_empty: true, enabled: true }); page = 'edit'; return ctx.render() }
     if (d.schEdit) { const r = data.routines.find((x) => x.id === d.schEdit); trial = null; edit = draftOf(r); page = 'edit'; return ctx.render() }
     if (d.schRun) { await op('run', { id: d.schRun }); sel = d.schRun; page = 'list'; return ctx.render() }
     if (d.schRunopen) return openRun(d.schRunopen, t.dataset.run)

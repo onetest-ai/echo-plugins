@@ -8,7 +8,7 @@
 //   schedule: mon 09:00        # daily HH:MM · weekdays HH:MM · mon,thu HH:MM · every 2h · every 30m
 //   profile:                   # an AI profile id (empty: the default)
 //   model:                     # empty: the profile's minutes model
-//   tools: read                # read · folder · skip — the user's pick, the prompt being theirs
+//   tools: auto                # auto · skip — the user's pick, the prompt being theirs (read, folder: before, taken as auto)
 //   deliver: telegram, mail    # teams · mail · telegram · today (the ways its manifest asks for)
 //   mail_to:                   # mail only: other addresses (empty: the user)
 //   skip_empty: true           # nothing worth sending → nothing sent
@@ -26,6 +26,13 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DELIVER_TO = ['teams', 'mail', 'telegram', 'today']
 const validKind = (k) => DELIVER_TO.includes(k)
 const NOTHING = 'NOTHING'
+// What Claude may do: as Echo's routines setting (Settings → AI & minutes → Claude's permissions) — Auto, or every
+// permission check skipped. The values of before (`read`, `folder`, nothing) are Auto, as Echo takes them.
+const TOOLS = ['auto', 'skip']
+export const toolsOf = (v) => {
+  const t = String(v == null ? '' : v).trim()
+  return t === '' || t === 'read' || t === 'folder' ? 'auto' : t
+}
 const KEEP_RUNS = 20
 
 // ── schedule ──
@@ -123,7 +130,7 @@ export function parseRoutine(id, text) {
     schedule: f.schedule || '',
     profile: f.profile || '',
     model: f.model || '',
-    tools: f.tools || 'read',
+    tools: toolsOf(f.tools),
     deliver: list(f.deliver),
     mail_to: list(f.mail_to),
     skip_empty: flag('skip_empty', true),
@@ -137,7 +144,7 @@ export function parseRoutine(id, text) {
 function check(r) {
   if (!String(r.name).trim()) throw new Error('a routine needs a name')
   parseSchedule(r.schedule)
-  if (!['read', 'folder', 'skip'].includes(r.tools)) throw new Error(`tools “${r.tools}”: read, folder or skip`)
+  if (!TOOLS.includes(r.tools)) throw new Error(`tools “${r.tools}”: auto or skip`)
   const bad = r.deliver.find((d) => !validKind(d))
   if (bad) throw new Error(`deliver “${bad}” isn't a way it sends (${DELIVER_TO.join(', ')})`)
   const addr = r.mail_to.find((a) => !validAddress(a))
@@ -191,7 +198,7 @@ export function apply(ctx) {
   const save = (input) => {
     const r = {
       id: String(input.id || ''), name: String(input.name || '').trim(), schedule: String(input.schedule || '').trim(),
-      profile: String(input.profile || '').trim(), model: String(input.model || '').trim(), tools: String(input.tools || 'read'),
+      profile: String(input.profile || '').trim(), model: String(input.model || '').trim(), tools: toolsOf(input.tools),
       deliver: (input.deliver || []).map(String), mail_to: (Array.isArray(input.mail_to) ? input.mail_to : list(input.mail_to)).map(String),
       skip_empty: input.skip_empty !== false, enabled: input.enabled !== false, prompt: String(input.prompt || ''),
     }
@@ -359,9 +366,10 @@ export function apply(ctx) {
     const r = { ...routine, deliver: [], mail_to: [] }
     if (!r.name) r.name = 'Draft'
     if (!r.schedule) r.schedule = 'daily 09:00'
-    if (r.tools && !['read', 'folder', 'skip'].includes(r.tools)) throw new Error(`tools “${r.tools}”`)
+    r.tools = toolsOf(r.tools)
+    if (!TOOLS.includes(r.tools)) throw new Error(`tools “${r.tools}”: auto or skip`)
     if (!String(r.prompt || '').trim()) throw new Error('write what Claude should do first')
-    const draft = { ...r, id: '_draft', skip_empty: false, tools: r.tools || 'read' }
+    const draft = { ...r, id: '_draft', skip_empty: false }
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
     running.delete('_draft')
     run('_draft', false, draft, stamp).catch((e) => ctx.log('try', e.message || e))

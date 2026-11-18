@@ -205,6 +205,7 @@ test('index additions are rebased onto the index and the log as they are now (D4
   write(t, 'log.md', logNow)
   await decide(ctx, run, INDEX, 'approve')
   await decide(ctx, run, 'log.md', 'approve')
+  await decide(ctx, run, NOTE, 'approve')
   const w = await ctx.run('ingest_apply', { id: 'twin', run })
   assert.deepEqual(w.changed_since, [])
   const index = read(t, INDEX)
@@ -306,21 +307,22 @@ test('what Echo doesn\'t write back is left out (instruction files, hidden files
 test('Take the run\'s works for an index or a log whose table or text changed; a file already as the run wrote it is written, not changed', async () => {
   const { t, ctx } = await ingestVault()
   const run = await go(ctx)
-  // The index's Notes table renamed, the log rewritten: their adds can't land as rows — still adds only, stale on write.
+  // The index's Notes table renamed: its adds can't land as rows — still adds only, stale on write.
   write(t, INDEX, read(t, INDEX).replace('## Notes', '## Meetings'))
   await decide(ctx, run, INDEX, 'approve')
-  const w = await ctx.run('ingest_apply', { id: 'twin', run, only: [INDEX] })
-  assert.deepEqual(w.changed_since, [INDEX])
+  await decide(ctx, run, NOTE, 'approve')
+  const w = await ctx.run('ingest_apply', { id: 'twin', run, only: [INDEX, NOTE] })
+  assert.deepEqual([w.written, w.changed_since], [[NOTE], [INDEX]])
   assert.equal(of(await changes(ctx, run), INDEX).state, 'changed')
   await decide(ctx, run, INDEX, 'take')
   const w2 = await ctx.run('ingest_apply', { id: 'twin', run, only: [INDEX] })
   assert.deepEqual(w2.written, [INDEX])
   assert.ok(read(t, INDEX).includes('## Notes') && read(t, INDEX).includes(NOTE_ROW), 'the run\'s whole text')
-  // The new note is in the vault already as the run wrote it (a write that stopped midway): written, not changed.
-  write(t, NOTE, NOTE_TEXT)
-  await decide(ctx, run, NOTE, 'approve')
-  const w3 = await ctx.run('ingest_apply', { id: 'twin', run, only: [NOTE] })
-  assert.deepEqual([w3.written, w3.changed_since], [[NOTE], []])
+  // The client page is in the vault already as the run wrote it (a write that stopped midway): written, not changed.
+  write(t, CLIENT_PAGE, (await ctx.run('ingest_text', { id: 'twin', run, path: CLIENT_PAGE })).text)
+  await decide(ctx, run, CLIENT_PAGE, 'approve')
+  const w3 = await ctx.run('ingest_apply', { id: 'twin', run, only: [CLIENT_PAGE] })
+  assert.deepEqual([w3.written, w3.changed_since], [[CLIENT_PAGE], []])
 })
 
 test('Write takes only the changes named; the proposed text is served for Edit, the user\'s text wins; Prepare again waits for the review', async () => {
@@ -463,4 +465,196 @@ test('a Markdown source reads as it came, as safe HTML, never as a page to edit;
   await assert.rejects(ctx.run('page', { id: 'twin', path: 'raw_inbox/none.md' }), /no source raw_inbox\/none\.md/)
   await assert.rejects(ctx.run('page', { id: 'twin', path: 'raw_inbox/../AGENTS.md' }))
   await assert.rejects(ctx.run('save_page', { id: 'twin', path: SOURCE, text: 'x', base: p.base }))
+})
+
+// ── the review's findings on PR #29 (each fix with its test) ──
+
+test('finding 1: a file Echo can\'t read whole as UTF-8 — a log over 2 MB, a cp1251 index — is never cut or rewritten', async () => {
+  const bigLog = `# Log\n\n${'- 2026-01-01 · an old line of the log\n'.repeat(60000)}`
+  const cp1251 = Buffer.from([0x23, 0x20, 0xca, 0xe0, 0xf2, 0xe0, 0xeb, 0xee, 0xe3, 0x0a]) // "# Каталог" in cp1251
+  const claude = async (opts, run) => {
+    run.write('log.md', `${run.read('log.md')}${LOG_ADDED}\n`)
+    run.write(INDEX, `${run.read(INDEX)}| [x.md](notes/x.md) | x |\n`)
+    run.write(NOTE, NOTE_TEXT)
+    return { answer: 'Done.' }
+  }
+  const { t, ctx } = await ingestVault({ claude, more: (r) => write(r, 'log.md', bigLog) })
+  const run = await go(ctx)
+  const cs = await changes(ctx, run)
+  assert.ok(!of(cs, 'log.md'), 'a vault file over 2 MB isn\'t read or offered: Echo writes none')
+  // The index becomes cp1251 in the vault after the run: Echo can't read it as the file it is.
+  nfs.writeFileSync(npath.join(t, INDEX), cp1251)
+  const idx = of(await changes(ctx, run), INDEX)
+  assert.equal(idx.state, 'blocked')
+  assert.match(idx.note, /isn't UTF-8 text Echo reads whole/)
+  await ctx.run('change', { id: 'twin', run, rest: true })
+  await ctx.run('ingest_apply', { id: 'twin', run })
+  assert.deepEqual(nfs.readFileSync(npath.join(t, INDEX)), cp1251, 'its bytes untouched')
+  assert.equal(read(t, 'log.md'), bigLog, 'the big log untouched')
+})
+
+test('finding 2: Take the run\'s holds only over the file as it was taken; an edit after it is never written over, an Edit drops the take', async () => {
+  const { t, ctx } = await ingestVault()
+  const run = await go(ctx)
+  write(t, CLIENT_PAGE, `${read(t, CLIENT_PAGE)}- Saved in Obsidian.\n`)
+  await decide(ctx, run, CLIENT_PAGE, 'take')
+  write(t, CLIENT_PAGE, `${read(t, CLIENT_PAGE)}- And again, after the take.\n`)
+  assert.equal(of(await changes(ctx, run), CLIENT_PAGE).state, 'changed', 'shown as changed again')
+  const mine = read(t, CLIENT_PAGE)
+  const w = await ctx.run('ingest_apply', { id: 'twin', run, only: [CLIENT_PAGE] })
+  assert.deepEqual([w.written, read(t, CLIENT_PAGE)], [[], mine], 'nothing lost')
+  await decide(ctx, run, CLIENT_PAGE, 'take')
+  await decide(ctx, run, CLIENT_PAGE, 'edit', { text: `${mine}- My words.\n` })
+  const rv = JSON.parse(ctx.files[`vaults/twin/ingest/${run}/review.json`])
+  assert.deepEqual([rv.answers[CLIENT_PAGE].force, rv.answers[CLIENT_PAGE].force_sha], [undefined, undefined], 'an edit carries no take')
+})
+
+test('finding 3: an index row or log line for a new page is never written before that page is', async () => {
+  const { t, ctx } = await ingestVault()
+  const run = await go(ctx)
+  await decide(ctx, run, INDEX, 'approve')
+  await decide(ctx, run, 'log.md', 'approve')
+  await ctx.run('ingest_apply', { id: 'twin', run })
+  assert.ok(read(t, INDEX).includes(CLIENT_ROW) && !read(t, INDEX).includes(NOTE_ROW), 'the note\'s row waits for the note')
+  assert.ok(!read(t, 'log.md').includes(NOTE), 'so do its log lines')
+  assert.equal(of(await changes(ctx, run), INDEX).state, 'approved', 'not written yet: its held row stays to write')
+  await decide(ctx, run, NOTE, 'approve')
+  await ctx.run('ingest_apply', { id: 'twin', run })
+  assert.ok(exists(t, NOTE) && read(t, INDEX).includes(NOTE_ROW) && read(t, 'log.md').includes(LOG_ADDED), 'with its page, the row lands')
+})
+
+test('finding 4: a queued item that can\'t be prepared is tried again only after a while; the rule\'s batch skips what isn\'t New', async () => {
+  const data = echoData({ calls: [{ folder: '2026-11-05_090012-weekly-delivery-sync', title: 'Weekly delivery sync', notes: MINUTES, profile: 'p1' }] })
+  const t = twin()
+  write(t, '.claude/skills/process-inbox/SKILL.md', SKILL)
+  const ctx = await vault(t, { echo: data.read, claude: async () => ({ answer: 'Nothing.' }) })
+  await ctx.run('set', { id: 'twin', key: 'ingest.calls', value: 'prepare' })
+  await ctx.run('set', { id: 'twin', key: 'ingest.batch_sources', value: '1' })
+  const l = JSON.parse(ctx.files['vaults/twin/ingest.json'] || '{"sources":{},"queued":{},"calls":[],"mails":[],"runs":[]}')
+  l.queued = { 'call:gone': { id: 'call:gone', kind: 'call', title: 'Gone', rule: 'prepare', state: 'queued', added: new Date().toISOString() } }
+  ctx.files['vaults/twin/ingest.json'] = JSON.stringify(l)
+  assert.deepEqual(await ctx.run('prepare_rule', {}), [])
+  const q1 = JSON.parse(ctx.files['vaults/twin/ingest.json']).queued['call:gone']
+  assert.deepEqual([q1.tries, !!q1.why], [1, true])
+  await ctx.run('prepare_rule', {})
+  assert.equal(JSON.parse(ctx.files['vaults/twin/ingest.json']).queued['call:gone'].tries, 1, 'not tried again within the hour')
+  // A good call joins: the batch runs over it and leaves the failing one queued.
+  const l2 = JSON.parse(ctx.files['vaults/twin/ingest.json'])
+  l2.queued['call:2026-11-05_090012-weekly-delivery-sync'] = { id: 'call:2026-11-05_090012-weekly-delivery-sync', kind: 'call', title: 'Weekly', rule: 'prepare', state: 'queued', added: new Date().toISOString() }
+  ctx.files['vaults/twin/ingest.json'] = JSON.stringify(l2)
+  const started = await ctx.run('prepare_rule', {})
+  assert.equal(started.length, 1)
+  const after = JSON.parse(ctx.files['vaults/twin/ingest.json'])
+  assert.deepEqual(after.runs[0].sources.map((p) => p.split('/')[1]), ['echo'])
+  assert.ok(after.queued['call:gone'], 'the failing one still queued, saying why')
+})
+
+test('finding 5: Echo reads a copy\'s file only when it may write it back; binaries are never compared, a vault file over 2 MB never read', async () => {
+  const big = Buffer.alloc(5 << 20, 0xff)
+  const claude = async (opts, run) => {
+    run.writeBytes('knowledge/img/new.png', '�')
+    run.write('CLAUDE.md', '# Mine\n')
+    run.write('knowledge/topics/huge.md', `# Huge\n${'x'.repeat(3 << 20)}\n`)
+    return { answer: 'Done.' }
+  }
+  const { ctx } = await ingestVault({ claude, more: (r) => { nfs.mkdirSync(npath.join(r, 'knowledge/img'), { recursive: true }); nfs.writeFileSync(npath.join(r, 'knowledge/img/chart.png'), big); write(r, 'knowledge/topics/old-huge.md', `# Old\n${'y'.repeat(3 << 20)}\n`) } })
+  const reads = []
+  const read0 = ctx.store.read
+  ctx.store.read = (p, o) => { if (/cache\/snapshots/.test(p)) reads.push([p.split('/').slice(3).join('/'), !!(o && o.lossy)]); return read0(p, o) }
+  const run = await go(ctx)
+  const cs = await changes(ctx, run)
+  assert.deepEqual(cs.map((c) => [c.path, c.state]), [['knowledge/img/new.png', 'blocked'], ['knowledge/topics/huge.md', 'blocked']])
+  assert.match(of(cs, 'knowledge/topics/huge.md').note, /up to 2 MB/)
+  assert.ok(!reads.some(([p]) => p === 'knowledge/img/chart.png' || p === 'knowledge/topics/old-huge.md'), 'the vault\'s big files aren\'t read')
+  assert.ok(!reads.some(([, lossy]) => lossy), 'no binary read lossily')
+  assert.ok(!reads.some(([p]) => p === 'CLAUDE.md'), 'a new instruction file is counted, not read')
+  const st = await ctx.run('ingest_run', { id: 'twin', run })
+  assert.match(st.events[st.events.length - 1].text, /1 left out/)
+})
+
+test('finding 6: a write that stopped midway is committed by the next one — Echo\'s own file isn\'t taken for the user\'s', { skip: !hasGit }, async () => {
+  const { t, ctx } = await ingestVault({ git: true })
+  const run = await go(ctx)
+  await decide(ctx, run, NOTE, 'approve')
+  await decide(ctx, run, CLIENT_PAGE, 'approve')
+  const w0 = ctx.fs.write
+  let n = 0
+  ctx.fs.write = (...a) => { if (++n === 2) throw new Error('Echo quit'); return w0(...a) }
+  await assert.rejects(ctx.run('ingest_apply', { id: 'twin', run }), /Echo quit/)
+  ctx.fs.write = w0
+  const w = await ctx.run('ingest_apply', { id: 'twin', run })
+  assert.deepEqual(w.committed.slice().sort(), [CLIENT_PAGE, NOTE].sort(), w.commit)
+  assert.equal(sh(t, 'status', '--porcelain').trim(), '', 'nothing left uncommitted')
+  assert.equal(ctx.files[`vaults/twin/ingest/${run}/writing.json`], undefined)
+})
+
+test('finding 7: runs left in review expire after 30 days, their copies gone; snapshots no run holds are cleared', async () => {
+  const { ctx } = await ingestVault({ more: (r) => write(r, 'raw_inbox/b.md', '# B\n') })
+  const old = await go(ctx)
+  const l = JSON.parse(ctx.files['vaults/twin/ingest.json'])
+  const r = l.runs.find((x) => x.id === old)
+  r.at = r.ended = new Date(Date.now() - 31 * 864e5).toISOString()
+  ctx.files['vaults/twin/ingest.json'] = JSON.stringify(l)
+  ctx.files['cache/snapshots/0badc0de/knowledge/x.md'] = 'left by an Echo that quit'
+  await go(ctx, ['raw_inbox/b.md'])
+  const after = JSON.parse(ctx.files['vaults/twin/ingest.json'])
+  assert.equal(after.runs.find((x) => x.id === old).state, 'discarded')
+  assert.equal(after.sources[SOURCE].state, 'new', 'its sources New again')
+  assert.deepEqual(Object.keys(ctx.files).filter((k) => k.startsWith(`vaults/twin/ingest/${old}/`) || k.startsWith('cache/snapshots/')), [])
+})
+
+test('finding 8: a run stopped while its changes are found keeps nothing', async () => {
+  const { ctx } = await ingestVault()
+  let runId = null
+  const list0 = ctx.store.list
+  ctx.store.list = (d) => { if (runId && /^cache\/snapshots\/[0-9a-f]+$/.test(d)) { const id = runId; runId = null; ctx.commands.ingest_stop({ id: 'twin', run: id }) } return list0(d) }
+  const s = await ctx.run('ingest_go', { id: 'twin', sources: [SOURCE], wait: false })
+  runId = s.run
+  for (let i = 0; i < 50 && (await ctx.run('ingest_run', { id: 'twin', run: s.run })).state === 'running'; i++) await new Promise((res) => setTimeout(res, 10))
+  await new Promise((res) => setTimeout(res, 30))
+  assert.equal((await ctx.run('ingest_run', { id: 'twin', run: s.run })).state, 'stopped')
+  assert.equal(ctx.files[`vaults/twin/ingest/${s.run}/review.json`], undefined)
+})
+
+test('finding 9: Stop names a run of the vault it is asked for, before anything is stopped', async () => {
+  const { ctx } = await ingestVault()
+  await assert.rejects(ctx.run('ingest_stop', { id: 'twin', run: '20260101-000000-ffff' }), /no run/)
+  await assert.rejects(ctx.run('lint_stop', { id: 'twin', run: '20260101-000000-ffff' }), /no AI check/)
+})
+
+test('finding 10: an edit that lands mid-write stays unwritten; written is never made changed; no discard while writing', async () => {
+  const { t, ctx } = await ingestVault()
+  const run = await go(ctx)
+  await decide(ctx, run, NOTE, 'approve')
+  await decide(ctx, run, CLIENT_PAGE, 'approve')
+  const w0 = ctx.fs.write
+  let discard = null
+  ctx.fs.write = (root, rel, text, o) => {
+    const r = w0(root, rel, text, o)
+    if (rel === NOTE) nfs.appendFileSync(npath.join(t, NOTE), 'An edit of the user\'s, just after.\n')
+    if (rel === CLIENT_PAGE) { try { ctx.commands.ingest_discard({ id: 'twin', run }) } catch (e) { discard = e.message } }
+    return r
+  }
+  await ctx.run('ingest_apply', { id: 'twin', run })
+  ctx.fs.write = w0
+  assert.match(discard, /being written/)
+  const cs = await changes(ctx, run)
+  assert.notEqual(of(cs, NOTE).state, 'written', 'the user\'s edit landed after Echo\'s write: not marked written')
+  assert.equal(of(cs, CLIENT_PAGE).state, 'written')
+  write(t, CLIENT_PAGE, `${read(t, CLIENT_PAGE)}- later\n`)
+  await ctx.run('ingest_apply', { id: 'twin', run })
+  assert.equal(of(await changes(ctx, run), CLIENT_PAGE).state, 'written', 'never made changed again')
+})
+
+test('finding 11: the sources folder in any case; a transcription Echo never reports holds runs 30 minutes at most', async () => {
+  assert.equal(ingestWritable('Raw_Inbox/x.md', 'raw_inbox'), false)
+  assert.equal(ingestWritable('RAW_INBOX', 'raw_inbox'), false)
+  const { ctx } = await ingestVault()
+  await ctx.fire('recording_stopped', { call: 'c9', duration_s: 60, reason: 'user' })
+  const now0 = Date.now
+  try {
+    Date.now = () => now0() + 31 * 60 * 1000
+    const run = await go(ctx)
+    assert.equal((await ctx.run('ingest_run', { id: 'twin', run })).state, 'review', 'no transcribed after 30 minutes: let go')
+  } finally { Date.now = now0 }
 })

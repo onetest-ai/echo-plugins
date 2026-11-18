@@ -298,3 +298,16 @@ test('Echo waits while a call is recorded or transcribed: the check starts once 
   assert.deepEqual([done.state, done.waiting], ['done', null])
   assert.equal(ctx.claudeLog.length, 1)
 })
+
+test('finding 8: a check stopped while its findings are checked keeps nothing', async () => {
+  const { ctx } = await lintVault({ answers: [{ findings: three() }] })
+  const many0 = ctx.fs.readMany
+  let run = null
+  ctx.fs.readMany = async (root, paths, o) => { if (run && paths.length) { const id = run; run = null; ctx.commands.lint_stop({ id: 'twin', run: id }) } return many0(root, paths, o) }
+  const s = await ctx.run('lint', { id: 'twin', wait: false })
+  run = s.run
+  for (let i = 0; i < 50 && ctx.files['locks/lint-twin.json']; i++) await new Promise((r) => setTimeout(r, 10))
+  const st = await ctx.run('lint_run', { id: 'twin', run: s.run })
+  assert.equal(st.state, 'stopped')
+  assert.equal((await ctx.run('health', { id: 'twin' })).ai, null, 'nothing kept')
+})

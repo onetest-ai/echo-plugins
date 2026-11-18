@@ -24,7 +24,11 @@ threads:
 
 # Dana Reyes
 `
-const base = (more = {}) => world({ calls: [call(CALL, 'Weekly delivery sync', { threads: ['pilot'] })], threads: PEOPLE_THREADS, clients: PEOPLE_CLIENTS, people: people(), ...more })
+// A call in each thread, on the default profile: Echo can tell each thread's AI profile (a thread whose profile it can't
+// tell has no place in any vault).
+const PRICING = '2026-11-03_100000-pricing-review', GLOBEX = '2026-11-04_100000-globex-intro'
+const CALLS = () => [call(PRICING, 'Pricing review', { threads: ['pricing'] }), call(GLOBEX, 'Globex intro', { threads: ['globex-deal'] }), call(CALL, 'Weekly delivery sync', { threads: ['pilot'] })]
+const base = (more = {}) => world({ calls: CALLS(), threads: PEOPLE_THREADS, clients: PEOPLE_CLIENTS, people: people(), ...more })
 const ls = (root) => (exists(root, P) ? nfs.readdirSync(npath.join(root, P)).filter((f) => f !== 'README.md').sort() : [])
 
 // ── the pure parts ──
@@ -150,9 +154,10 @@ test('routing: each vault has the people of the threads routed to it, each page 
   assert.deepEqual(ls(b.root), ['Grace Hopper.md', 'Lee Park.md'])
   assert.ok(read(a.root, `${P}/Lee Park.md`).includes('threads:\n  - thread: pilot\n---'))
   assert.ok(read(b.root, `${P}/Lee Park.md`).includes('threads:\n  - thread: globex-deal\n    role: champion\n---'))
-  // A link only to a page in this vault: Grace has none in Acme wiki.
-  assert.ok(read(a.root, `${P}/Dana Reyes.md`).includes('reports_to: "Grace Hopper"'))
-  assert.ok(read(b.root, `${P}/Grace Hopper.md`).includes('reports: ["Dana Reyes"]'))
+  // The reporting line names only people with a place in this vault — not even their name otherwise: Grace has none in
+  // Acme wiki, Dana none in Money.
+  assert.ok(!read(a.root, `${P}/Dana Reyes.md`).includes('Grace') && !read(a.root, `${P}/Dana Reyes.md`).includes('reports_to'))
+  assert.ok(!read(b.root, `${P}/Grace Hopper.md`).includes('Dana') && !read(b.root, `${P}/Grace Hopper.md`).includes('reports:'))
 })
 
 test('a page the user deleted: not written again by the catch-up, only by people_sync', async () => {
@@ -260,7 +265,7 @@ test('a page of the user\'s with the person\'s file name and no echo: — the ca
   assert.equal((await w.ctx.run('vault_settings', { id: v.id })).people.theirs, 0)
 })
 
-test('a thread\'s place goes only into a vault on the thread\'s AI profile; a thread whose profile can\'t be known only into one on the default profile', async () => {
+test('a thread\'s place goes only into a vault on the thread\'s AI profile; a thread whose profile Echo can\'t tell into none', async () => {
   const w = base({ calls: [call(CALL, 'Weekly delivery sync', { threads: ['pilot'] }), call('2026-11-06_100000-pricing-review', 'Pricing review', { threads: ['pricing'], profile: 'client-x' })] })
   const d = await w.vault('Mine', { minutes: 'ask' }), x = await w.vault('Client X', { minutes: 'ask' })
   await w.ctx.run('set', { id: x.id, key: 'profile', value: 'client-x' })
@@ -272,9 +277,13 @@ test('a thread\'s place goes only into a vault on the thread\'s AI profile; a th
   // pricing's calls are on Client X: Grace's place is Client X's.
   assert.ok(exists(x.root, `${P}/Grace Hopper.md`))
   assert.ok(!exists(d.root, `${P}/Grace Hopper.md`))
-  // globex-deal has no call: its profile unknown — routed to Client X's vault, written into none but a default one.
+  // globex-deal has no call: its profile unknown — into no vault (Lee's pilot place is the default vault's).
   assert.ok(!exists(x.root, `${P}/Lee Park.md`), 'not into a vault on another profile')
   assert.ok(read(d.root, `${P}/Lee Park.md`).includes('threads:\n  - thread: pilot\n---'), 'only pilot, on the default profile')
+  assert.equal((await w.ctx.run('vault_settings', { id: x.id })).people.unknown, 1, 'globex-deal: left out, said in Settings')
+  // Dana (default) reports to Grace (Client X): neither names the other across the profiles.
+  assert.ok(!read(d.root, `${P}/Dana Reyes.md`).includes('Grace'))
+  assert.ok(!read(x.root, `${P}/Grace Hopper.md`).includes('Dana'))
   // A thread on the default profile, routed to a Client X vault: nothing there.
   await w.ctx.run('thread_vault', { thread: 'pilot', vault: x.id })
   const r = await w.ctx.run('people_sync', { id: x.id })
@@ -373,4 +382,156 @@ test('a batch: the index written once with every new row, one activity row (a co
   const got = catalogInsertMany(idx, 'people', [{ note: 'people/a.md', desc: 'A' }, { note: 'people/B b.md', desc: 'B' }, { note: 'people/c.md', desc: 'C' }], '2026-11-18', '2026-11-18')
   assert.equal(got.added, 2)
   assert.ok(got.text.includes('| [a.md](people/a.md) | A | 2026-01-01 |\n| [B b.md](people/B%20b.md) | B | 2026-11-18 |\n| [c.md](people/c.md) | C | 2026-11-18 |\n\n## Notes'), got.text)
+})
+
+// ── the second review's findings (each was a failing proof first) ──
+
+test('a thread whose recent calls are on two profiles (mixed) goes into no vault; one with no call yet, none either', async () => {
+  const w = base({ calls: [call('2026-11-02_100000-pricing-old', 'Pricing old', { threads: ['pricing'] }), call(GLOBEX, 'Globex intro', { threads: ['globex-deal'] }), call(CALL, 'Weekly delivery sync', { threads: ['pilot'] }), call('2026-11-06_100000-pricing-review', 'Pricing review', { threads: ['pricing'], profile: 'client-x' })] })
+  const d = await w.vault('Mine', { minutes: 'ask' }), x = await w.vault('Client X', { minutes: 'ask' })
+  await w.ctx.run('set', { id: x.id, key: 'profile', value: 'client-x' })
+  await w.ctx.run('default', { id: d.id })
+  await w.ctx.run('people_sync', { id: d.id })
+  assert.ok(!exists(d.root, `${P}/Grace Hopper.md`), 'pricing is mixed: not the default vault\'s')
+  await w.ctx.run('thread_vault', { thread: 'pricing', vault: x.id })
+  await w.ctx.run('people_sync', { id: x.id })
+  assert.ok(!exists(x.root, `${P}/Grace Hopper.md`), 'nor Client X\'s')
+  assert.equal((await w.ctx.run('vault_settings', { id: x.id })).people.unknown, 1)
+  // A new thread with people placed in it and no call yet: nowhere.
+  const w2 = base({ calls: [call(CALL, 'Weekly delivery sync', { threads: ['pilot'] })] })
+  const d2 = await w2.vault('Mine', { minutes: 'ask' })
+  await w2.ctx.run('default', { id: d2.id })
+  const r = await w2.ctx.run('people_sync', { id: d2.id })
+  assert.ok(!exists(d2.root, `${P}/Grace Hopper.md`))
+  assert.equal(r.unknown, 2, 'pricing and globex-deal')
+})
+
+test('one call\'s minutes into an Automatic vault read Echo\'s calls once, whatever the threads', async () => {
+  const threads = [...PEOPLE_THREADS], ps = people(), calls = CALLS()
+  for (let i = 0; i < 40; i++) {
+    threads.push({ id: `t${i}`, name: `T${i}`, client: 'acme' })
+    ps.push({ key: `p${i}@acme.example`, name: `P ${i}`, threads: [`t${i}`], places: [{ thread: `t${i}`, role: 'x', stance: null }], reports_to: null, reports: [] })
+    calls.push(call(`2026-10-${String(1 + (i % 28)).padStart(2, '0')}_1${String(i).padStart(5, '0')}-t${i}`, `T${i}`, { threads: [`t${i}`] }))
+  }
+  const w = world({ calls, threads, clients: PEOPLE_CLIENTS, people: ps })
+  const v = await w.vault('Mine', { minutes: 'auto' })
+  await w.ctx.run('default', { id: v.id })
+  const read0 = w.ctx.echo.read
+  const reads = { calls: 0, people: 0 }
+  // Person pages' reads: People, and calls without `since` (the catch-up's own read of the calls since a day is the
+  // minutes', counted apart).
+  w.ctx.echo.read = (what, ...a) => { if (what === 'calls' && a[0] && a[0].since) reads.since = (reads.since || 0) + 1; else if (what in reads) reads[what]++; return read0.call(w.ctx.echo, what, ...a) }
+  await w.ctx.fire('minutes_written', w.data.payload(CALL))
+  assert.ok(exists(v.root, `${P}/Dana Reyes.md`))
+  assert.deepEqual(reads, { calls: 1, people: 1 })
+  // The catch-up: one read of each for every vault.
+  const v2 = await w.vault('Other', { minutes: 'auto' })
+  await w.ctx.run('thread_vault', { thread: 't0', vault: v2.id })
+  reads.calls = 0; reads.people = 0; delete reads.since
+  w.ctx.files['seen.json'] = JSON.stringify({ since: '2026-11-17' })
+  await w.ctx.run('catch_up')
+  assert.ok(exists(v2.root, `${P}/P 0.md`))
+  assert.deepEqual(reads, { calls: 1, people: 1, since: 1 }, 'both vaults, one run (and the minutes\' own read)')
+})
+
+test('a page of the user\'s holding its own values under Echo\'s key names is left alone, said in Settings; one with Echo\'s values or none of them is adopted', async () => {
+  const w = base()
+  const v = await w.vault('My twin', { minutes: 'ask' })
+  await w.ctx.run('default', { id: v.id })
+  nfs.rmSync(npath.join(v.root, P), { recursive: true, force: true })
+  const MINE = '---\norigin: Lisbon, Portugal\nthreads:\n  - "[[Q3 budget]]"\n  # keep: the renewal\n  - "[[Renewal]]"\nreports: ["[[Sam]]"]\n---\n# Dana Reyes\n'
+  write(v.root, `${P}/Dana Reyes.md`, MINE)
+  const SAME = '---\norigin: echo\ntags: [person]\n---\n# Alex Doe\n\nMine.\n'
+  write(v.root, `${P}/Alex Doe.md`, SAME)
+  const r = await w.ctx.run('people_sync', { id: v.id })
+  assert.equal(read(v.root, `${P}/Dana Reyes.md`), MINE, 'never replaced')
+  assert.ok(!ls(v.root).some((f) => f.includes('-2')))
+  assert.equal(r.adopted, 1, 'Alex: origin: echo is Echo\'s own value')
+  assert.ok(read(v.root, `${P}/Alex Doe.md`).includes('echo: "echo://person/alex@acme.example"') && read(v.root, `${P}/Alex Doe.md`).includes('tags: [person]'))
+  const s = (await w.ctx.run('vault_settings', { id: v.id })).people
+  assert.deepEqual([s.theirs, s.kept, s.kept_first], [0, 1, [{ name: 'Dana Reyes', keys: ['origin', 'reports', 'threads'] }]])
+})
+
+test('the "page of yours" line clears once the person has no place in the vault any more', async () => {
+  const w = base()
+  const v = await w.vault('My twin', { minutes: 'auto' })
+  await w.ctx.run('default', { id: v.id })
+  nfs.rmSync(npath.join(v.root, P), { recursive: true, force: true })
+  write(v.root, `${P}/Dana Reyes.md`, '---\ntags: [person]\n---\n# Dana\n')
+  await w.ctx.run('catch_up')
+  assert.equal((await w.ctx.run('vault_settings', { id: v.id })).people.theirs, 1)
+  w.data.read.people[0].places = []
+  w.data.read.people[0].threads = []
+  await w.ctx.run('people_sync', { id: v.id })
+  assert.equal((await w.ctx.run('vault_settings', { id: v.id })).people.theirs, 0)
+})
+
+test('values: a key of Echo\'s twice is a change and the rewrite leaves one; links with commas, quoted "null", a broken quote and a list are read as they are', () => {
+  const e = 'origin: echo\necho: "echo://person/x"\nreports: ["[[A]]", "[[B]]"]\nthreads:\n  - thread: t\n    role: r'
+  const dup = `${e}\nmood: x\nthreads:\n  - thread: stale`
+  assert.notEqual(personValuesIn(dup), personValuesIn(e))
+  assert.equal(withPersonProps(`---\n${dup}\n---\n`, e.split('\n')), `---\n${e}\nmood: x\n---\n`)
+  assert.equal(personValuesIn('reports: ["[[Doe, Jane]]"]'), personValuesIn('reports: [[[Doe, Jane]]]'))
+  assert.deepEqual(JSON.parse(personValuesIn('reports: [[[Doe, Jane]]]')).reports, ['[[Doe, Jane]]'])
+  assert.notEqual(personValuesIn('threads:\n  - thread: t\n    role: "null"'), personValuesIn('threads:\n  - thread: t'))
+  assert.notEqual(personValuesIn('threads:\n  - thread: t\n    role: "r'), personValuesIn('threads:\n  - thread: t'))
+  assert.notEqual(personValuesIn('reports_to: ["[[A]]", "[[B]]"]'), personValuesIn('reports_to: "[[A]], [[B]]"'))
+  assert.equal(personValuesIn('reports_to: [[A]]'), personValuesIn('reports_to: "[[A]]"'))
+})
+
+test('the ledger: a page never written owes no row; an index write that fails for any reason keeps the rows owed', async () => {
+  const w = base()
+  const v = await w.vault('My twin', { minutes: 'ask' })
+  await w.ctx.run('default', { id: v.id })
+  const write0 = w.ctx.fs.write
+  w.ctx.fs.write = (root, rel, text, opts) => {
+    if (rel === `${P}/Alex Doe.md`) throw new Error('the disk is full')
+    if (rel === 'knowledge/CATALOG.md') throw new Error('the disk is full')
+    return write0(root, rel, text, opts)
+  }
+  const r = await w.ctx.run('people_sync', { id: v.id })
+  assert.equal(r.index, 'skipped: the disk is full')
+  const led = () => JSON.parse(w.ctx.files[`vaults/${v.id}/people.json`])
+  assert.ok(!('alex@acme.example' in led().unindexed), 'Alex\'s page was never written')
+  assert.equal(Object.keys(led().unindexed).length, 4, 'the others owed')
+  w.ctx.fs.write = write0
+  const r2 = await w.ctx.run('people_sync', { id: v.id })
+  assert.deepEqual([r2.added, r2.index], [1, 'added'])
+  assert.deepEqual(led().unindexed, {})
+  assert.equal((read(v.root, 'knowledge/CATALOG.md').match(/\]\(people\//g) || []).length, 5)
+})
+
+test('the save sheet names the people\'s pages only when a participant would be written into that vault', async () => {
+  const w = base()
+  const v = await w.vault('My twin', { minutes: 'auto' })
+  await w.ctx.run('default', { id: v.id })
+  assert.equal((await w.ctx.run('minutes_preview', { call: CALL, vault: v.id })).people, true)
+  // pilot (Dana's and Alex's only place) routed elsewhere: neither would be written here.
+  const o = await w.vault('Other', { minutes: 'ask' })
+  await w.ctx.run('thread_vault', { thread: 'pilot', vault: o.id })
+  assert.equal((await w.ctx.run('minutes_preview', { call: CALL, vault: v.id })).people, false)
+  // An Ask vault: never.
+  assert.equal((await w.ctx.run('minutes_preview', { call: CALL, vault: o.id })).people, false)
+})
+
+test('Echo\'s host breathes every 25 pages, and the ledger is written only through the store\'s update', async () => {
+  const ps = []
+  for (let i = 0; i < 100; i++) ps.push({ key: `p${i}@acme.example`, name: `Person ${i}`, threads: ['pilot'], places: [{ thread: 'pilot', role: 'dev', stance: null }], reports_to: null, reports: [] })
+  const w = base({ people: ps })
+  const v = await w.vault('My twin', { minutes: 'ask' })
+  await w.ctx.run('default', { id: v.id })
+  let breaths = 0
+  const rm0 = w.ctx.fs.readMany
+  w.ctx.fs.readMany = (root, paths, ...a) => { if (Array.isArray(paths) && !paths.length) breaths++; return rm0(root, paths, ...a) }
+  const ledger = `vaults/${v.id}/people.json`
+  const writes = [], updates = []
+  const sw0 = w.ctx.store.write, su0 = w.ctx.store.update
+  w.ctx.store.write = (p, ...a) => { if (p === ledger) writes.push(p); return sw0(p, ...a) }
+  w.ctx.store.update = (p, ...a) => { if (p === ledger) updates.push(p); return su0(p, ...a) }
+  const r = await w.ctx.run('people_sync', { id: v.id })
+  assert.equal(r.added, 100)
+  // 100 pages: 4 in the plan, 4 in the writes, and one before each of Echo's reads (People, calls).
+  assert.ok(breaths >= 4 + 4 + 2, `breaths: ${breaths}`)
+  assert.deepEqual(writes, [])
+  assert.ok(updates.length >= 4, `updates: ${updates.length}`)
 })

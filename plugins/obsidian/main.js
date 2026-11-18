@@ -5909,15 +5909,22 @@ export function apply(ctx) {
   const writePeople = async (v, o = {}) => {
     const out = { vault: v.id, dir: null, added: 0, changed: 0, unchanged: 0, adopted: 0, gone: [], theirs: [], skipped: [], index: null, written: [], dirty: new Set(), commit: null }
     if (!available(v) || hiddenText(v.root)) { out.skipped.push({ why: hiddenText(v.root) || `the vault's folder isn't there: ${v.root}` }); return out }
-    const people = o.people || peopleNow()
+    // Echo's reads of people and calls are synchronous and can be long (Echo computes People for each): each starts a
+    // slice of its own (a breath before it), so its time doesn't add to the JavaScript before it.
+    let people = o.people
+    if (!people) { await breathe(v); people = peopleNow() }
     const open = new Set(openThreads().map((t) => t.id))
     const vs = load()
+    // A thread's place is this vault's when the thread routes here and is on this vault's AI profile: the routes first,
+    // then the profile of each thread routed here (a read of its calls each).
     const routes = new Map()
-    // A thread's place is this vault's when the thread routes here and is on this vault's AI profile.
-    const vaultsOf = (t) => {
-      if (!routes.has(t)) routes.set(t, routeOf([t], vs).vaults.map((x) => x.id).filter((id) => id !== v.id || sameProfile(threadProfileOf(t), v)))
-      return routes.get(t)
+    for (const p of people) for (const t of personThreads(p, open)) if (!routes.has(t.thread)) routes.set(t.thread, routeOf([t.thread], vs).vaults.map((x) => x.id))
+    for (const [t, ids] of routes) {
+      if (!ids.includes(v.id)) continue
+      await breathe(v)
+      if (!sameProfile(threadProfileOf(t), v)) routes.set(t, ids.filter((id) => id !== v.id))
     }
+    const vaultsOf = (t) => routes.get(t) || []
     let todo = peopleOfVault(people, v.id, open, vaultsOf)
     if (o.keys) todo = todo.filter((x) => o.keys.has(x.person.key))
     const dir = peopleDirOf(v)
@@ -6581,6 +6588,9 @@ export function apply(ctx) {
     try { seen = readJson('people-seen.json', null) } catch { /* broken: as never */ }
     if (seen && seen.day === day) return { done: 'today already' }
     let list
+    const first = load().find((v) => v.minutes.mode === 'auto' && available(v) && !hiddenText(v.root))
+    if (!first) { ctx.store.write('people-seen.json', JSON.stringify({ day })); return { ok: true, vaults: {} } }
+    await breathe(first) // Echo's read of People in a slice of its own
     try { list = ctx.echo.read('people') || [] } catch (e) { ctx.log(`catch-up of people: ${errText(e)}`); return { ok: false } }
     const vaults = {}
     for (const v of load()) {
@@ -6595,8 +6605,10 @@ export function apply(ctx) {
     const v = find(load(), id || vault)
     if (hiddenText(v.root)) throw new Error(hiddenText(v.root))
     if (!available(v)) throw new Error(`the vault's folder isn't there: ${v.root}`)
-    try { peopleHeld = null; peopleNow() } catch (e) { throw new Error(`Echo's people can't be read: ${echoWords(e)}`) }
-    return peopleBrief(await serial(v.id, () => writePeople(v, { recreate: true, commit: 'now' })))
+    let list
+    await breathe(v) // Echo's read of People in a slice of its own
+    try { peopleHeld = null; list = peopleNow() } catch (e) { throw new Error(`Echo's people can't be read: ${echoWords(e)}`) }
+    return peopleBrief(await serial(v.id, () => writePeople(v, { people: list, recreate: true, commit: 'now' })))
   })
   const catchUpSources = async () => {
     if (!load().length) return { first: false, ok: false }

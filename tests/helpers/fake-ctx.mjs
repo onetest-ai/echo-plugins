@@ -32,9 +32,11 @@ import { execFileSync } from 'node:child_process'
  *  plugin's own). `pickFolder`: what the folder picker answers (it is given to the plugin: added to `folders`);
  *  `pickFiles`: the paths the file picker answers, as handles {file, name, size}; `run(name, args, {files})` passes
  *  handles (`handle(path)` makes one) as a window's `ctx.call` does. `web`: `ctx.web` (an Echo that has it). */
-export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false, profiles, disk = false, git = false, gitStrict = true, markdown = false, storeUnreadable = [], events, clientValues, m365, pkg, pickFolder, pickFiles, web } = {}) {
+export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = {}, fetch, signin, sources = { gh: true, git: true }, keep = false, threads, work = false, hints = false, agent = false, sessions = false, folders, echo, inbox = false, profiles, disk = false, git = false, gitStrict = true, markdown = false, storeUnreadable = [], events, clientValues, m365, pkg, pickFolder, pickFiles, web, claude } = {}) {
   const commands = {}, providers = {}, timers = [], pushed = {}, logs = [], requests = []
   const files = { ...store }
+  // Store files whose bytes aren't UTF-8 (a snapshot's): read only with `{lossy: true}`, as Echo's `store.read`.
+  const binaryStore = new Set()
   const ctx = {
     id,
     terminal,
@@ -43,7 +45,7 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
     every: (seconds, fn) => { timers.push({ seconds: Math.max(10, seconds), fn }) },
     store: {
       // A file Echo can't read (not UTF-8, a folder where a file should be) throws, as Echo's `store.read` does.
-      read: (path) => { if (storeUnreadable.includes(path)) throw new Error(`${path}: stream did not contain valid UTF-8`); return path in files ? files[path] : null },
+      read: (path, opts) => { if (storeUnreadable.includes(path) || (binaryStore.has(path) && !(opts && opts.lossy))) throw new Error(`${path}: stream did not contain valid UTF-8`); return path in files ? files[path] : null },
       // `{createNew}` never over a file ("is there already"), `{ifSha}` only over the text with that sha256 (as Echo's).
       write: (path, text, opts = {}) => {
         if (opts.createNew && path in files) throw new Error(`${path} is there already`)
@@ -56,7 +58,7 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
         return [...new Set(Object.keys(files).filter((p) => p.startsWith(pre)).map((p) => p.slice(pre.length).split('/')[0]))].sort()
       },
       // A file, or a folder with all in it (as Echo's `store.remove`).
-      remove: (path) => { for (const p of Object.keys(files)) if (p === path || p.startsWith(`${path}/`)) delete files[p] },
+      remove: (path) => { for (const p of Object.keys(files)) if (p === path || p.startsWith(`${path}/`)) { delete files[p]; binaryStore.delete(p) } },
       // Read, change, write (as Echo's `store.update`): `fn(text | null)`; undefined, null or the same text writes nothing.
       update: (path, fn) => {
         if (storeUnreadable.includes(path)) throw new Error(`${path}: stream did not contain valid UTF-8`)
@@ -177,11 +179,65 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
     ctx.files = { read: (file, o = {}) => { const p = handlesMap.get(typeof file === 'object' ? file.file : file); if (!p) throw new Error('that file isn\'t there'); return nfs.readFileSync(p, 'utf8').slice(0, Math.min(o.max || 1 << 20, 4 << 20)) } }
   }
   if (web !== undefined) ctx.web = web
+  const claudeLog = []
+  if (claude !== undefined) {
+    // jshost/folders.rs `snapshot` (with `hidden`): the folder's files into `cache/snapshots/<hex>/` — never a link, a
+    // `.git` folder or `.obsidian/plugins`.
+    const snapshot = (root) => {
+      const r = nfs.realpathSync.native(String(root))
+      if (!(folders || []).map((f) => nfs.realpathSync.native(f)).includes(r)) throw new Error(`${root} isn't one of the folders you gave this plugin`)
+      if (Object.keys(files).filter((p) => p.startsWith('cache/snapshots/')).map((p) => p.split('/')[2]).filter((x, i, a) => a.indexOf(x) === i).length >= 3) throw new Error('this plugin keeps 3 snapshots already: remove one (ctx.store.remove) first')
+      const at = `cache/snapshots/${createHash('sha256').update(`${Date.now()}${Math.random()}`).digest('hex').slice(0, 16)}`
+      let n = 0, bytes = 0
+      const stack = ['']
+      while (stack.length) {
+        const rel = stack.pop()
+        for (const e of nfs.readdirSync(npath.join(r, rel), { withFileTypes: true })) {
+          const p = rel ? `${rel}/${e.name}` : e.name
+          if (e.isSymbolicLink() || e.name.toLowerCase() === '.git' || p.toLowerCase().endsWith('.obsidian/plugins')) continue
+          if (e.isDirectory()) { stack.push(p); continue }
+          if (!e.isFile()) continue
+          const buf = nfs.readFileSync(npath.join(r, p))
+          let text
+          try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf) } catch { text = buf.toString('utf8'); binaryStore.add(`${at}/${p}`) }
+          files[`${at}/${p}`] = text
+          n++
+          bytes += buf.length
+        }
+      }
+      return { path: at, files: n, bytes, skipped: 0, why: { large: 0, unreadable: 0 } }
+    }
+    if (ctx.fs) ctx.fs.snapshot = async (root) => snapshot(root)
+    // ctx.claude.run (service_async.rs `claude.run`): `{answer, model, usage, actions}`, and `snapshot` for `copy`.
+    ctx.claude = {
+      run: async (opts = {}) => {
+        claudeLog.push(JSON.parse(JSON.stringify(opts)))
+        if (!String(opts.prompt || '').trim()) throw new Error('a Claude run needs a prompt')
+        const snap = opts.folder && opts.mode === 'copy' ? snapshot(opts.folder) : null
+        const inSnap = (rel) => { const s = String(rel).replace(/^\.\//, ''); if (!snap || !s || s.split('/').some((c) => c === '..' || c === '')) throw new Error(`“${rel}” isn't in the copy`); return `${snap.path}/${s}` }
+        const run = {
+          snapshot: snap,
+          read: (rel) => files[inSnap(rel)] ?? null,
+          write: (rel, text) => { const k = inSnap(rel); binaryStore.delete(k); files[k] = String(text) },
+          writeBytes: (rel, text) => { const k = inSnap(rel); binaryStore.add(k); files[k] = String(text) },
+          remove: (rel) => { delete files[inSnap(rel)] },
+        }
+        try {
+          const out = (await claude(JSON.parse(JSON.stringify(opts)), run)) || {}
+          return { answer: out.answer ?? '', model: out.model ?? '', usage: { input_tokens: 0, output_tokens: 0, cost_usd: 0, ...(out.usage || {}) }, actions: [], ...(snap ? { snapshot: snap } : {}) }
+        } catch (e) {
+          // A run that fails removes its snapshot.
+          if (snap) for (const p of Object.keys(files)) if (p.startsWith(`${snap.path}/`)) { delete files[p]; binaryStore.delete(p) }
+          throw e
+        }
+      },
+    }
+  }
   const inboxNow = {}
   if (inbox) ctx.inbox = { set: (key, item) => { inboxNow[key] = item }, clear: (key) => { delete inboxNow[key] } }
   return Object.assign(ctx, {
     // What the tests look at.
-    commands, providers, timers, pushed, logs, requests, signins, fsLog, keptNow, files, settingsNow: settings, threadsNow: threads, clientsNow: clientValues, workState, hintsNow, agentNow, sessionsNow, inboxNow, m365Log, handle,
+    commands, providers, timers, pushed, logs, requests, signins, fsLog, keptNow, files, claudeLog, settingsNow: settings, threadsNow: threads, clientsNow: clientValues, workState, hintsNow, agentNow, sessionsNow, inboxNow, m365Log, handle,
     /** Tell its handlers an event, as Echo does, and wait for them. */
     fire: async (event, payload) => { for (const fn of handlers[event] || []) await fn(JSON.parse(JSON.stringify(payload))) },
     /** Ask its work rows as Echo does. */

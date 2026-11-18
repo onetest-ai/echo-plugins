@@ -172,7 +172,7 @@
   },
   {
    "id": "F-OB-35",
-   "title": "The Health tab lists the code checks' findings by group and kind with #17's score, trend (one point a day) and filters; a finding with its pages, Ask about it and Ignore / List again",
+   "title": "The Health tab lists the findings by group and kind (the AI checks' first in their group) with #17's score, trend (one point a day) and filters; a finding with its pages, its fix as a diff, Ask about it and Ignore / List again",
    "priority": "high",
    "check": "agent"
   },
@@ -208,7 +208,7 @@
   },
   {
    "id": "F-OB-41",
-   "title": "What later versions bring says so where #17 showed it, never made up: Ingest and its sources, Health's fixes and AI checks, minutes saved into a vault, a new vault from the twin starter, the twin skill",
+   "title": "What later versions bring says so where #17 showed it, never made up: a web page as a source (until Echo reads web pages), the twin skill for every Claude Code session and the starter's process-inbox written into a vault (Echo writes no hidden file for a plugin: it says how)",
    "priority": "high",
    "check": "agent"
   },
@@ -281,6 +281,54 @@
   {
    "id": "F-OB-53",
    "title": "The catch-up when Echo starts: the calls with minutes and Recall's mail since the last day seen go through the live events' routing (a call whose record has the vault isn't written again, a source the ledger has isn't queued again); the day moves only when both reads answered; the first start only notes it",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-54",
+   "title": "Health's fixes are diffs computed again from the finding's key — the window never sends a path or a text — and written only over the text they were shown on (base and sha): a broken link pointed to the closest page (the same name elsewhere or but for case; a name 1–2 characters apart only as a guess), the link removed keeping its words, a dead index row pointed or removed, properties added in the file's own line endings, a row in the index with the vault's log line, a tag replaced by one the taxonomy allows; one commit of the files that were clean, an activity line each",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-55",
+   "title": "Fix all applies only the certain fixes of a kind — never a guess or an AI check's fix — in one write per file and one commit; a page changed since its fix was shown is left as it is and said, a fix with nothing left to do is skipped with why",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-56",
+   "title": "The score is D32: Links 25, Index 20, Properties 15, Consistency 25, Freshness 15, each weight × max(0, 1 − 5 × pages touched ÷ pages in scope), rounded half up; Freshness counts only after an AI check ('code checks only' until then); ignored findings neither listed nor counted; one point a day kept 90 days",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-57",
+   "title": "AI checks run only on the user's click: Claude Code read-only in the vault on its AI profile (≤ 300 pages: else those changed in 30 days and the pages they link to), its findings its final answer; a finding is kept only when every quote is on its page and its fix's text is there exactly once (at most 200), checked again each time Health looks; one check per vault, Stop, never while a call is recorded or transcribed; Health keeps when, the run, its cost, kept and dropped",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-58",
+   "title": "An Ingest run: the queue prepared first (calls and mail made files of the sources folder), then the vault's ingest skill (its setting, else process-inbox, else the one about an inbox) on a copy of the vault over the batch's sources (20 at most), one run per vault, never while a call is recorded or transcribed; when it ends the copy is compared with the vault by sha — instruction files, hidden files and sources are never taken back, a path the vault can't take or a non-text file is shown but not written — each change with its diff and the run's quotes checked in its own sources (a PDF's: 'Echo can't check quotes in this kind of file'); the copy removed",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-59",
+   "title": "An Ingest run's review: approve, reject, edit (the user's text), take the run's; a rejected new page takes its index rows and log lines along (D28); Write puts index rows and log lines onto the files as they are now (D42) and every other change only where the vault's file is still as the run found it (else 'changed in the vault since the run', Compare); one commit of the written files that were clean, activity lines, the run's sources done with what was kept; Discard, Prepare again, Stop, Run again; a failed run keeps its log 30 days",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-60",
+   "title": "THE RULE's batching: an event (minutes_written, sources_changed) only queues its source; a vault whose new calls' or mail's rule is 'Add and prepare changes' starts one run over everything queued once N sources wait or the first has waited N hours (Settings → Ingest, 5 and 24 by default), never per event, never while a run of the vault goes or a call is recorded",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-61",
+   "title": "The activity's badge and Home: Ingest's number counts the changes still waiting for an answer, Health's the findings only the user can decide, the badge both; Home's Coming in shows the changes waiting by run, the new sources by kind and the run going",
    "priority": "high",
    "check": "agent"
   }

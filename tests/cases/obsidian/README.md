@@ -50,3 +50,17 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   <port> --log <dir>/graph.log &` (its pid in `<dir>/graph.pid`) and `echo "export ECHOCTL_TEST_GRAPH=http://127.0.0.1:<port>"
   >> <dir>/env`; then serve the window from that env. Stop it by its pid at the end. A step may read and empty
   `<dir>/graph.log` (what Echo asked of it).
+
+### Health's fixes, AI checks and Ingest runs (TC-034, TC-051 on)
+- Run in order on one environment of their own (`DATA_NOW=<today>T20:00` late in the day): TC-030's preconditions
+  (acme-twin connected, commit on, the default vault), then TC-034, TC-051, TC-052, TC-053, TC-054.
+- Claude Code is never a real one. `up.sh` puts the cases' fake (`tests/fixtures/obsidian/fake-claude.sh`) first on
+  PATH in front of the data's own test fake (`<dir>/bin/claude-echo`) and refuses to when the data's fake isn't the
+  pure one: an Ingest run (its prompt asks for a vault's ingest skill, its working folder a copy of the vault in the
+  plugin's store) makes, in that copy only, the edits `<dir>/fake-ingest.json` names (`fake_ingest.py`); anything else
+  is the data's fake's — an AI check answers from `<dir>/fake-answers.tsv` by a phrase of its prompt, else it is refused.
+  A step may write and remove `<dir>/fake-ingest.json` and append to `<dir>/fake-answers.tsv`.
+- In acme-twin a step may also commit the user's own edits made in the step before (`git -C "$T" commit -qam …`), as
+  their git would.
+- Window steps with headless Playwright; never the user's browser. `<dir>/serve.log` lines starting `plugin obsidian:` are
+  the plugin's.

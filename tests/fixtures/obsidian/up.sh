@@ -83,6 +83,15 @@ printf -- '# Current\n' > "$h/current.md"
   git commit -q -am "In UTF-8, trimmed"
 )
 
+# The cases' fake Claude Code (fake-claude.sh) in front of Echo's own test fake (moved to bin/claude-echo): an Ingest
+# run makes the edits <dir>/fake-ingest.json names, in its copy of the vault only (fake_ingest.py); anything else is
+# Echo's fake's. Echo's must be the pure test fake (no `exec` of a real Claude Code), else nothing is set up.
+if [ ! -f "$dir/bin/claude" ] || grep -q 'exec' "$dir/bin/claude"; then echo "$dir/bin/claude isn't Echo's pure test fake: stopping" >&2; exit 1; fi
+mv "$dir/bin/claude" "$dir/bin/claude-echo"
+cp "$here/fake-claude.sh" "$dir/bin/claude"
+cp "$here/fake_ingest.py" "$dir/bin/fake_ingest.py"
+chmod +x "$dir/bin/claude"
+
 printf 'export PATH="%s:$PATH"\nexport VAULTS="%s"\nexport MARKET="%s"\n' "$echo_repo/target/debug" "$v" "$dir/market" >> "$dir/env"
 from="${OBSIDIAN_FROM:-}"
 case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;; esac

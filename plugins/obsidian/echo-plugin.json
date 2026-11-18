@@ -44,7 +44,10 @@
     "events": {
       "on": [
         "minutes_written",
-        "sources_changed"
+        "sources_changed",
+        "recording_started",
+        "recording_stopped",
+        "transcribed"
       ]
     },
     "m365": {

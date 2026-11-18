@@ -23,7 +23,9 @@ export async function createKnowledge(ctx, hooks = {}) {
   // A read or an action: one of the host half's commands (`seam.js`).
   const call = (command, args, opts) => (alive ? ctx.call(command, args, opts) : Promise.reject(new Error('Knowledge was unloaded')))
   const get = (path) => knRead(call, path)
-  const go = (hash) => { if (alive) ctx.go(hash) }
+  // A route change: a step in the window's history, or (`{replace: true}`, Echo #772) the address corrected in place —
+  // Back skips it.
+  const go = (hash, opts) => { if (alive) ctx.go(hash, opts) }
   const { esc, patch } = ctx.ui
   const nf = (n) => Number(n || 0).toLocaleString()
   const hm = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -287,7 +289,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   }
   /** The route's last part for the tab open now. */
   const here = () => (st().tab === 'home' ? '' : st().tab === 'health' ? st().hlKey || '' : st().tab === 'ingest' ? st().ingRun || '' : st().path || '')
-  const goVault = (id, tab = 'home', path = '') => go(knRouteOf({ vault: id, tab, path }))
+  const goVault = (id, tab = 'home', path = '', opts) => go(knRouteOf({ vault: id, tab, path }), opts)
   /** Opening the Knowledge activity: where the user left it. */
   function home() {
     const s = st()
@@ -829,7 +831,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const skills = (x.skills || []).filter((k) => k.kind !== 'agents')
     const agents = (x.skills || []).filter((k) => k.kind === 'agents')
     const skillRow = (k) => row(`${esc(k.name)} <span class="tag">${k.kind === 'command' ? '.claude/commands' : '.claude/skills'}</span>`, k.description ? `<span class="kn-clamp" title="${esc(k.description)}">${esc(k.description)}</span>` : 'no description', `<button class="btn sm" data-kn="run-skill" data-name="${esc(k.name)}" title="Claude Code opens in this vault; /${esc(k.name)} is copied to paste there">Run in Claude</button>${toPage(k.path) ? `<button class="btn ghost sm" data-kn="open-tab" data-path="${esc(toPage(k.path))}">Open</button>` : ''}`)
-    const twinRow = x.has_twin ? row(`Use /twin from any Claude Code session${x.global_twin ? ` <span class="tag ok">installed as /${esc(x.global_twin)}</span>` : ''}`, x.global_twin ? `In <code>~/.claude/skills/${esc(x.global_twin)}/</code> — your own Claude Code. Sessions on other AI profiles don't see it.` : `A copy of this vault's twin skill with its paths, in <code>~/.claude/skills/${esc(x.global_twin_name)}/</code> — shown first, yours to remove.`, x.global_twin ? `<button class="btn sm" data-kn="twin-global">Update</button><button class="btn ghost sm" data-kn="twin-remove">Remove</button>` : `<button class="btn sm" data-kn="twin-global-ask">Install…</button>`)
+    const twinRow = x.has_twin || x.global_twin || x.twin_made ? row(`Use /twin from any Claude Code session${x.global_twin ? ` <span class="tag ok">installed as /${esc(x.global_twin)}</span>` : ''}`, x.global_twin ? `In <code>~/.claude/skills/${esc(x.global_twin)}/</code> — your own Claude Code. Sessions on other AI profiles don't see it.` : `A copy of this vault's twin skill with its paths, in <code>~/.claude/skills/${esc(x.global_twin_name)}/</code> — shown first, yours to remove.`, x.global_twin ? `<button class="btn sm" data-kn="twin-global-ask">Update…</button><button class="btn ghost sm" data-kn="twin-remove">Remove</button>` : `<button class="btn sm" data-kn="twin-global-ask">Install…</button>`)
       : row('twin <span class="tag acc">Echo starter</span>', 'Find, answer and remember — not in this vault. Adds <code>.claude/skills/twin/SKILL.md</code>; nothing else changes.', `<button class="btn sm" data-kn="twin-add"${s.busy.twin ? ' disabled' : ''}>Add…</button>`)
     const g = v.git
     const profiles = (typeof ai === 'function' ? ai().profiles : []) || []
@@ -1439,13 +1441,14 @@ export async function createKnowledge(ctx, hooks = {}) {
     const f = foldedHunks(c.hunks, !!rv.more[c.path])
     const diff = f.hunks.length ? `<div class="kn-diff" id="${id}-diff" tabindex="-1" aria-label="${esc(`The change to ${c.path}`)}">${hunkRows(f.hunks)}</div>${f.more ? `<button class="kn-chg-more" id="${id}-more" data-kn="ing-more" data-path="${p}">Show ${many(f.more, 'more line')}</button>` : ''}` : ''
     let body = ''
+    const retag = c.retagged ? `<div class="kn-note-line kn-chg-retag">${IC.info}<span>${esc(c.retagged)}</span></div>` : ''
     if (c.blocked) body = `<div class="kn-left-out">${IC.warn}<span>${esc(c.blocked)}. Echo leaves it out of the write.</span></div>${diff}`
     else if (c.changed) body = `<div class="kn-left-out">${IC.warn}<span>Changed in the vault since the run, so it isn't written. ${cmp ? 'Below is what Take the run\'s writes over the vault\'s file now: − lines are the vault\'s.' : 'Compare shows what Take the run\'s would write over it.'}</span></div>${cmp ? diff : ''}`
     else if (c.state !== 'rejected') {
       const left = c.left ? `<div class="kn-left-out">${IC.warn}<div><span>${esc(String(c.left.note).replace(/\.$/, ''))}.</span>${c.left.lines.map((l) => `<code class="kn-left-l">${esc(l)}</code>`).join('')}</div></div>` : ''
       const quotes = c.quotes.map((q) => `<div class="kn-qt">“${esc(q.text)}”<small>${esc(q.source)}</small></div>`).join('')
       const from = `<div class="kn-from"><span class="lbl">${c.quotes.length ? IC.check : IC.info}${c.quotes.length ? 'Came from' : 'The words it came from'}</span>${quotes}${c.invented ? `<div class="kn-qt none">${esc(c.invented)}</div>` : ''}${c.fromNote ? `<div class="kn-qt none">${esc(c.fromNote)}</div>` : ''}</div>`
-      body = diff + left + (c.state === 'written' ? '' : from)
+      body = diff + retag + left + (c.state === 'written' ? '' : from)
     }
     const cls = c.state === 'approved' || c.state === 'written' ? ' okd' : c.state === 'rejected' ? ' rej' : c.blocked ? ' blk' : c.changed ? ' chg' : ''
     return `<div class="kn-chg${cls}" id="${id}"><div class="kn-chg-h"><span class="n">${c.state === 'approved' || c.state === 'written' ? IC.check : c.n}</span><div><code title="${p}">${p}</code><span class="set-sub">${tags}</span></div><div class="kn-acts2">${acts}</div></div>${body}</div>`
@@ -1537,7 +1540,8 @@ export async function createKnowledge(ctx, hooks = {}) {
     askFirst('Discard the run?', waiting ? 'Its changes go and nothing is written. Its sources are Done — nothing kept; Prepare again puts them back.' : 'Its log and copy go; Run again is no longer offered.', 'Discard', async () => {
       try { await run('kn_ingest_discard', { id: v.id, run: id }, 'ingdiscard') } catch (e) { return say(String(e.message || e)) }
       await loadIngest()
-      goVault(v.id, 'ingest', '')
+      // The run's address is gone with it: replaced, so Back never opens a run that isn't there.
+      goVault(v.id, 'ingest', '', { replace: true })
       done(waiting ? 'Discarded. Nothing was written.' : 'Discarded.')
     }, true)
   }
@@ -1750,7 +1754,8 @@ export async function createKnowledge(ctx, hooks = {}) {
     } else {
       const a = knAddState(x)
       body = `<div class="kn-field"><span>Address</span><input class="search kn-in kn-url" id="kn-src-url" placeholder="https://" aria-label="The page's address" value="${esc(x.url)}" autocomplete="off" spellcheck="false"></div><div id="kn-src-note" class="set-sub kn-indent">${esc(a.note || '')}</div>
-        <div class="kn-note-line">${IC.lock}<span>Only the address is sent — no cookies, nothing from your vault. Echo keeps the page's main text as Markdown: menus, footers and scripts are left out.</span></div>${create}`
+        <div class="kn-note-line">${IC.info}<span>Echo reads a page on a site you listed in Knowledge's settings (Settings → Plugins → Knowledge) at once. Any other page, Echo asks you for its address in its own box — leave this empty to go straight there.</span></div>
+        <div class="kn-note-line">${IC.lock}<span>Read once, now — never again by itself. Only the address is sent — no cookies, nothing from your vault. Echo keeps the page's main text as Markdown and its pictures beside it; menus, footers and scripts are left out. A page that builds itself with JavaScript isn't read yet.</span></div>${create}`
     }
     const err = x.error && x.tab !== 'mail' ? `<p class="error" role="alert">${esc(x.error)}</p>` : ''
     return sheet(`Add a source to ${esc(v.name)}`, body + err, `<span class="kn-fa-foot" id="kn-src-f">${sourceFoot()}</span>`, IC.tray, tabs)
@@ -1771,11 +1776,15 @@ export async function createKnowledge(ctx, hooks = {}) {
     x.busy = false
     // A call on another AI profile: said on that call, with *Add anyway* (X-P3).
     if (r && r.mismatch) { x.mismatch = { ...r.mismatch, name: x.call.name }; render(); return focusOn('#kn-src-go') }
+    // Echo's box for a web page's address, cancelled: nothing added, the sheet as it was.
+    if (r && r.cancelled) { render(); return focusOn('#kn-src-url') }
     if (st().sheet === x) s.sheet = null
     const added = (r.added || (r.path ? [r] : [])), refused = r.refused || []
     const folder = d.folder || 'raw_inbox'
     const commits = added.map((a) => String(a.committed || '')).filter((c) => /^skipped: /.test(c))
-    const text = [added.length === 1 ? `Added ${added[0].path}.` : added.length ? `Added ${nf(added.length)} files to ${folder}/.` : '',
+    const pics = r.pictures ? ` with ${many(r.pictures, 'picture')}` : ''
+    const picsLeft = r.pictures_failed ? ` ${many(r.pictures_failed, 'picture')} couldn't be saved and keep${r.pictures_failed === 1 ? 's' : ''} its web address.` : ''
+    const text = [added.length === 1 ? `Added ${added[0].path}${pics}.${picsLeft}` : added.length ? `Added ${nf(added.length)} files to ${folder}/.` : '',
       refused.length ? `Not added: ${refused.map((f) => (String(f.why).includes(f.name) ? String(f.why) : `${f.name} — ${f.why}`).replace(/\.$/, '')).join('; ')}.` : '',
       commits.length ? `Not committed: ${commits[0].slice(9).replace(/\.$/, '')}.` : ''].filter(Boolean).join(' ')
     if (added.length) { g.sel = added[0].path; if (g.filter !== 'all' && g.filter !== 'new') g.filter = 'all' }
@@ -1921,6 +1930,32 @@ export async function createKnowledge(ctx, hooks = {}) {
       ${v && v.profile !== 'system' ? `<div class="kn-warn">${IC.warn}<span><b>This vault is read on ${esc(profName(v.profile))}.</b> From your own Claude Code the skill reads it with that Claude Code's own account and settings, not this profile's.</span></div>` : ''}
       <p class="set-sub">It goes into your own Claude Code (<code>~/.claude</code>); sessions on other AI profiles don't see it. Remove takes out only Echo's copy.</p>${x.error ? `<p class="error">${esc(x.error)}</p>` : ''}`
     return sheet('Use /twin from any Claude Code session', body, `<span class="grow"></span><button class="btn ghost" data-kn="sheet-close">Cancel</button><button class="btn primary" data-kn="twin-global"${t ? '' : ' disabled'}>Install</button>`, IC.ask)
+  }
+  /** The twin skill into the user's own Claude Code (Echo #776 `ctx.claude.installSkill`, `uses.skills`): on this click,
+   *  before anything else is awaited (Echo takes it only while the click is fresh); the text the sheet showed, or the
+   *  one Settings would show (Update). Echo never writes over a skill that isn't the plugin's own. */
+  async function twinGlobal(v) {
+    const s = st(), x = s.sheet && s.sheet.kind === 'twin' ? s.sheet : null
+    const say2 = (m) => { if (x && st().sheet === x) { x.error = m; render() } else say(m) }
+    if (!ctx.claude || typeof ctx.claude.installSkill !== 'function') return say2('This Echo can\'t add a skill to your own Claude Code.')
+    const t = x && x.text
+    const name = (x && x.name) || (t && t.name) || ''
+    // Only the text the sheet shows, as it shows it (its name typed since: read again first).
+    if (!t || t.name !== name) return say2('Wait for the skill\'s text to show, then Install.')
+    try { await ctx.claude.installSkill(name, t.text) } catch (err) { return say2(String(err.message || err)) }
+    try { await run('kn_twin', { id: v.id, op: 'installed', name }, 'twin') } catch { /* shown on the next read */ }
+    if (x && st().sheet === x) s.sheet = null
+    await loadSettings(); render()
+    done(`/${name} is in your Claude Code: ~/.claude/skills/${name}/SKILL.md.`)
+  }
+  async function twinRemove(v) {
+    const name = st().settings && st().settings.global_twin
+    if (!name) return
+    if (!ctx.claude || typeof ctx.claude.removeSkill !== 'function') return say('This Echo can\'t change your own Claude Code\'s skills.')
+    try { await ctx.claude.removeSkill(name) } catch (err) { if (!/isn't there|not there|didn't add/i.test(String(err.message || err))) return say(String(err.message || err)) }
+    try { await run('kn_twin', { id: v.id, op: 'removed' }, 'twin') } catch { /* shown on the next read */ }
+    await loadSettings(); render()
+    done(`/${name} is out of your Claude Code.`)
   }
   async function loadTwinText() {
     const s = st(), x = s.sheet, v = vault()
@@ -2092,8 +2127,8 @@ export async function createKnowledge(ctx, hooks = {}) {
       last = lastVaultStored()
       const id = (vaults().find((x) => x.id === (s.lastVault || last)) || vaults()[0]).id
       s.vault = id
-      // The address names it (Echo's `ctx.go`, which adds a step to the window's history: it has no way to replace one).
-      setTimeout(() => go(knRouteOf({ vault: id, tab: s.tab || 'home', path: here() })))
+      // The address names it, in place: no step in the window's history (Back leaves Knowledge, as it came).
+      setTimeout(() => go(knRouteOf({ vault: id, tab: s.tab || 'home', path: here() }), { replace: true }))
       loadVault().then(render)
       return `<div class="kn">${head()}${tabs()}<div class="kn-body"><div class="skeleton" style="padding:20px"><i></i><i></i><i></i></div></div></div>`
     }
@@ -2218,8 +2253,20 @@ export async function createKnowledge(ctx, hooks = {}) {
       const r = await run('kn_new', { name, pick: x.picked ? x.picked.path : undefined, git: !!x.git, minutes: x.auto ? 'auto' : 'ask' }, 'new')
       s.sheet = null
       await refreshAll()
+      const left = (r.left_out || []).map((f) => f.path)
+      const ready = r.git === 'committed' ? `${r.vault.name} is ready, in git.` : r.git === 'no identity' ? `${r.vault.name} is ready. git has no name and email set, so the first commit wasn't made.` : `${r.vault.name} is ready.`
+      const leftNote = left.length ? ` Not written: ${left.join(', ')} — ${r.left_out[0].why}.` : ''
+      // The plugin's setting says the twin skill goes to the user's own Claude Code: its sheet, to read and Install.
+      if (r.skills && r.skills.offer === 'twin') {
+        goVault(r.vault.id, 'settings')
+        s.vault = r.vault.id; s.tab = 'settings'
+        s.sheet = { kind: 'twin', name: '', text: null }
+        render()
+        loadTwinText()
+        return done(`${ready} Its twin skill is for your own Claude Code: read it, then Install.${leftNote}`)
+      }
       goVault(r.vault.id, 'home')
-      done(r.git === 'committed' ? `${r.vault.name} is ready, in git.` : r.git === 'no identity' ? `${r.vault.name} is ready. git has no name and email set, so the first commit wasn't made.` : `${r.vault.name} is ready.`)
+      done(`${ready}${leftNote}`)
     } catch (err) { x.error = String(err.message || err); render() }
   }
   /** K6-02's sheet. */
@@ -2652,11 +2699,11 @@ export async function createKnowledge(ctx, hooks = {}) {
       }
       case 'twin-add': return askFirst(`Add the twin skill to ${v.name}?`, 'Echo writes only .claude/skills/twin/SKILL.md.', 'Add', async () => { try { await run('kn_twin', { id: v.id, op: 'add' }, 'twin'); await run('kn_reread', { id: v.id }); await refreshAll(); await loadSettings(); render(); done('The twin skill is in the vault.') } catch (err) { say(String(err.message || err)) } })
       case 'sample': { const x = s.sheet = { kind: 'sample' }; render(); try { x.preview = await get(`api/kn/${enc(v.id)}/sample`) } catch (err) { x.preview = null; say(String(err.message || err)) } return st().sheet === x ? render() : undefined }
-      case 'twin-global-ask': s.sheet = { kind: 'twin', name: '', text: null }; render(); return loadTwinText()
-      case 'twin-global': try { const r = await run('kn_twin', { id: v.id, op: 'global', name: (s.sheet && s.sheet.name) || '' }, 'twin'); s.sheet = null; await loadSettings(); render(); done(`Installed: ${short(r.installed)}`) } catch (err) { if (s.sheet) { s.sheet.error = String(err.message || err); render() } else say(String(err.message || err)) } return
-      case 'twin-remove': try { await run('kn_twin', { id: v.id, op: 'global_remove' }, 'twin'); await loadSettings(); render(); done('Echo\'s copy is out of ~/.claude/skills.') } catch (err) { say(String(err.message || err)) } return
+      case 'twin-global-ask': s.sheet = { kind: 'twin', name: (s.settings && s.settings.global_twin) || '', text: null }; render(); return loadTwinText()
+      case 'twin-global': return twinGlobal(v)
+      case 'twin-remove': return twinRemove(v)
       case 'remove-ask': s.sheet = { kind: 'remove' }; return render()
-      case 'remove-go': try { const name = v.name; await run('kn_remove', { id: v.id }, 'remove'); s.sheet = null; s.vault = ''; s.lastVault = null; try { localStorage.removeItem(VAULT_KEY) } catch { /* off */ } await refreshAll(); go(KN_BASE); done(`${name} is no longer in Echo. Its folder is as it was.`) } catch (err) { say(String(err.message || err)) } return
+      case 'remove-go': try { const name = v.name; await run('kn_remove', { id: v.id }, 'remove'); s.sheet = null; s.vault = ''; s.lastVault = null; try { localStorage.removeItem(VAULT_KEY) } catch { /* off */ } await refreshAll(); go(KN_BASE, { replace: true }); done(`${name} is no longer in Echo. Its folder is as it was.`) } catch (err) { say(String(err.message || err)) } return
       case 'settings-open': return goVault(d.id, 'settings')
       // sheets
       case 'sheet-close': dropSheet(); return render()

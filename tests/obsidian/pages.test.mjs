@@ -809,21 +809,20 @@ test('small things: a folder name of the vault goes into Claude\'s guide only as
   assert.equal(withLineEndings('a\nb\nc\nd\r\n', 'x\ny\n'), 'x\ny\n', 'mostly LF: as handed back')
 })
 
-test('restore: a version not UTF-8 is refused by Echo\'s strict read, or on an older Echo by its length; one holding U+FFFD too', { skip: !hasGit && 'git is not available' }, async () => {
-  for (const gitStrict of [true, false]) {
-    const root = twin(tmp())
-    nfs.writeFileSync(npath.join(root, 'knowledge/latin.md'), Buffer.from([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]))
-    write(root, 'knowledge/odd.md', '# Has a � in it\n')
-    repo(root)
-    write(root, 'knowledge/latin.md', '# Cafe\n')
-    write(root, 'knowledge/odd.md', '# Clean\n')
-    sh(root, 'commit', '-qam', 'Now')
-    const ctx = await vault(root, { git: true, gitStrict })
-    const oldest = async (p) => { const v = (await ctx.run('history', { id: 'twin', path: p })).versions; return v[v.length - 1].rev }
-    await assert.rejects(ctx.run('restore', { id: 'twin', path: 'latin.md', rev: await oldest('latin.md') }), /isn't UTF-8 text, so Echo doesn't restore it/, `strict ${gitStrict}`)
-    await assert.rejects(ctx.run('restore', { id: 'twin', path: 'odd.md', rev: await oldest('odd.md') }), /isn't UTF-8 text/, `U+FFFD, strict ${gitStrict}`)
-    assert.equal(read(root, 'knowledge/odd.md'), '# Clean\n')
-  }
+test('restore: a version not UTF-8 is refused by Echo\'s strict read (Echo #763); a UTF-8 one holding U+FFFD is restored as it is', { skip: !hasGit && 'git is not available' }, async () => {
+  const root = twin(tmp())
+  nfs.writeFileSync(npath.join(root, 'knowledge/latin.md'), Buffer.from([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]))
+  write(root, 'knowledge/odd.md', '# Has a \uFFFD in it\n')
+  repo(root)
+  write(root, 'knowledge/latin.md', '# Cafe\n')
+  write(root, 'knowledge/odd.md', '# Clean\n')
+  sh(root, 'commit', '-qam', 'Now')
+  const ctx = await vault(root, { git: true })
+  const oldest = async (p) => { const v = (await ctx.run('history', { id: 'twin', path: p })).versions; return v[v.length - 1].rev }
+  await assert.rejects(ctx.run('restore', { id: 'twin', path: 'latin.md', rev: await oldest('latin.md') }), /isn't UTF-8 text, so Echo doesn't restore it/)
+  assert.equal(read(root, 'knowledge/latin.md'), '# Cafe\n')
+  await ctx.run('restore', { id: 'twin', path: 'odd.md', rev: await oldest('odd.md') })
+  assert.equal(read(root, 'knowledge/odd.md'), '# Has a \uFFFD in it\n', 'the character is the page\'s own: no double check guesses it away')
 })
 
 test('restore: a page Echo gives no sha for (over 64 MB) is refused, never written without one', { skip: !hasGit && 'git is not available' }, async () => {

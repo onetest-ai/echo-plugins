@@ -398,7 +398,7 @@ test('a run waits while a call is recorded or transcribed: recording comes first
   assert.deepEqual([(await ctx.run('ingest_run', { id: 'twin', run: s.run })).state, ctx.claudeLog.length], ['review', 1])
 })
 
-test('no skill: refused, the starter\'s process-inbox offered — and Echo writes no hidden file for a plugin, so it says how', async () => {
+test('no skill: refused, the starter\'s process-inbox offered and added into the vault on the user\'s word (Echo #776), found at once', async () => {
   const t = twin()
   write(t, SOURCE, SYNC)
   const ctx = await vault(t, { claude: northwind() })
@@ -406,8 +406,10 @@ test('no skill: refused, the starter\'s process-inbox offered — and Echo write
   assert.equal(q.skill, null)
   assert.match(q.starter_skill, /^---\nname: process-inbox/)
   await assert.rejects(ctx.run('ingest_go', { id: 'twin', sources: [SOURCE], wait: true }), /no ingest skill/)
-  await assert.rejects(ctx.run('ingest_skill', { id: 'twin' }), /Echo doesn't let a plugin write a vault's \.claude folder/)
-  assert.ok(!exists(t, '.claude/skills/process-inbox/SKILL.md'))
+  assert.deepEqual(await ctx.run('ingest_skill', { id: 'twin' }), { path: '.claude/skills/process-inbox/SKILL.md' })
+  assert.equal(read(t, '.claude/skills/process-inbox/SKILL.md'), q.starter_skill, 'the text it showed, whole')
+  assert.equal((await ctx.run('ingest_queue', { id: 'twin' })).skill.name, 'process-inbox', 'read again: Ingest has it now')
+  await assert.rejects(ctx.run('ingest_skill', { id: 'twin' }), /already has a process-inbox skill/)
 })
 
 test('the prompt names the sources and a meeting\'s note already in the vault; adds-only and mentions as review.rs reads them', () => {

@@ -708,6 +708,8 @@ function knIngestReview(changes, pending = {}) {
       left: (c.dropped || []).length && c.state !== 'blocked' ? { note: c.note || '', lines: c.dropped } : null,
       blocked: c.state === 'blocked' ? c.note || 'can\'t be written' : null,
       quotes, fromNote, invented: inv ? `${inv} more ${inv === 1 ? 'quote' : 'quotes'} the run gave ${inv === 1 ? 'isn\'t' : 'aren\'t'} in the sources — not shown.` : '',
+      // Its tags as Echo's dictionary names them (the vault's taxonomy winning), said on the change.
+      retagged: (c.retagged || []).length ? `Tags as Echo's dictionary names them: ${c.retagged.map((r) => `#${r.from} → #${r.to}`).join(', ')}.` : '',
     }
   })
   const count = (s) => cards.filter((c) => c.state === s).length
@@ -743,8 +745,11 @@ function knAddState(x, { m365 = true } = {}) {
     case 'call': return { can: !!x.call && !x.busy, label: !x.call ? 'Add a source' : x.mismatch && x.mismatch.name === x.call.name ? 'Add anyway' : 'Add 1 source', count: x.call ? 1 : 0 }
     case 'mail': return m365 ? { can: !!x.hit && !x.busy, label: x.hit ? 'Add 1 source' : 'Add a source', count: x.hit ? 1 : 0 } : { can: false, signin: true, label: 'Add a source', count: 0 }
     case 'web': {
-      const u = String(x.url || '').trim(), ok = /^https:\/\/[^\s/?#]+/i.test(u) && !/\s/.test(u)
-      return { can: ok && !x.busy, label: 'Add the page', count: ok ? 1 : 0, note: u && !ok ? 'Only an https address: Echo fetches nothing else.' : '' }
+      // No address: Echo asks for it in its own box (`ctx.http.askAddress`). One typed here is read at once when it is
+      // on a site listed in Knowledge's settings; Echo's box asks for it otherwise.
+      const u = String(x.url || '').trim(), ok = /^https?:\/\/[^\s/?#]+/i.test(u) && !/\s/.test(u)
+      if (!u) return { can: !x.busy, label: 'Type the address…', count: 1, note: '' }
+      return { can: ok && !x.busy, label: 'Add the page', count: ok ? 1 : 0, note: ok ? '' : 'A web address starts with http:// or https://.' }
     }
   }
   return { can: false, label: '', count: 0 }

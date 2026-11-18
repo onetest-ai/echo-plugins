@@ -436,7 +436,7 @@ test('add and prepare queue the call (store only: no vault write, no run); off q
     assert.equal(w.ctx.fsLog.length, before, `${rule}: nothing written into the vault`)
     const q = ingestOf(w.ctx, v.id).queued
     if (rule === 'off') assert.deepEqual(q, {})
-    else assert.deepEqual([q[`call:${CALL}`].kind, q[`call:${CALL}`].rule, q[`call:${CALL}`].state], ['call', rule, 'queued'])
+    else assert.deepEqual([q['call:2026-11-05_090012'].kind, q['call:2026-11-05_090012'].rule, q['call:2026-11-05_090012'].state], ['call', rule, 'queued'], 'by its stamp (Echo #772)')
   }
 })
 

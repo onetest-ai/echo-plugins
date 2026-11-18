@@ -2187,8 +2187,9 @@ export function chatSourceText(chat) {
   return { title: name, name, until: chat.until, text }
 }
 
-/** The vault's twin skill for use from any folder (starter.rs `twin_skill_text`): named `name`, marked as Echo's copy
- *  of vault `v.id` (`echo_vault:`), its paths made absolute to the vault. */
+/** The vault's twin skill for use from any folder (starter.rs `twin_skill_text`): named `name`, its paths made absolute
+ *  to the vault, and said in its text to be Echo's copy of vault `v.id` — a line of the body, not a property: a skill's
+ *  frontmatter holds only the keys Claude Code reads (Echo's `skill_md_ok`, onetest-ai/echo#776). */
 export function twinSkillText(text, v, name) {
   const root = String(v.root).replace(/\\/g, '/')
   const [raw, body0] = fmSplit(String(text))
@@ -2196,14 +2197,37 @@ export function twinSkillText(text, v, name) {
   let body = body0
   for (const p of ['knowledge/', 'raw_inbox/', 'AGENTS.md', 'log.md', '.claude/']) body = body.split(`\`${p}`).join(`\`${root}/${p}`)
   body = body.split('Paths below are relative to the vault\'s root folder.').join(`The vault is \`${root}\` (${v.name}); work there, wherever Claude Code was started.`)
-  return `---\n${[`name: ${name}`, ...lines, `echo_vault: ${v.id}`].join('\n')}\n---\n${body}`
+  return `---\n${[`name: ${name}`, ...lines].join('\n')}\n---\n\n<!-- Echo's copy of the twin skill of the vault “${oneLine(v.name).replace(/--/g, '-')}” (${v.id}), added from Knowledge. -->\n${body.replace(/^\n+/, '\n')}`
 }
 
-/** A web page as a source (sources.rs `add_page`): its title and Markdown as Echo read them. */
-export function webSourceText(url, title0, md, date, fetched) {
+/** A web page as a source (sources.rs `add_page`): its title and Markdown as Echo read them (`ctx.web.read`, Echo #764:
+ *  the page's words already escaped as text), and what Echo found of it — who wrote it, when, its language. */
+export function webSourceText(url, title0, md, date, fetched, { byline, published, lang } = {}) {
   const title = oneLine(title0) || url
-  const fm = [`title: ${yamlValue(title)}`, `date: ${date}`, 'kind: web', `url: ${yamlValue(url)}`, `fetched: ${fetched}`, 'origin: echo']
+  const fm = [`title: ${yamlValue(title)}`, `date: ${date}`, 'kind: web', `url: ${yamlValue(url)}`, `fetched: ${fetched}`]
+  if (oneLine(byline)) fm.push(`author: ${yamlValue(oneLine(byline))}`)
+  if (/^\d{4}-\d{2}-\d{2}/.test(String(published || ''))) fm.push(`published: ${String(published).slice(0, 10)}`)
+  if (/^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/.test(String(lang || ''))) fm.push(`lang: ${lang}`)
+  fm.push('origin: echo')
   return { title, text: `---\n${fm.join('\n')}\n---\n\n# ${mdText(title)}\n\n${rsTrim(String(md || ''))}\n` }
+}
+/** A page's pictures as Echo saved them (`images: 'save'`) beside its file: each saved one's place in the Markdown
+ *  (`![alt](src)`, its `src` as Echo wrote it — `|` and a backtick percent-encoded) pointed at `<dir>/<NN.ext>`, the
+ *  folder named after the page's file. → {md, files: [{file, name}], failed} — a picture Echo couldn't save keeps its
+ *  address. */
+export function webPictures(md, images, dir) {
+  const enc = (p) => p.split('/').map((c) => encodeURIComponent(c).replace(/[()]/g, (x) => `%${x.charCodeAt(0).toString(16).toUpperCase()}`)).join('/')
+  let out = String(md || '')
+  const files = []
+  let failed = 0
+  for (const im of images || []) {
+    const saved = im && im.saved
+    if (!saved || !saved.file || !/^[0-9]{2,3}\.[a-z0-9]{2,5}$/.test(String(saved.name || ''))) { failed++; continue }
+    const src = String(im.src || '').replace(/\|/g, '%7C').replace(/`/g, '%60')
+    files.push({ file: saved.file, name: saved.name })
+    if (src) out = out.split(`](${src})`).join(`](${enc(`${dir}/${saved.name}`)})`)
+  }
+  return { md: out, files, failed }
 }
 
 /** The Graph id of the message an Outlook link opens (`…?ItemID=<id>…`), or null: Recall keeps a mail's link, not the
@@ -2220,6 +2244,8 @@ export function messageIdOf(url) {
 export const TWIN = 'twin@1'
 /** The twin preset's files in the package (`starter/twin/…`); `gitignore` is written as `.gitignore`. */
 export const twinTarget = (p) => (p === 'gitignore' ? '.gitignore' : p)
+/** The twin skill's place in a vault. */
+export const TWIN_SKILL = '.claude/skills/twin/SKILL.md'
 /** A starter file's text with the vault's name, owner and day filled in; Obsidian's own `{{title}}`/`{{date}}` stay.
  *  In the properties each filled value stays one value (a quoted one escaped, a plain one quoted when it must be); in
  *  the text it is one line of Markdown text. */
@@ -2247,6 +2273,52 @@ export const callKey = (call, sha) => {
   const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(s)
   if (m) return m[1]
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/.test(s) ? s : `x-${sha(s).slice(0, 24)}`
+}
+/** A call's stamp as Echo names it (onetest-ai/echo#772): the `YYYY-MM-DD_HHMMSS` its folder's name starts with, which
+ *  a retitle keeps; a folder without one is its own stamp (its whole name). `given`: Echo's `stamp`, when it gave one. */
+export function stampOf(folder, given) {
+  if (typeof given === 'string' && given) return given
+  const s = String(folder || '').replace(/^call:/, '')
+  const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(s)
+  return m ? m[1] : s
+}
+/** Is `stamp` one a folder's name starts with (two calls started in the same second may share it)? */
+export const datedStamp = (stamp) => /^\d{4}-\d{2}-\d{2}_\d{6}$/.test(String(stamp || ''))
+/** A call's id in a vault's sources ledger (its queue, the calls it has, a source's `from`): `call:<stamp>`, so a
+ *  retitled call is the same one — `call:<folder>` only when another call shares its stamp (`shared(stamp)`). */
+export function callSourceId(folder, stamp, shared) {
+  const f = String(folder || '').replace(/^call:/, '')
+  const s = stampOf(f, stamp)
+  return `call:${s !== f && datedStamp(s) && shared(s) ? f : s}`
+}
+/** A sources ledger of before onetest-ai/echo#772 (calls by `call:<folder>`) by stamp: its calls, its queue's keys and
+ *  ids, its sources' `from` — each `call:<folder>` → `call:<stamp>`, unless two folders of the ledger share that stamp
+ *  or `shared(stamp)` says another call does (kept by folder). Marked `keys: 'stamp'`; → whether anything changed. */
+export function stampLedger(l, shared) {
+  if (!l || l.keys === 'stamp') return false
+  const folders = new Map()
+  const seen = (id) => {
+    if (typeof id !== 'string' || !id.startsWith('call:')) return
+    const f = id.slice(5), st = stampOf(f)
+    if (st === f || !datedStamp(st)) return
+    if (!folders.has(st)) folders.set(st, new Set())
+    folders.get(st).add(f)
+  }
+  for (const id of l.calls || []) seen(id)
+  for (const id of Object.keys(l.queued || {})) seen(id)
+  for (const e of Object.values(l.sources || {})) seen(e && e.from)
+  const to = new Map()
+  for (const [st, fs] of folders) if (fs.size === 1 && !shared(st)) to.set(`call:${[...fs][0]}`, `call:${st}`)
+  const map = (id) => (to.has(id) ? to.get(id) : id)
+  if (Array.isArray(l.calls)) l.calls = [...new Set(l.calls.map(map))]
+  if (l.queued) {
+    const q = {}
+    for (const [id, item] of Object.entries(l.queued)) { const n = map(id); q[n] = n === id ? item : { ...item, id: n } }
+    l.queued = q
+  }
+  for (const e of Object.values(l.sources || {})) if (e && to.has(e.from)) e.from = to.get(e.from)
+  l.keys = 'stamp'
+  return true
 }
 
 // ── step 5: Health's fixes and score, the AI checks' findings, an ingest run's changes (health.rs, lint.rs, ingest.rs,
@@ -2546,6 +2618,50 @@ export function retagText(text, from, to) {
   }
   if (!changed) throw new Error(`#${from} isn't on the page any more`)
   return out.filter((x) => x !== null).join('')
+}
+
+// ── tags through Echo's dictionary (the user's decision: "Echo's dictionary normalises tags"; step 7) ──
+// Echo's dictionary (`ctx.echo.read('dictionary')`: `{terms: [{name, synonyms, spellings, kind, group, client}]}`) knows
+// the names the user's calls use for a thing; a tag written another way (`#acme-corp`, `#ACME`) is the same thing. The
+// vault's own tag taxonomy wins where it has one: a tag is only ever turned into one it allows. Read only — Knowledge
+// never adds to the dictionary (0.8's facts vault did, and is gone).
+
+/** A name as a tag: lower case, words joined by `-`, only what Obsidian's tags take (letters, digits, `_`, `-`, `/`). */
+export function tagForm(name) {
+  return String(name || '').normalize('NFC').toLowerCase().trim().replace(/[\s_]+/g, '-').replace(/[^\p{L}\p{N}\-/]/gu, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '')
+}
+/** What `tag` is in Echo's dictionary: the tag to use instead and the term it is, or null — none known, or it is right
+ *  already. `allowed`: the vault's tag taxonomy's tags (its spelling), or null when it has none; then the term's own
+ *  name as a tag. A practice-wide term is preferred to a client's. */
+export function dictionaryTag(tag, allowed, terms) {
+  const t = String(tag || '').replace(/^#/, '')
+  const key = tagForm(t)
+  if (!key) return null
+  if (allowed && allowed.some((a) => asciiLower(a) === asciiLower(t))) return null
+  const all = (terms || []).filter((x) => x && typeof x.name === 'string' && x.name.trim())
+  const namesOf = (x) => [x.name, ...(x.synonyms || []), ...(x.spellings || [])].filter((n) => typeof n === 'string' && n.trim())
+  const term = [...all.filter((x) => !x.client), ...all.filter((x) => x.client)].find((x) => namesOf(x).some((n) => tagForm(n) === key))
+  if (!term) return null
+  if (allowed) {
+    const forms = new Set(namesOf(term).map(tagForm))
+    const hit = allowed.find((a) => forms.has(tagForm(a)))
+    return hit && asciiLower(hit) !== asciiLower(t) ? { to: hit, term: term.name } : null
+  }
+  const to = tagForm(term.name)
+  return to && to !== key ? { to, term: term.name } : null
+}
+/** `text` with each of its tags Echo's dictionary names otherwise turned into that name (`retagText`, properties and
+ *  inline). → {text, changed: [{from, to, term}]}. */
+export function dictionaryRetag(text, allowed, terms) {
+  const tags = scanPage('page.md', String(text)).tags
+  let out = String(text)
+  const changed = []
+  for (const t of tags) {
+    const d = dictionaryTag(t, allowed, terms)
+    if (!d) continue
+    try { out = retagText(out, t, d.to); changed.push({ from: t, to: d.to, term: d.term }) } catch { /* not where retag reaches (a heading): left */ }
+  }
+  return { text: out, changed }
 }
 
 /** Each `|` written `\|` (those escaped already kept). */
@@ -3830,18 +3946,20 @@ export function apply(ctx) {
     }
     return dir
   }
-  // A page's text and whether it is UTF-8 (Echo reads a file as UTF-8, a byte that isn't as U+FFFD: the text's sha256
-  // is then not the file's). `st` with its sha; read again once when the file changed in between.
+  // A page's text and whether it is UTF-8, by Echo's strict read (onetest-ai/echo#763: a file that isn't UTF-8 is
+  // refused, never read lossily). `sha` is the text's as read — what a save goes only over; a file not read whole as
+  // UTF-8 (over 2 MB, another encoding) is shown as Echo reads it (U+FFFD where a byte isn't UTF-8), its sha `st`'s.
   const readPage = (v, rel, st) => {
-    let text = ctx.fs.read(v.root, rel, EDIT_MAX)
-    let sha = st.sha
-    if (st.size <= EDIT_MAX && ctx.crypto.sha256(text) !== sha) {
-      const again = ctx.fs.stat(v.root, rel, { sha: true })
-      if (again && again.sha !== sha) { sha = again.sha; text = ctx.fs.read(v.root, rel, EDIT_MAX); st = again }
+    if (st.size <= EDIT_MAX) {
+      try {
+        const text = ctx.fs.read(v.root, rel, { max: EDIT_MAX, strict: true })
+        return { text, sha: ctx.crypto.sha256(text), utf8: true, st }
+      } catch (e) { if (!/not UTF-8/i.test(String(e && e.message))) throw e }
     }
-    const utf8 = st.size <= EDIT_MAX && ctx.crypto.sha256(text) === sha
-    return { text, sha, utf8, st }
+    return { text: ctx.fs.read(v.root, rel, EDIT_MAX), sha: st.sha, utf8: false, st }
   }
+  // A file's text read strictly (whole, UTF-8), or null.
+  const readStrict = (v, rel, max) => { try { return ctx.fs.read(v.root, rel, { max: max || READ_MAX, strict: true }) } catch { return null } }
   // Does a newline show as a line break: in an Obsidian vault, unless its "Strict line breaks" is on.
   const lineBreaks = (v) => !!(v.detected && v.detected.obsidian && !v.detected.obsidian.strict_line_breaks)
   const pageHref = (v, p) => `#${ctx.id}:knowledge/${encodeURIComponent(v.id)}/pages/${linkPart(p)}`
@@ -3867,13 +3985,19 @@ export function apply(ctx) {
   const renderPage = (v, ix, page, text) => {
     const body = fmSplit(text)[1]
     if (utf8Len(body) > MD_MAX) return null
-    const own = scanPage(page, text).links
     const bareWiki = (t) => rsTrim(trimEndOf(rsTrim(t.split('|')[0]), '\\'))
-    const wikiLinks = new Set(own.filter((l) => l.wiki && !l.embed).map((l) => bareWiki(l.target)))
-    const wikiEmbeds = new Set(own.filter((l) => l.wiki && l.embed).map((l) => bareWiki(l.target)))
     const fromRel = toVaultRel(v, page)
     const r = resolverOf(ix)
-    const dests = ctx.markdown.links(body)
+    // How each destination was written, as Echo's writer reads it (onetest-ai/echo#757 `{detail: true}`) — never guessed
+    // from the plugin's own scan. A destination written both ways is a wikilink (Obsidian resolves it by name).
+    const dests = ctx.markdown.links(body, { detail: true })
+    const wikiLinks = new Set(), wikiEmbeds = new Set()
+    if (Array.isArray(dests.entries)) {
+      for (const e of dests.entries) if (e && e.kind === 'wiki') (e.embed ? wikiEmbeds : wikiLinks).add(e.dest)
+    } else {
+      // An Echo without `detail`: the plugin's own scan of the page.
+      for (const l of scanPage(page, text).links) if (l.wiki) (l.embed ? wikiEmbeds : wikiLinks).add(bareWiki(l.target))
+    }
     const links = {}
     for (const d of dests.links || []) {
       const wiki = wikiLinks.has(d)
@@ -4193,8 +4317,7 @@ export function apply(ctx) {
     if (!st.sha) throw new Error(`${page} is too large to restore in Echo`)
     const { c, then, shown: seen } = await versionOf(v, rel, rev)
     if (seen.truncated) throw new Error(`that version of ${page} is too large to restore in Echo`)
-    // The version's bytes as text, or a refusal: Echo's strict read where it has one (onetest-ai/echo#763, it throws
-    // "not UTF-8"); an older Echo reads lossily, so its length and any U+FFFD tell instead.
+    // The version's bytes as text, or a refusal: Echo's strict read (onetest-ai/echo#763, it throws "not UTF-8").
     let shown
     try { shown = await ctx.git.show(v.root, c.rev, then, { max: EDIT_MAX, strict: true }) } catch (e) {
       if (/not UTF-8/i.test(String(e && e.message))) throw new Error(`that version of ${page} isn't UTF-8 text, so Echo doesn't restore it`)
@@ -4202,11 +4325,10 @@ export function apply(ctx) {
     }
     if (!shown) throw new Error('that version can\'t be read')
     if (shown.truncated) throw new Error(`that version of ${page} is too large to restore in Echo`)
-    if (utf8Len(shown.text) !== shown.size || shown.text.includes('\uFFFD')) throw new Error(`that version of ${page} isn't UTF-8 text, so Echo doesn't restore it`)
     const dirty = await dirtyOf(v, [rel])
     if (dirty.paths.has(rel)) throw new Error(`${page} has changes that are not committed — commit them first, or copy what you need from this version`)
-    const cur = ctx.fs.read(v.root, rel, EDIT_MAX)
-    let next = withLineEndings(cur, shown.text)
+    const cur = readStrict(v, rel, EDIT_MAX)
+    let next = withLineEndings(cur ?? '', shown.text)
     if (!next.endsWith('\n')) next += '\n'
     try { ctx.fs.write(v.root, rel, next, { ifSha: st.sha }) } catch (e) {
       if (/changed since you read it/.test(String(e && e.message))) throw new Error(`${page} changed while it was being restored: open it again`)
@@ -4214,7 +4336,7 @@ export function apply(ctx) {
     }
     indexes.delete(v.id)
     const commit = await commitOne(v, [rel], CLEAN, `Restore ${rel} to ${String(rev).slice(0, 12)}`)
-    changed(v, rel, 'editor', String(rev), ctx.crypto.sha256(cur) === st.sha ? cur : null, next, commitId(commit))
+    changed(v, rel, 'editor', String(rev), cur !== null && ctx.crypto.sha256(cur) === st.sha ? cur : null, next, commitId(commit))
     return { path: page, ...pg(v), base: ctx.crypto.sha256(next), commit }
   })
   // Find pages (scan.rs `search`): `#tag`, else every word in the title, then the path, then the text (Echo's search
@@ -4379,7 +4501,7 @@ export function apply(ctx) {
     const found = skills.find((k) => k.kind !== 'agents' && /inbox|ingest/i.test(k.name)) || null
     const chosen = (v.ingest && v.ingest.skill && skills.find((k) => k.name === v.ingest.skill)) || found
     return {
-      vault: { id: v.id }, skills, has_twin: skills.some((k) => k.name === 'twin' && k.kind !== 'agents'), global_twin: null, global_twin_name: 'twin',
+      vault: { id: v.id }, skills, has_twin: skills.some((k) => k.name === 'twin' && k.kind !== 'agents'), global_twin: globalTwinOf(v), global_twin_name: v.id.includes('twin') ? v.id : `${v.id}-twin`, twin_made: v.template === TWIN,
       tags: taxText != null ? allowedTags(taxText).length : null, terms: null, tag_file: tagTax, meeting_tag: meetingTag(v.minutes.tag, taxText),
       index_bytes: ist && ist.kind === 'file' ? ist.size : 0, pages: typeof d.md_files === 'number' ? d.md_files : null, cache_bytes: null,
       past: (() => { try { return pastCountOf(v) } catch { return null } })(), templates, in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
@@ -4615,6 +4737,22 @@ export function apply(ctx) {
     if (!r) throw new Error('Echo has no fix for this')
     return r
   }
+  // Echo's dictionary's terms (read again after a minute; none when Echo can't say).
+  let dictSeen = { at: 0, terms: [] }
+  const dictTerms = () => {
+    if (Date.now() - dictSeen.at < 60 * 1000) return dictSeen.terms
+    let terms = []
+    try { const d = ctx.echo && ctx.echo.read('dictionary'); terms = (d && Array.isArray(d.terms)) ? d.terms : [] } catch { /* an Echo without it: none */ }
+    dictSeen = { at: Date.now(), terms }
+    return terms
+  }
+  // The tags the vault's taxonomy allows (its spelling, in order), or null when it has none. `text`: its text in a copy.
+  const allowedOf = (v, text) => {
+    const t = tagTaxonomy((v.detected && v.detected.taxonomies) || [])
+    if (!t) return null
+    const x = text !== undefined ? text : readSafe(v, t)
+    return x === null || x === undefined ? null : tagsInOrder(x)
+  }
   // The tag taxonomy's spelling of `tag`, if it allows it.
   const allowedTag = (v, tag) => {
     const t = tagTaxonomy((v.detected && v.detected.taxonomies) || [])
@@ -4635,7 +4773,8 @@ export function apply(ctx) {
       const x = f.ai.fix
       if (!x) throw new Error('The AI check gave no fix for this')
       if (choice && choice !== 'ai') throw new Error(`“${choice}” isn't a fix for this`)
-      return ['ai', [{ op: 'replace', old: x.old, new: x.new }], false]
+      // The check's text with its tags as Echo's dictionary names them (the vault's taxonomy winning).
+      return ['ai', [{ op: 'replace', old: x.old, new: dictionaryRetag(x.new, allowedOf(v), dictTerms()).text }], false]
     }
     const link = () => { if (!f.subject.link) throw new Error('Echo has no fix for this'); return f.subject.link }
     // An index row is pointed only at the same name (R36); a broken link may be pointed at a near one, flagged.
@@ -4715,7 +4854,11 @@ export function apply(ctx) {
     if (f.kind === 'unknown_tag') {
       const t = tagTaxonomy((v.detected && v.detected.taxonomies) || [])
       const text = t ? readSafe(v, t) : null
-      return [...(text === null ? [] : tagsInOrder(text)).map((x) => c(`tag:${x}`, `Use #${x}`)), c('taxonomy', 'Open the taxonomy to add it')]
+      const allowed = text === null ? [] : tagsInOrder(text)
+      // The tag the taxonomy allows for the same thing in Echo's dictionary, first and said so.
+      const d = text === null ? null : dictionaryTag(f.subject.word, allowed, dictTerms())
+      const first = d ? [c(`tag:${d.to}`, `Use #${d.to} — ${d.term} in Echo's dictionary`)] : []
+      return [...first, ...allowed.filter((x) => !d || x !== d.to).map((x) => c(`tag:${x}`, `Use #${x}`)), c('taxonomy', 'Open the taxonomy to add it')]
     }
     return []
   }
@@ -5183,11 +5326,40 @@ export function apply(ctx) {
   }
   const available = (v) => { try { return ctx.fs.folders().includes(v.root) && (ctx.fs.stat(v.root, '') || {}).kind === 'dir' } catch { return false } }
   const callId = (call) => { const c = String(call || '').replace(/^call:/, ''); if (!c || c.includes('/') || c.includes('\\')) throw new Error('call: a call\'s folder, as Echo names it'); return c }
-  const recPath = (call) => `calls/${callKey(call, ctx.crypto.sha256)}.json`
+  // A call's record is keyed by its stamp (Echo #772: a retitle keeps it, so a retitled call is never saved twice), and
+  // remembers the folder it was last seen by. Two calls started in the same second share a stamp: the record is the
+  // first one's; the other's is `<stamp>~<its folder's sha>` — told apart by Echo's calls of that day (`sharedStamp`).
+  const sharedSeen = new Map()
+  const sharedStamp = (stamp) => {
+    if (!datedStamp(stamp) || !ctx.echo) return false
+    const hit = sharedSeen.get(stamp)
+    if (hit && Date.now() - hit.at < 60 * 1000) return hit.shared
+    let shared = false
+    try {
+      const day = stamp.slice(0, 10)
+      shared = (ctx.echo.read('calls', { since: day, until: day, limit: 500 }) || []).filter((c) => stampOf(c.id, c.stamp) === stamp).length > 1
+    } catch { /* Echo can't say: the stamp alone */ }
+    sharedSeen.set(stamp, { at: Date.now(), shared })
+    return shared
+  }
+  const recKey = (call, stamp) => {
+    const st = stampOf(call, stamp)
+    const main = callKey(st, ctx.crypto.sha256)
+    if (st === call) return main
+    let r = null
+    try { r = readJson(`calls/${main}.json`, null) } catch { /* unreadable: its own */ }
+    // None yet, this call's, or one kept before records named their folder: by the stamp. Another folder's: the
+    // same call retitled, unless another call has this stamp now.
+    if (!r || !r.folder || r.folder === call || !sharedStamp(st)) return main
+    return `${main}~${ctx.crypto.sha256(call).slice(0, 12)}`
+  }
+  const recPath = (call, stamp) => `calls/${recKey(call, stamp)}.json`
   const EMPTY_REC = { choice: null, saved: [], failed: [] }
-  const callRec = (call) => ({ ...EMPTY_REC, ...readJson(recPath(call), EMPTY_REC) })
-  const updateRec = (call, fn) => { pastGen++; return updateJson(recPath(call), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; return fn(r) }) }
+  const callRec = (call, stamp) => ({ ...EMPTY_REC, ...readJson(recPath(call, stamp), EMPTY_REC) })
+  const updateRec = (call, fn, stamp) => { pastGen++; return updateJson(recPath(call, stamp), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; if (!datedStamp(call)) r.folder = call; return fn(r) }) }
   const source = (call, opts) => ctx.echo.read('source', `call:${call}`, opts)
+  // A call's id in a ledger: `call:<stamp>` (`call:<folder>` when another call shares the stamp).
+  const srcIdOf = (call, stamp) => callSourceId(call, stamp, sharedStamp)
 
   // ── where a call goes ──
   const openThreads = () => { try { return ctx.echo.read('threads') || [] } catch { return [] } }
@@ -5475,8 +5647,9 @@ export function apply(ctx) {
   // ── Ingest's sources: the ledger, the queue, the sources folder ──
   const ledgerPath = (id) => `vaults/${id}/ingest.json`
   const EMPTY_LEDGER = { baseline: null, sources: {}, queued: {}, calls: [], mails: [], runs: [] }
-  const ledger = (v) => ({ ...EMPTY_LEDGER, ...readJson(ledgerPath(v.id), EMPTY_LEDGER) })
-  const updateLedger = (v, fn) => updateJson(ledgerPath(v.id), EMPTY_LEDGER, (l) => { for (const k of Object.keys(EMPTY_LEDGER)) if (l[k] === undefined) l[k] = JSON.parse(JSON.stringify(EMPTY_LEDGER[k])); return fn(l) })
+  // A ledger of before Echo #772 names calls by folder: read by stamp at once, and kept so at its next write.
+  const ledger = (v) => { const l = { ...EMPTY_LEDGER, ...readJson(ledgerPath(v.id), EMPTY_LEDGER) }; stampLedger(l, sharedStamp); return l }
+  const updateLedger = (v, fn) => updateJson(ledgerPath(v.id), EMPTY_LEDGER, (l) => { for (const k of Object.keys(EMPTY_LEDGER)) if (l[k] === undefined) l[k] = JSON.parse(JSON.stringify(EMPTY_LEDGER[k])); stampLedger(l, sharedStamp); return fn(l) })
   const sourcesDirOf = (v) => vaultPath(v, 'sources') || (v.detected && v.detected.sources) || 'raw_inbox'
   const processedOf = (v) => { const l = logOf(v); return processedPaths(l ? readSafe(v, l, 4 << 20) : '') }
   // The files of the sources folder (its README, dot names and links left out), vault-relative.
@@ -5512,7 +5685,7 @@ export function apply(ctx) {
       const texts = await ctx.fs.readMany(v.root, some, 64 << 10)
       some.forEach((p, k) => heads.set(p, texts[k]))
     }
-    const out = files.map((f) => {
+    const out = files.filter((f) => !(l.sources[f.path] && l.sources[f.path].of)).map((f) => {
       const e = l.sources[f.path]
       return { path: f.path, kind: kindOf(dir, f.path), title: titleOf(f.path, heads.get(f.path)), state: sourceState(e, done.has(f.path)), size: f.size, added: e ? e.added : null, by: e ? e.by : null, note: (e && e.note) || null, anyway: !!(e && e.anyway), when: (e && Date.parse(e.added)) || f.mtime * 1000 }
     })
@@ -5548,30 +5721,41 @@ export function apply(ctx) {
       const text = sourcesReadme()
       try { ctx.fs.write(v.root, readmeRel, text, { createNew: true }); written.push({ rel: readmeRel, text }) } catch (e) { if (!/is there already/.test(errText(e))) throw e }
     }
-    let rel = null, size = 0
+    let rel = null, size = 0, text = null
+    // `n.text` may depend on the name taken (a web page's pictures are in a folder named after its file).
+    const textFor = (cand) => (typeof n.text === 'function' ? n.text(cand.split('/').pop().replace(/\.md$/i, '')) : n.text)
     for (let k = 1; k < 1000 && rel === null; k++) {
       const cand = `${dir}/${k === 1 ? n.name : `${stem} (${k})${ext}`}`
       if (taken.has(cand) || (dir === base && asciiLower(cand.split('/').pop()) === 'readme.md') || statSafe(v, cand)) continue
+      if (n.pictures && n.pictures.length && statSafe(v, cand.replace(/\.md$/i, ''))) continue
       try {
         if (n.file) size = (await ctx.fs.copyIn(n.file, v.root, cand, { createNew: true })).size
-        else ctx.fs.write(v.root, cand, n.text, { createNew: true })
+        else { text = textFor(cand); ctx.fs.write(v.root, cand, text, { createNew: true }) }
         rel = cand
       } catch (e) { if (!/is there already/.test(errText(e))) throw e }
     }
     if (rel === null) throw new Error(`no free name for ${n.name} in ${dir}/`)
-    written.push({ rel, text: n.text == null ? null : n.text })
+    written.push({ rel, text })
+    // A web page's pictures, copied as Echo saved them into the folder named after its file: part of the page (`of`),
+    // never sources of their own in the queue.
+    const parts = []
+    for (const f of n.pictures || []) {
+      const prel = `${rel.replace(/\.md$/i, '')}/${f.name}`
+      try { await ctx.fs.copyIn(f.file, v.root, prel, { createNew: true }); parts.push(prel) } catch (e) { ctx.log(`picture ${prel}: ${errText(e)}`) }
+    }
     // Echo knows the folder now: the vault's sources, never pages.
     if (!vaultPath(v, 'sources') && !(v.detected && v.detected.sources)) change((vs) => { const w = vs.find((x) => x.id === v.id); if (w) { w.detected = { ...(w.detected || {}), sources: base }; indexes.delete(v.id) } })
     const sha = (statSafe(v, rel, { sha: true }) || {}).sha || ''
     updateLedger(v, (x) => {
       x.sources[rel] = { sha256: sha, added: new Date().toISOString(), by: n.by, state: 'new', anyway: !!n.anyway, ...(n.from ? { from: n.from } : {}) }
+      for (const p of parts) x.sources[p] = { sha256: (statSafe(v, p, { sha: true }) || {}).sha || '', added: new Date().toISOString(), by: n.by, state: 'new', of: rel }
       if (n.from && n.by === 'call' && !x.calls.includes(n.from)) x.calls.push(n.from)
       if (n.from && n.by === 'mail' && !x.mails.includes(n.from)) x.mails.push(n.from)
       // A mail added by the user is known by its message's id too: the queue never takes it again.
       if (n.message && !x.mails.includes(`m365:${n.message}`)) x.mails.push(`m365:${n.message}`)
       if (n.from) delete x.queued[n.from]
     })
-    const items = v.commit ? shaItems(v, written.map((w) => w.rel).filter((p) => !dirty.paths.has(p))) : []
+    const items = v.commit ? shaItems(v, [...written.map((w) => w.rel), ...parts].filter((p) => !dirty.paths.has(p))) : []
     let commit = v.commit ? 'pending' : 'off'
     if (!n.noCommit && v.commit) {
       const r = await commitPaths(v, items, `Add source: ${Array.from(oneLine(n.title)).slice(0, 80).join('')}`)
@@ -5582,19 +5766,62 @@ export function apply(ctx) {
       if (w.text != null) changed(v, w.rel, 'source', n.from || null, null, w.text, commitId(commit))
       else record(v, { at: new Date().toISOString(), path: w.rel, kind: 'new', by: 'source', ref: n.from || null, plus: 0, minus: 0, commit: commitId(commit) })
     }
-    return { path: rel, committed: commit, size, paths: items.map((i) => i.path), items }
+    return { path: rel, committed: commit, size, paths: items.map((i) => i.path), items, ...(n.pictures ? { pictures: parts.length } : {}) }
   })
+  // A web page as a source (Echo #764 `ctx.web.read`: the page as safe Markdown, its pictures saved as handles) — read
+  // once, now, on the user's word; never again on a timer. Echo reads only where the plugin may fetch: a site the user
+  // listed in its settings (`network.hosts_from`), else the address the user types in Echo's own box
+  // (`ctx.http.askAddress`, once). A page that builds itself with JavaScript isn't run: nothing is added, said so.
+  const webSource = async (v, url0) => {
+    if (!ctx.web || typeof ctx.web.read !== 'function') throw new Error('Adding a web page is not yet in this Echo')
+    let u = String(url0 || '').trim()
+    let page = null
+    if (u) {
+      if (!/^https?:\/\/[^\s/?#]+/i.test(u) || /\s/.test(u)) throw new Error('a web page by its address: http:// or https://')
+      const had = Object.entries(ledger(v).sources).find(([p, e]) => e && e.from === u && !e.of && statSafe(v, p))
+      if (had) throw new Error(`this page is in the vault already: ${had[0]}`)
+      try { page = await ctx.web.read(u, { images: 'save' }) } catch (e) { if (!/may reach only/.test(errText(e))) throw e }
+    }
+    if (!page) {
+      // Not a site the user listed: Echo asks for the address in its own box, and reads that page once.
+      if (!ctx.http || typeof ctx.http.askAddress !== 'function') throw new Error('Echo reads a page only on a site listed in Knowledge\'s settings (Sites it reads)')
+      const typed = await ctx.http.askAddress()
+      if (!typed) return { cancelled: true }
+      u = String(typed)
+      page = await ctx.web.read(u, { images: 'save' })
+    }
+    const md = rsTrim(String((page && page.markdown) || ''))
+    if (!md || (page && page.needs_js && utf8Len(md) < 200)) {
+      throw new Error('This page builds itself with JavaScript, which Echo doesn\'t read yet, so nothing was added. Save it from your browser as a PDF and add the file instead')
+    }
+    const date = today()
+    const meta = { byline: page.byline, published: page.published, lang: page.lang }
+    const title = webSourceText(u, page.title, '', date, '', {}).title
+    const pics = page.images || []
+    let failed = 0
+    const text = (stem) => {
+      const p = webPictures(md, pics, stem)
+      failed = p.failed
+      return webSourceText(u, page.title, p.md, date, new Date().toISOString(), meta).text
+    }
+    const pictures = webPictures(md, pics, 'x').files
+    const out = await writeSource(v, { sub: 'web', name: datedName(date, title, 'page'), title, by: 'web', from: u, text, pictures })
+    // Pictures Echo couldn't save (its caps, a type it doesn't take) and any its copy couldn't put beside the page.
+    return { ...out, url: u, truncated: !!page.truncated, pictures_failed: failed + (pictures.length - (out.pictures || 0)) }
+  }
   // A call as a source: Echo's minutes (and the transcript and chat when asked), `echo/<date>-<slug>.md`.
-  const callSource = async (v, call, { transcript = false, chat = false, anyway = false, noCommit = false, once = false } = {}) => {
-    const src = source(call, { transcript, chat })
+  // `call`: its folder, or its stamp (a queued call's: Echo reads the call that has that stamp now, retitled or not).
+  const callSource = async (v, call0, { transcript = false, chat = false, anyway = false, noCommit = false, once = false } = {}) => {
+    const src = source(call0, { transcript, chat })
+    const call = src && src.id ? callId(src.id) : call0
     const across = !sameProfile(src.profile, v)
     if (across && !anyway) throw mismatch(src.profile, v)
-    const entry = callRec(call).saved.find((e) => e.vault === v.id)
+    const entry = callRec(call, src.stamp).saved.find((e) => e.vault === v.id)
     const note = entry && statSafe(v, entry.path) ? entry.path : null
     const memo = src.memo || src.kind === 'memo'
     const date = src.date || today()
     const { title, text } = callSourceText({ title: src.title, date, memo, participants: src.participants || src.attendees, duration: src.duration_min, link: src.link || `echo://call/${call}`, note, text: src.text, transcript: transcript ? src.transcript : null, chat: chat ? chatPart(src.chat) : '' })
-    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: `call:${call}`, anyway: across, text, noCommit, once })
+    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: srcIdOf(call, src.stamp), anyway: across, text, noCommit, once })
   }
   // A mail as a source: its own text read from Microsoft 365 now — for a queued one only when a batch is prepared (the
   // queue keeps Recall's facts, never a message's words). Its AI profile is Recall's (its threads'); a mail Recall
@@ -5623,7 +5850,7 @@ export function apply(ctx) {
   // and the call into the queue of every routed vault whose rule asks for calls.
   const onMinutes = async (p, { catchUp = false } = {}) => {
     const call = callId(p.call || p.id)
-    const rec = callRec(call)
+    const rec = callRec(call, p.stamp)
     const route = routeOf(p.threads || [])
     const out = { saved: [], queued: [] }
     for (const v of targetsOf(rec, route, p.profile)) {
@@ -5636,7 +5863,7 @@ export function apply(ctx) {
       for (const x of route.vaults) {
         const v = x.vault
         if (!v || v.ingest.calls === 'off' || !sameProfile(p.profile, v)) continue
-        try { if (queueInto(v, { id: `call:${call}`, kind: 'call', title: p.title || call, date: (p.started_at || '').slice(0, 10) || null, rule: v.ingest.calls })) out.queued.push(v.id) } catch (err) { ctx.log(`queue of ${call} → ${v.id}: ${errText(err)}`) }
+        try { if (queueInto(v, { id: srcIdOf(call, p.stamp), kind: 'call', title: p.title || call, date: (p.started_at || '').slice(0, 10) || null, rule: v.ingest.calls })) out.queued.push(v.id) } catch (err) { ctx.log(`queue of ${call} → ${v.id}: ${errText(err)}`) }
       }
     }
     return out
@@ -5699,6 +5926,14 @@ export function apply(ctx) {
     if (ok) ctx.store.write('seen.json', JSON.stringify({ since: day }))
     return { first: false, ok }
   }
+  // A ledger of before Echo #772 (its calls by folder) is kept by stamp once the app starts: a call retitled since is
+  // the same call, never queued or written again.
+  const stampLedgers = () => {
+    for (const v of load()) {
+      try { const t = ctx.store.read(ledgerPath(v.id)); if (t && !/"keys":\s*"stamp"/.test(t)) updateLedger(v, () => {}) } catch (e) { ctx.log(`ledger of ${v.id}: ${errText(e)}`) }
+    }
+  }
+  if (!ctx.terminal && ctx.echo) stampLedgers()
   // The catch-up as a command (the app runs it on start; a test or a terminal asks it).
   ctx.command('catch_up', () => catchUp())
   if (!ctx.terminal && ctx.echo) catchUp().catch((e) => ctx.log(`catch-up: ${errText(e)}`))
@@ -5842,7 +6077,7 @@ export function apply(ctx) {
   // The past calls of a vault (since `day`, else the last 500 calls), and with `dry` false their minutes saved there.
   const pastTodo = (v, day) => (ctx.echo.read('calls', day ? { since: day, limit: 500 } : { limit: 500 }) || []).filter((c) => c.minutes).filter((c) => {
       const id = String(c.id || '').replace(/^call:/, '')
-      const rec = callRec(id)
+      const rec = callRec(id, c.stamp)
       return rec.choice !== 'none' && (!rec.choice || rec.choice === v.id) && !rec.saved.some((e) => e.vault === v.id) && sameProfile(c.profile, v) &&
         (rec.choice === v.id || routeOf(c.threads || []).vaults.some((x) => x.id === v.id))
   })
@@ -5952,17 +6187,7 @@ export function apply(ctx) {
       }
       return { added }
     }
-    if (kind === 'web') {
-      // A web page as Markdown is Echo's to read (`ctx.web.read`, not merged yet): never an extractor of the plugin's.
-      if (!ctx.web || typeof ctx.web.read !== 'function') throw new Error('Adding a web page is not yet in this Echo')
-      const u = String(url || '')
-      if (!/^https:\/\//i.test(u)) throw new Error('a web page by its https address')
-      const page = await ctx.web.read(u)
-      const date = today()
-      const w = webSourceText(u, page && page.title, page && (page.markdown || page.text), date, new Date().toISOString())
-      const { paths, items, ...out } = await writeSource(v, { sub: 'web', name: datedName(date, w.title, 'page'), title: w.title, by: 'web', from: u, text: w.text })
-      return out
-    }
+    if (kind === 'web') { const { paths, items, ...out } = await webSource(v, url); return out }
     throw new Error('kind: call, mail, file or web')
   })
   // The queue made into files of the sources folder (calls and mail the events queued): a mail's own text read from
@@ -6049,8 +6274,11 @@ export function apply(ctx) {
   ctx.command('starter_files', () => twinFiles().map(([p]) => p))
   // A new vault from the twin preset in a new or empty folder (picked; the system's picker makes a new one): the files
   // with its name, owner and day filled in, `git init` and a first commit when asked, registered as `twin@1` (commits
-  // on when committed), an activity line. Echo writes no hidden file for a plugin: the preset's `.claude/skills`,
-  // `.gitignore` and `knowledge/.obsidian` are left out and said so.
+  // on when committed), an activity line. Echo writes the few hidden files a vault needs (onetest-ai/echo#776): its
+  // `.gitignore`, the skills in `.claude/skills/` (each checked by Echo: Markdown that runs nothing) — the twin skill
+  // there only when the plugin's setting says "vault"; "global" offers it for the user's own Claude Code on their click
+  // (the window half's `ctx.claude.installSkill`). What Echo still refuses (Obsidian's settings in `knowledge/.obsidian/`:
+  // Echo writes `.obsidian/` only at a folder's top) is left out and said so.
   ctx.command('new_vault', async ({ name: n0, folder: f0, pick, git, minutes }) => {
     const folder = f0 || pick
     const name = rsTrim(String(n0 || '')).slice(0, 80)
@@ -6070,12 +6298,15 @@ export function apply(ctx) {
     const owner = (() => { try { const m = ctx.echo.read('me'); return (m && typeof m.name === 'string' && rsTrim(m.name)) || 'me' } catch { return 'me' } })()
     const date = today()
     const written = [], leftOut = []
+    // Where the twin's skills go (the plugin's setting): the vault's own `.claude/skills`, or the user's ~/.claude/skills.
+    const where = (() => { try { return ctx.settings.get('skills') === 'global' ? 'global' : 'vault' } catch { return 'vault' } })()
     let lines = 0
     for (const [p, text] of files) {
       const target = twinTarget(p)
+      if (where === 'global' && target === TWIN_SKILL) continue
       const filled = fillStarter(text, { name, owner, date })
       try { ctx.fs.write(picked, target, filled, { createNew: true }); written.push(target); lines += textLines(filled).length } catch (e) {
-        if (/hidden/.test(errText(e))) leftOut.push({ path: target, why: errText(e) })
+        if (/hidden/.test(errText(e))) leftOut.push({ path: target, why: /\.obsidian\//.test(target) ? 'Echo writes Obsidian\'s settings only in the vault\'s top folder; Obsidian makes its own when you open knowledge/' : errText(e) })
         else throw e
       }
     }
@@ -6102,11 +6333,11 @@ export function apply(ctx) {
     try { await redetect(id) } catch (e) { ctx.log(`detect ${id}: ${errText(e)}`) }
     record(vaultOf(id), { at: new Date().toISOString(), path: '', kind: 'new', by: 'starter', ref: TWIN, plus: lines, minus: 0, commit: first })
     analyse(id).catch(() => {})
-    // Where the twin's skills go (the plugin's setting): the vault's own `.claude/skills`, or `~/.claude/skills`.
-    const where = (() => { try { return ctx.settings.get('skills') === 'global' ? 'global' : 'vault' } catch { return 'vault' } })()
+    // The twin skill: in the vault, or offered for the user's own Claude Code (installed only on their click there).
+    const inVault = written.filter((p) => p.startsWith('.claude/skills/'))
     const skills = where === 'global'
-      ? { where, installed: false, why: 'Echo doesn\'t let a plugin write your ~/.claude/skills' }
-      : { where, installed: !leftOut.some((x) => x.path.startsWith('.claude/')), why: leftOut.some((x) => x.path.startsWith('.claude/')) ? 'Echo doesn\'t let a plugin write a vault\'s .claude folder' : null }
+      ? { where, in_vault: inVault, offer: 'twin', why: null }
+      : { where, in_vault: inVault, offer: null, why: inVault.includes(TWIN_SKILL) ? null : (leftOut.find((x) => x.path === TWIN_SKILL) || {}).why || null }
     return { id, vault: { id, name }, root: picked, git: gitState, written: written.length, left_out: leftOut, skills }
   })
 
@@ -6120,7 +6351,7 @@ export function apply(ctx) {
     if (c.notes !== false) { try { src = source(call, { transcript: false, chat: false }) } catch { /* no minutes yet */ } }
     const p = src ? src.profile : c.profile ?? null
     const route = routeOf(src ? src.threads : (c.threads || []))
-    const rec = callRec(call)
+    const rec = callRec(call, c.stamp)
     const ps = profilesNow()
     const vs = load()
     const vaults = vs.map((v) => ({ id: v.id, name: v.name, available: available(v), profile: profileOf(v.profile, ps), mode: v.minutes.mode }))
@@ -6147,21 +6378,28 @@ export function apply(ctx) {
     const c = (ctx.echo.read('calls', { limit: 200 }) || []).find((x) => x.minutes && sameProfile(x.profile, v))
     return c ? own.minutes_preview({ call: String(c.id).replace(/^call:/, ''), vault: v.id }) : null
   })
-  // The twin skill: into the vault (`add`), or for every Claude Code session (`global`, `global_remove`). Echo writes no
-  // hidden file for a plugin (`.claude/…`) and nothing in ~/.claude: said, never worked around.
-  ctx.command('twin', async ({ id, op }) => {
+  // The name the vault's twin skill was added under in the user's own Claude Code (from this window), or null.
+  const globalTwinOf = (v) => { try { return readJson('global-skills.json', {})[v.id] || null } catch { return null } }
+  // The twin skill: into the vault (`add`, the starter's — Echo writes a vault's `.claude/skills/<name>/SKILL.md`, onetest-ai/echo#776).
+  // For every Claude Code session it is the window half's to add, on the user's click (`ctx.claude.installSkill`): the
+  // host half only remembers which name it went in as (`installed`, `removed`), to show it in the vault's Settings.
+  ctx.command('twin', async ({ id, op, name }) => {
     const v = find(load(), id)
     if (op === 'add') {
-      if (statSafe(v, '.claude/skills/twin/SKILL.md')) throw new Error('This vault already has a twin skill')
-      const text = ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md')
-      try { ctx.fs.write(v.root, '.claude/skills/twin/SKILL.md', text, { createNew: true }) } catch (e) {
-        if (/hidden/.test(errText(e))) throw new Error('Echo doesn\'t let a plugin write a vault\'s .claude folder — copy the starter\'s twin skill into .claude/skills/twin/ yourself')
-        throw e
-      }
-      return { path: '.claude/skills/twin/SKILL.md' }
+      if (statSafe(v, TWIN_SKILL)) throw new Error('This vault already has a twin skill')
+      const text = ctx.package.read(`starter/twin/${TWIN_SKILL}`)
+      ctx.fs.write(v.root, TWIN_SKILL, text, { createNew: true })
+      indexes.delete(v.id)
+      record(v, { at: new Date().toISOString(), path: TWIN_SKILL, kind: 'new', by: 'starter', ref: TWIN, plus: textLines(text).length, minus: 0, commit: null })
+      return { path: TWIN_SKILL }
     }
-    if (op === 'global' || op === 'global_remove') throw new Error('Echo doesn\'t let a plugin write your ~/.claude/skills')
-    throw new Error('op: add, global or global_remove')
+    if (op === 'installed' || op === 'removed') {
+      const n = String(name || '')
+      if (op === 'installed' && !/^[a-z0-9-]{1,64}$/.test(n)) throw new Error('a skill\'s name is 1–64 of a-z, 0-9 and -')
+      return updateJson('global-skills.json', {}, (m) => { if (op === 'installed') m[v.id] = n; else delete m[v.id]; return { vault: v.id, name: op === 'installed' ? n : null } })
+    }
+    if (op === 'global' || op === 'global_remove') throw new Error('Your own Claude Code\'s skills are added and removed in the window, on your click')
+    throw new Error('op: add, installed or removed')
   })
   // The vault's twin skill as `global` would write it: its own (else the starter's), named, its paths made absolute.
   ctx.command('twin_text', ({ id, name }) => {
@@ -6281,9 +6519,11 @@ export function apply(ctx) {
   const wake = () => { for (const w of [...calls.waiters]) w() }
   const hear = (event, fn) => { try { const r = ctx.on(event, (p) => { try { fn(p || {}) } catch (e) { ctx.log(`${event}: ${errText(e)}`) } }); if (r && r.catch) r.catch(() => {}) } catch { /* an Echo without the event */ } }
   if (ctx.on) {
-    hear('recording_started', (p) => { calls.recording.set(String(p.call || 'call'), { at: Date.now() }) })
-    hear('recording_stopped', (p) => { const c = String(p.call || 'call'); calls.recording.delete(c); calls.transcribing.set(c, { at: Date.now(), for: Math.max(30 * 60, 2 * (Number(p.duration_s) || 0)) * 1000 }); wake() })
-    hear('transcribed', (p) => { calls.transcribing.delete(String(p.call || 'call')); wake() })
+    // By the call's stamp (Echo #772): a call retitled while it records is the same call when it is transcribed.
+    const callOf = (p) => String(p.stamp || p.call || 'call')
+    hear('recording_started', (p) => { calls.recording.set(callOf(p), { at: Date.now() }) })
+    hear('recording_stopped', (p) => { const c = callOf(p); calls.recording.delete(c); calls.transcribing.set(c, { at: Date.now(), for: Math.max(30 * 60, 2 * (Number(p.duration_s) || 0)) * 1000 }); wake() })
+    hear('transcribed', (p) => { calls.transcribing.delete(callOf(p)); wake() })
   }
   // Until no call is recorded or transcribed (or the run is stopped): `say(why | null)` as it waits.
   // A terminal's command hears no events and has no timer to look again: it doesn't start while Echo records.
@@ -6594,9 +6834,26 @@ export function apply(ctx) {
     let refused = 0, k = 0
     const texts = new Map()
     const textOf = (s) => { if (!texts.has(s)) texts.set(s, readSafe(v, s, 4 << 20)); return texts.get(s) }
-    // A file of the copy as text, strictly: one that isn't UTF-8 is `binary` (Echo refuses it before any text reaches
-    // the plugin's heap; it is never compared lossily here).
-    const readCopy = (rel) => { try { return { text: ctx.store.read(`${snap}/${rel}`) } } catch (e) { return /UTF-8/i.test(errText(e)) ? { binary: true } : null } }
+    // The run's pages' tags as Echo's dictionary names them — against the taxonomy as the run left it (it may have added
+    // a tag to it). Never the index, the log or the taxonomy itself.
+    const taxRel = tagTaxonomy((v.detected && v.detected.taxonomies) || [])
+    let allowedRun
+    const allowedNow = () => {
+      if (allowedRun === undefined) { try { allowedRun = taxRel ? allowedOf(v, ctx.store.read(`${snap}/${taxRel}`)) : null } catch { allowedRun = allowedOf(v) } }
+      return allowedRun
+    }
+    const terms = dictTerms()
+    // A file of the copy as text, strictly: one that isn't UTF-8 is `binary` (never compared or written lossily). A text
+    // file in another encoding (a cp1251 page, say) is also read as Echo reads it lossily (onetest-ai/echo#763
+    // `{lossy: true}`), only to be shown, read-only, in the review; a picture or any other binary never is.
+    const readCopy = (rel) => {
+      try { return { text: ctx.store.read(`${snap}/${rel}`) } } catch (e) {
+        if (!/UTF-8/i.test(errText(e))) return null
+        let shown = null
+        if (/\.(md|markdown|txt|csv|tsv)$/i.test(rel)) { try { shown = ctx.store.read(`${snap}/${rel}`, { lossy: true }) } catch { /* nothing to show */ } }
+        return { binary: true, shown }
+      }
+    }
     // Core #778's `ctx.store.walk`: the copy's files with their sizes and shas, nothing read to know what changed; an
     // older Echo: listed and read (strictly) as before.
     let listed = null
@@ -6631,10 +6888,17 @@ export function apply(ctx) {
       const n = notes.get(rel) || { why: null, quotes: [] }
       const q = ingestQuotes(sources, n.quotes, textOf)
       const f = { path: rel, new: !base, base_sha: base ? base.sha : null, blocked, why: n.why, ...q }
+      if (r.binary && typeof r.shown === 'string' && utf8Len(r.shown) <= READ_MAX) { ctx.store.write(`${dir}/run/${rel}`, r.shown); f.shown = true }
       if (!blocked) {
-        ctx.store.write(`${dir}/run/${rel}`, r.text)
+        let text = r.text
+        const kind = changeKind(v, rel, !base)
+        if (terms.length && (kind === 'new' || kind === 'edit')) {
+          const d = dictionaryRetag(text, allowedNow(), terms)
+          if (d.changed.length) { text = d.text; f.retagged = d.changed }
+        }
+        ctx.store.write(`${dir}/run/${rel}`, text)
         // The vault's file as the run found it, while it still is: the diff and the activity line stay the run's own.
-        if (base) { const st = statSafe(v, rel, { sha: true }); if (st && st.kind === 'file' && st.sha === base.sha) { const now = readSafe(v, rel, READ_MAX); if (now !== null && ctx.crypto.sha256(now) === base.sha) ctx.store.write(`${dir}/base/${rel}`, now) } }
+        if (base) { const st = statSafe(v, rel, { sha: true }); if (st && st.kind === 'file' && st.sha === base.sha) { const now = readStrict(v, rel, READ_MAX); if (now !== null && ctx.crypto.sha256(now) === base.sha) ctx.store.write(`${dir}/base/${rel}`, now) } }
       }
       found.push(f)
     }
@@ -6646,6 +6910,9 @@ export function apply(ctx) {
   const copyExclude = async (v, batch) => {
     const dir = sourcesDirOf(v)
     const keep = new Set(batch)
+    // A web page's pictures go with it.
+    const parts = ledger(v).sources
+    for (const [p, e] of Object.entries(parts)) if (e && e.of && keep.has(e.of)) keep.add(p)
     const files = (await sourceFiles(v)).map((f) => f.path).filter((p) => !keep.has(p))
     const groups = new Map()
     for (const p of files) { const sub = p.slice(dir.length + 1).split('/'); const g = sub.length > 1 ? `${dir}/${sub[0]}` : p; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(p) }
@@ -6729,7 +6996,7 @@ export function apply(ctx) {
     const out = []
     for (const f of rv.found || []) {
       const a = (rv.answers || {})[f.path] || {}
-      const runText = f.blocked ? '' : (ctx.store.read(`${dir}/run/${f.path}`) ?? '')
+      const runText = f.blocked && !f.shown ? '' : (ctx.store.read(`${dir}/run/${f.path}`) ?? '')
       const st = f.blocked ? null : statSafe(v, f.path, { sha: true })
       const now = st && st.kind === 'file' && st.real != null ? readPage(v, f.path, st) : null
       const kept = f.new || f.blocked ? null : ctx.store.read(`${dir}/base/${f.path}`)
@@ -6750,7 +7017,7 @@ export function apply(ctx) {
       else if (changedSince && !forced && (state === 'undecided' || state === 'approved')) state = 'changed'
       const left = state === 'changed' ? (now ? now.text : '') : base != null ? base : now ? now.text : ''
       const c = {
-        path: f.path, kind, adds_only: rows !== null, plus: 0, minus: 0, diff: [], why: f.why || null, quotes: f.quotes || [], invented: f.invented || 0,
+        path: f.path, kind, adds_only: rows !== null, plus: 0, minus: 0, diff: [], why: f.why || null, quotes: f.quotes || [], invented: f.invented || 0, retagged: a.text == null ? (f.retagged || []) : [],
         quote_note: f.quote_note || null, dropped: [], note: f.blocked || (unreadable ? 'can\'t be written: the vault\'s file isn\'t UTF-8 text Echo reads whole (over 2 MB, or another encoding)' : null), state, edited: a.text != null,
         new_file: !!f.new, approved: a.state === 'approved' && !f.blocked && !unreadable, force: forced, force_sha: a.force_sha ?? null, base_sha: f.base_sha, base: f.new ? null : base, left, text, rows: rows || [],
       }
@@ -6761,7 +7028,7 @@ export function apply(ctx) {
     dropRejected(out, fillChange)
     return out
   }
-  const changePublic = (c) => ({ vault_sha: c.vault_sha, path: c.path, kind: c.kind, adds_only: c.adds_only, plus: c.plus, minus: c.minus, diff: c.diff, why: c.why, quotes: c.quotes, invented: c.invented, quote_note: c.quote_note, dropped: c.dropped, note: c.note, state: c.state, edited: c.edited })
+  const changePublic = (c) => ({ vault_sha: c.vault_sha, path: c.path, kind: c.kind, adds_only: c.adds_only, plus: c.plus, minus: c.minus, diff: c.diff, why: c.why, quotes: c.quotes, invented: c.invented, quote_note: c.quote_note, dropped: c.dropped, note: c.note, state: c.state, edited: c.edited, retagged: c.retagged || [] })
   const reviewing = (v, run) => {
     const r = ingFind(v, run)
     if (r.state !== 'review' || readJson(`${ingDir(v.id, run)}/review.json`, null) === null) throw new Error('This run\'s changes aren\'t waiting for review')
@@ -7011,15 +7278,17 @@ export function apply(ctx) {
     if (token.wake) token.wake()
     return stopClaude(`ingest-${run}`).then(() => ({ run, state: 'stopped' }))
   })
-  // The starter's process-inbox into the vault: Echo writes no hidden file for a plugin (`.claude/…`), so this says how.
-  ctx.command('ingest_skill', ({ id }) => {
+  // The starter's process-inbox into the vault (its text shown first): Echo writes a vault's
+  // `.claude/skills/<name>/SKILL.md`, checked as Markdown that runs nothing (onetest-ai/echo#776). Read again after, so
+  // Ingest finds it at once.
+  ctx.command('ingest_skill', async ({ id }) => {
     const v = vaultOf(id)
     const rel = '.claude/skills/process-inbox/SKILL.md'
     if (statSafe(v, rel)) throw new Error('This vault already has a process-inbox skill')
-    try { ctx.fs.write(v.root, rel, ctx.package.read('starter/twin/.claude/skills/process-inbox/SKILL.md') || '', { createNew: true }) } catch (e) {
-      if (/hidden/.test(errText(e))) throw new Error('Echo doesn\'t let a plugin write a vault\'s .claude folder — copy the starter\'s process-inbox (shown here) into .claude/skills/process-inbox/SKILL.md yourself, then Read the folder again')
-      throw e
-    }
+    const text = ctx.package.read('starter/twin/.claude/skills/process-inbox/SKILL.md') || ''
+    ctx.fs.write(v.root, rel, text, { createNew: true })
+    record(v, { at: new Date().toISOString(), path: rel, kind: 'new', by: 'starter', ref: TWIN, plus: textLines(text).length, minus: 0, commit: null })
+    try { await redetect(v.id) } catch (e) { ctx.log(`detect ${v.id}: ${errText(e)}`) }
     return { path: rel }
   })
 

@@ -38,7 +38,9 @@ export function minutesParts(md, body = true) {
 export function echoData({ calls = [], threads = [], clients = [], people = [], mail = [], me = { name: null, email: null } } = {}) {
   const thread = (id) => { const t = threads.find((x) => x.id === id); if (!t) return null; const c = clients.find((x) => x.id === t.client); return { id: t.id, name: t.name, client: t.client || null, client_name: c ? c.name : null } }
   const clientOf = (refs) => { const ids = [...new Set(refs.map((t) => t.client).filter(Boolean))]; return ids.length === 1 ? { id: ids[0], name: (refs.find((t) => t.client === ids[0]) || {}).client_name } : null }
-  const callOf = (folder) => calls.find((c) => c.folder === folder)
+  // A call by its folder, or by its stamp (Echo #772: the call that has it now; two sharing it — neither).
+  const stampOf = (folder) => { const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(folder); return m ? m[1] : folder }
+  const callOf = (name) => calls.find((c) => c.folder === name) || (() => { const by = calls.filter((c) => stampOf(c.folder) === name); return by.length === 1 ? by[0] : undefined })()
   const facts = (c) => {
     const start = c.started_at || '2026-11-05T09:00:12+02:00'
     const end = c.ended_at || '2026-11-05T09:46:40+02:00'
@@ -49,13 +51,14 @@ export function echoData({ calls = [], threads = [], clients = [], people = [], 
   const participants = (c) => attendees(c).map((a) => ({ ...a, person: (people.find((p) => p.email === a.email) || {}).key || null }))
   const refsOf = (c) => (c.threads || []).map(thread).filter(Boolean)
   const source = (id, opts = {}) => {
-    const name = String(id).replace(/^call:/, '')
-    const c = callOf(name)
-    if (!c) throw new Error(`no call "${name}"`)
+    const asked = String(id).replace(/^call:/, '')
+    const c = callOf(asked)
+    if (!c) throw new Error(`no call "${asked}"`)
+    const name = c.folder
     if (c.notes == null) throw new Error(`${name}: no minutes yet`)
     const refs = refsOf(c)
     const out = {
-      id: `call:${name}`, kind: c.memo ? 'memo' : 'call', date: (c.started_at || '2026-11-05T09:00:12+02:00').slice(0, 10), text: c.notes, link: `echo://call/${name}`,
+      id: `call:${name}`, stamp: stampOf(name), kind: c.memo ? 'memo' : 'call', date: (c.started_at || '2026-11-05T09:00:12+02:00').slice(0, 10), text: c.notes, link: `echo://call/${name}`,
       client: clientOf(refs), threads: refs, profile: c.profile === undefined ? 'system' : c.profile, platform: null,
       attendees: attendees(c), participants: participants(c), minutes: minutesParts(c.notes, true), ...facts(c),
     }
@@ -66,11 +69,11 @@ export function echoData({ calls = [], threads = [], clients = [], people = [], 
   const day = (c) => (c.started_at || '2026-11-05T09:00:12+02:00').slice(0, 10)
   const callsRead = (o = {}) => calls.filter((c) => (!o.since || day(c) >= o.since) && (!o.until || day(c) <= o.until)).slice().reverse().slice(0, o.limit || 50).map((c) => {
     const refs = refsOf(c)
-    return { id: `call:${c.folder}`, date: day(c), ...facts(c), minutes: c.notes != null, transcript: c.transcript != null, chat: !!(c.chat && c.chat.length), people: attendees(c).map((a) => a.name), participants: participants(c), threads: refs, client: clientOf(refs), profile: c.profile === undefined ? 'system' : c.profile }
+    return { id: `call:${c.folder}`, stamp: stampOf(c.folder), date: day(c), ...facts(c), minutes: c.notes != null, transcript: c.transcript != null, chat: !!(c.chat && c.chat.length), people: attendees(c).map((a) => a.name), participants: participants(c), threads: refs, client: clientOf(refs), profile: c.profile === undefined ? 'system' : c.profile }
   })
   const sources = (o = {}) => {
     const out = []
-    if (!o.kind || o.kind === 'call') for (const c of calls) if (c.notes != null && (!o.since || day(c) >= o.since)) { const refs = refsOf(c); out.push({ id: `call:${c.folder}`, kind: 'call', title: c.title, date: day(c), threads: refs.map((t) => t.id), client: clientOf(refs) }) }
+    if (!o.kind || o.kind === 'call') for (const c of calls) if (c.notes != null && (!o.since || day(c) >= o.since)) { const refs = refsOf(c); out.push({ id: `call:${c.folder}`, stamp: stampOf(c.folder), kind: 'call', title: c.title, date: day(c), threads: refs.map((t) => t.id), client: clientOf(refs) }) }
     if (!o.kind || o.kind === 'mail') for (const m of mail) if (!o.since || m.at >= o.since) out.push({ ...m, date: m.at, threads: (m.threads || []).map((t) => (typeof t === 'string' ? t : t.id)) })
     return out.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, o.limit || 200)
   }
@@ -79,7 +82,7 @@ export function echoData({ calls = [], threads = [], clients = [], people = [], 
     const c = callOf(folder)
     const refs = refsOf(c)
     const { body, ...minutes } = minutesParts(c.notes, true)
-    return { id: `call:${folder}`, link: `echo://call/${folder}`, call: folder, revision: minutes.revision, rewritten, client: clientOf(refs), threads: refs, profile: c.profile === undefined ? 'system' : c.profile, participants: participants(c), minutes, ...facts(c) }
+    return { id: `call:${folder}`, link: `echo://call/${folder}`, call: folder, stamp: stampOf(folder), revision: minutes.revision, rewritten, client: clientOf(refs), threads: refs, profile: c.profile === undefined ? 'system' : c.profile, participants: participants(c), minutes, ...facts(c) }
   }
   return {
     read: { clients, threads: threads.map((t) => ({ ...t, stage: 'active', group: 'delivery' })), people, me, source, calls: callsRead, sources },

@@ -3,6 +3,7 @@
 #   ECHO_REPO=<an Echo checkout, built with `cargo build`> [OBSIDIAN_FROM=0.8] tests/fixtures/obsidian/up.sh <dir> <port>
 #   tests/fixtures/obsidian/next.sh <dir>     # OBSIDIAN_FROM=0.8 only: this checkout's version offered as the update
 #   tests/fixtures/obsidian/down.sh <dir>
+# SAME_SECOND=1 adds a made-up memo sharing guest call 7's second (TC-056).
 # <dir> must not exist yet. It builds Echo's standard made-up data (Echo's tests/fixtures/make_data.py; its `claude` is
 # the test fake, which refuses every run: Claude's reading of a vault fails, and a case writes its description), makes
 # made-up vaults in <dir>/vaults (acme-wiki, home-notes; acme-twin, twin-shaped, and acme-history, both in git), installs this checkout's plugin from a local marketplace
@@ -113,6 +114,15 @@ cat > "$home/recall/taxonomy/current.json" <<'JSON'
   {"name": "Control Plane", "kind": "product", "synonyms": ["CP"], "variants": ["controlplane"]}
 ], "aliases": {}, "history": []}
 JSON
+# SAME_SECOND=1 (TC-056 on an environment of its own): a made-up memo started in the same second as the standard data's
+# guest call 7 (a copy of its folder, retitled "Guest memo", kind memo) — two calls sharing one stamp, as Echo can have.
+if [ "${SAME_SECOND:-}" = 1 ]; then
+  g="$(ls "$home/calls" | grep -- '-guest-call-7$' | head -1)"
+  [ -n "$g" ] || { echo "no guest call 7 in the data: stopping" >&2; exit 1; }
+  m="$home/calls/${g%-guest-call-7}-guest-memo"
+  cp -R "$home/calls/$g" "$m"
+  python3 -I -c 'import json,sys; p=sys.argv[1]; m=json.load(open(p)); m["title"]="Guest memo"; m["kind"]="memo"; json.dump(m, open(p, "w"), indent=2)' "$m/meta.json"
+fi
 from="${OBSIDIAN_FROM:-}"
 case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;; esac
 

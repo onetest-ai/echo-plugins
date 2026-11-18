@@ -2202,7 +2202,7 @@ export function twinSkillText(text, v, name) {
   let body = body0
   for (const p of ['knowledge/', 'raw_inbox/', 'AGENTS.md', 'log.md', '.claude/']) body = body.split(`\`${p}`).join(`\`${root}/${p}`)
   body = body.split('Paths below are relative to the vault\'s root folder.').join(`The vault is \`${root}\` (${v.name}); work there, wherever Claude Code was started.`)
-  return `---\n${[`name: ${name}`, ...lines].join('\n')}\n---\n\n<!-- Echo's copy of the twin skill of the vault “${oneLine(v.name).replace(/--/g, '-')}” (${v.id}), added from Knowledge. -->\n${body.replace(/^\n+/, '\n')}`
+  return `---\n${[`name: ${name}`, ...lines].join('\n')}\n---\n\n<!-- Echo's copy of the twin skill of the vault “${oneLine(v.name).replace(/-{2,}/g, '-').replace(/[<>]/g, '')}” (${v.id}), added from Knowledge. -->\n${body.replace(/^\n+/, '\n')}`
 }
 
 /** A web page as a source (sources.rs `add_page`): its title and Markdown as Echo read them (`ctx.web.read`, Echo #764:
@@ -2289,18 +2289,9 @@ export function stampOf(folder, given) {
 }
 /** Is `stamp` one a folder's name starts with (two calls started in the same second may share it)? */
 export const datedStamp = (stamp) => /^\d{4}-\d{2}-\d{2}_\d{6}$/.test(String(stamp || ''))
-/** A call's id in a vault's sources ledger (its queue, the calls it has, a source's `from`): `call:<stamp>`, so a
- *  retitled call is the same one — `call:<folder>` only when another call shares its stamp (`shared(stamp)`). */
-export function callSourceId(folder, stamp, shared) {
-  const f = String(folder || '').replace(/^call:/, '')
-  const s = stampOf(f, stamp)
-  return `call:${s !== f && datedStamp(s) && shared(s) ? f : s}`
-}
-/** A sources ledger of before onetest-ai/echo#772 (calls by `call:<folder>`) by stamp: its calls, its queue's keys and
- *  ids, its sources' `from` — each `call:<folder>` → `call:<stamp>`, unless two folders of the ledger share that stamp
- *  or `shared(stamp)` says another call does (kept by folder). Marked `keys: 'stamp'`; → whether anything changed. */
-export function stampLedger(l, shared) {
-  if (!l || l.keys === 'stamp') return false
+/** The dated stamps a ledger of before onetest-ai/echo#772 names calls by folder with (`call:<folder>`): each stamp
+ *  with its folders. */
+export function ledgerFolders(l) {
   const folders = new Map()
   const seen = (id) => {
     if (typeof id !== 'string' || !id.startsWith('call:')) return
@@ -2309,21 +2300,56 @@ export function stampLedger(l, shared) {
     if (!folders.has(st)) folders.set(st, new Set())
     folders.get(st).add(f)
   }
+  if (!l) return folders
   for (const id of l.calls || []) seen(id)
   for (const id of Object.keys(l.queued || {})) seen(id)
   for (const e of Object.values(l.sources || {})) seen(e && e.from)
-  const to = new Map()
-  for (const [st, fs] of folders) if (fs.size === 1 && !shared(st)) to.set(`call:${[...fs][0]}`, `call:${st}`)
-  const map = (id) => (to.has(id) ? to.get(id) : id)
+  return folders
+}
+/** A sources ledger of before onetest-ai/echo#772 (calls by `call:<folder>`) by stamp: its calls, its queue's keys and
+ *  ids, its sources' `from` — each `call:<folder>` → `to.get(folder)` (`call:<stamp>`, or the call's own key when two
+ *  calls really share the stamp), a folder `to` doesn't name kept as it is. Every folder of one stamp goes to the same
+ *  id when the stamp is one call's — a call retitled before has two of them, still one call. Queue entries that become
+ *  one keep the earliest. Marked `keys: 'stamp'`; → whether it was changed. */
+export function stampLedger(l, to) {
+  if (!l || l.keys === 'stamp') return false
+  const map = (id) => (typeof id === 'string' && id.startsWith('call:') && to.has(id.slice(5)) ? to.get(id.slice(5)) : id)
   if (Array.isArray(l.calls)) l.calls = [...new Set(l.calls.map(map))]
   if (l.queued) {
     const q = {}
-    for (const [id, item] of Object.entries(l.queued)) { const n = map(id); q[n] = n === id ? item : { ...item, id: n } }
+    const when = (x) => Date.parse((x && x.added) || '') || 0
+    for (const [id, item] of Object.entries(l.queued)) {
+      const n = map(id)
+      const next = n === id ? item : { ...item, id: n }
+      if (!q[n] || when(next) < when(q[n])) q[n] = next
+    }
     l.queued = q
   }
-  for (const e of Object.values(l.sources || {})) if (e && to.has(e.from)) e.from = to.get(e.from)
+  for (const e of Object.values(l.sources || {})) if (e && typeof e.from === 'string') e.from = map(e.from)
   l.keys = 'stamp'
   return true
+}
+/** Which record of a stamp is a call's (the claim of `claimKey` in the host half), from the records there are and the
+ *  calls Echo lists with that stamp now (`listed`: [{folder, started_at, memo}], or null when Echo couldn't say):
+ *  `records` [{key, rec}] (the stamp's own first). → a record's key, or null for a new one of its own. A record of
+ *  another folder is this call retitled only when Echo no longer lists that folder and the two started at the same
+ *  time as the same kind (a call or a memo); a record from before it kept those, only when it is the one record gone
+ *  and this the one listed call without a record. A failed read is never a retitle. */
+export function recordOf(folder, records, listed) {
+  const mine = records.find((x) => x.rec && x.rec.folder === folder)
+  if (mine) return mine.key
+  if (!listed) return null
+  const there = new Set(listed.map((x) => x.folder))
+  const me = listed.find((x) => x.folder === folder)
+  if (!me) return null
+  const gone = records.filter((x) => x.rec && x.rec.folder && !there.has(x.rec.folder))
+  const same = gone.filter((x) => x.rec.started_at != null && x.rec.started_at === me.started_at && !!x.rec.memo === !!me.memo)
+  if (same.length === 1) return same[0].key
+  if (same.length) return null
+  const old = gone.filter((x) => x.rec.started_at == null)
+  const claimed = new Set(records.map((x) => x.rec && x.rec.folder))
+  const free = listed.filter((x) => !claimed.has(x.folder))
+  return old.length === 1 && free.length === 1 && free[0].folder === folder ? old[0].key : null
 }
 
 // ── step 5: Health's fixes and score, the AI checks' findings, an ingest run's changes (health.rs, lint.rs, ingest.rs,
@@ -2631,38 +2657,59 @@ export function retagText(text, from, to) {
 // vault's own tag taxonomy wins where it has one: a tag is only ever turned into one it allows. Read only — Knowledge
 // never adds to the dictionary (0.8's facts vault did, and is gone).
 
-/** A name as a tag: lower case, words joined by `-`, only what Obsidian's tags take (letters, digits, `_`, `-`, `/`). */
+/** A name as a tag: lower case, words joined by `-`, only what Obsidian's tags take (letters, digits, `_`, `-`, `/`);
+ *  '' for what Obsidian doesn't take as a tag (all digits, a `/` at either end). */
 export function tagForm(name) {
-  return String(name || '').normalize('NFC').toLowerCase().trim().replace(/[\s_]+/g, '-').replace(/[^\p{L}\p{N}\-/]/gu, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '')
+  const t = String(name || '').normalize('NFC').toLowerCase().trim().replace(/[\s_]+/g, '-').replace(/[^\p{L}\p{N}\-/]/gu, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '')
+  return !t || /^[0-9/-]+$/.test(t) || t.startsWith('/') || t.endsWith('/') ? '' : t
+}
+/** What tags are resolved against, built once per dictionary and taxonomy (a lookup per tag, never a scan): `terms`
+ *  Echo's dictionary's (a client's only when given in `clients`, the practice's first), `allowed` the vault's tag
+ *  taxonomy's tags, or null when it has none. */
+export function tagContext(allowed, terms, clients = null) {
+  const byForm = new Map()
+  const all = (terms || []).filter((x) => x && typeof x.name === 'string' && x.name.trim() && (!x.client || (clients && clients.has(x.client))))
+  for (const x of [...all.filter((t) => !t.client), ...all.filter((t) => t.client)]) {
+    for (const n of [x.name, ...(x.synonyms || []), ...(x.spellings || [])]) {
+      const f = typeof n === 'string' ? tagForm(n) : ''
+      if (f && !byForm.has(f)) byForm.set(f, x)
+    }
+  }
+  const lower = allowed ? new Set(allowed.map((a) => asciiLower(a))) : null
+  const allowedByForm = new Map()
+  for (const a of allowed || []) { const f = tagForm(a); if (f && !allowedByForm.has(f)) allowedByForm.set(f, a) }
+  return { byForm, allowed: allowed || null, lower, allowedByForm }
 }
 /** What `tag` is in Echo's dictionary: the tag to use instead and the term it is, or null — none known, or it is right
- *  already. `allowed`: the vault's tag taxonomy's tags (its spelling), or null when it has none; then the term's own
- *  name as a tag. A practice-wide term is preferred to a client's. */
-export function dictionaryTag(tag, allowed, terms) {
+ *  already. With a taxonomy only a tag it allows (its spelling); without, the term's own name as a tag. `c`: a
+ *  `tagContext`, or the vault's allowed tags (then `terms` the dictionary's). */
+export function dictionaryTag(tag, c, terms) {
+  const cx = c && c.byForm ? c : tagContext(c || null, terms)
   const t = String(tag || '').replace(/^#/, '')
   const key = tagForm(t)
   if (!key) return null
-  if (allowed && allowed.some((a) => asciiLower(a) === asciiLower(t))) return null
-  const all = (terms || []).filter((x) => x && typeof x.name === 'string' && x.name.trim())
-  const namesOf = (x) => [x.name, ...(x.synonyms || []), ...(x.spellings || [])].filter((n) => typeof n === 'string' && n.trim())
-  const term = [...all.filter((x) => !x.client), ...all.filter((x) => x.client)].find((x) => namesOf(x).some((n) => tagForm(n) === key))
+  if (cx.lower && cx.lower.has(asciiLower(t))) return null
+  const term = cx.byForm.get(key)
   if (!term) return null
-  if (allowed) {
-    const forms = new Set(namesOf(term).map(tagForm))
-    const hit = allowed.find((a) => forms.has(tagForm(a)))
-    return hit && asciiLower(hit) !== asciiLower(t) ? { to: hit, term: term.name } : null
+  if (cx.allowed) {
+    for (const n of [term.name, ...(term.synonyms || []), ...(term.spellings || [])]) {
+      const hit = typeof n === 'string' ? cx.allowedByForm.get(tagForm(n)) : undefined
+      if (hit) return asciiLower(hit) !== asciiLower(t) ? { to: hit, term: term.name } : null
+    }
+    return null
   }
   const to = tagForm(term.name)
   return to && to !== key ? { to, term: term.name } : null
 }
 /** `text` with each of its tags Echo's dictionary names otherwise turned into that name (`retagText`, properties and
- *  inline). → {text, changed: [{from, to, term}]}. */
-export function dictionaryRetag(text, allowed, terms) {
-  const tags = scanPage('page.md', String(text)).tags
+ *  inline). `c`: a `tagContext` (or allowed tags with `terms`). → {text, changed: [{from, to, term}]}. */
+export function dictionaryRetag(text, c, terms) {
+  const cx = c && c.byForm ? c : tagContext(c || null, terms)
   let out = String(text)
   const changed = []
-  for (const t of tags) {
-    const d = dictionaryTag(t, allowed, terms)
+  if (!cx.byForm.size) return { text: out, changed }
+  for (const t of scanPage('page.md', out).tags) {
+    const d = dictionaryTag(t, cx)
     if (!d) continue
     try { out = retagText(out, t, d.to); changed.push({ from: t, to: d.to, term: d.term }) } catch { /* not where retag reaches (a heading): left */ }
   }
@@ -4753,12 +4800,35 @@ export function apply(ctx) {
     dictSeen = { at: Date.now(), terms }
     return terms
   }
-  // The tags the vault's taxonomy allows (its spelling, in order), or null when it has none. `text`: its text in a copy.
+  // The tags the vault's taxonomy allows (its spelling, in order), or null when it has none — [] when it has one Echo
+  // can't read (then no tag is ever changed). `text`: its text in a copy.
   const allowedOf = (v, text) => {
     const t = tagTaxonomy((v.detected && v.detected.taxonomies) || [])
     if (!t) return null
     const x = text !== undefined ? text : readSafe(v, t)
-    return x === null || x === undefined ? null : tagsInOrder(x)
+    return x === null || x === undefined ? [] : tagsInOrder(x)
+  }
+  // The clients a vault is for: named in its For whom, through its threads there, or whose Profile (or whose threads')
+  // sends calls to it. A client's own dictionary terms apply only in its vaults.
+  const clientsOfVault = (v) => {
+    const out = new Set()
+    const threads = openThreads()
+    for (const b of v.belongs || []) { if (b.client) out.add(b.client); if (b.thread) { const t = threads.find((x) => x.id === b.thread); if (t && t.client) out.add(t.client) } }
+    for (const c of clientsList()) if (clientVal(c.id) === v.id) out.add(c.id)
+    for (const t of threads) if (t.client && threadVal(t.id) === v.id) out.add(t.client)
+    return out
+  }
+  // A vault's tag context (Echo's dictionary as an index, its taxonomy), built once a minute per vault.
+  const tagCx = new Map()
+  const tagContextOf = (v, allowed) => {
+    const terms = dictTerms()
+    const clients = clientsOfVault(v)
+    const key = `${dictSeen.at}|${[...clients].sort().join(',')}|${allowed === undefined ? 'now' : ctx.crypto.sha256(JSON.stringify(allowed))}`
+    const hit = tagCx.get(v.id)
+    if (hit && hit.key === key) return hit.cx
+    const cx = tagContext(allowed === undefined ? allowedOf(v) : allowed, terms, clients)
+    tagCx.set(v.id, { key, cx })
+    return cx
   }
   // The tag taxonomy's spelling of `tag`, if it allows it.
   const allowedTag = (v, tag) => {
@@ -4781,7 +4851,7 @@ export function apply(ctx) {
       if (!x) throw new Error('The AI check gave no fix for this')
       if (choice && choice !== 'ai') throw new Error(`“${choice}” isn't a fix for this`)
       // The check's text with its tags as Echo's dictionary names them (the vault's taxonomy winning).
-      return ['ai', [{ op: 'replace', old: x.old, new: dictionaryRetag(x.new, allowedOf(v), dictTerms()).text }], false]
+      return ['ai', [{ op: 'replace', old: x.old, new: dictionaryRetag(x.new, tagContextOf(v)).text }], false]
     }
     const link = () => { if (!f.subject.link) throw new Error('Echo has no fix for this'); return f.subject.link }
     // An index row is pointed only at the same name (R36); a broken link may be pointed at a near one, flagged.
@@ -4863,7 +4933,7 @@ export function apply(ctx) {
       const text = t ? readSafe(v, t) : null
       const allowed = text === null ? [] : tagsInOrder(text)
       // The tag the taxonomy allows for the same thing in Echo's dictionary, first and said so.
-      const d = text === null ? null : dictionaryTag(f.subject.word, allowed, dictTerms())
+      const d = text === null ? null : dictionaryTag(f.subject.word, tagContextOf(v, allowed))
       const first = d ? [c(`tag:${d.to}`, `Use #${d.to} — ${d.term} in Echo's dictionary`)] : []
       return [...first, ...allowed.filter((x) => !d || x !== d.to).map((x) => c(`tag:${x}`, `Use #${x}`)), c('taxonomy', 'Open the taxonomy to add it')]
     }
@@ -5334,39 +5404,103 @@ export function apply(ctx) {
   const available = (v) => { try { return ctx.fs.folders().includes(v.root) && (ctx.fs.stat(v.root, '') || {}).kind === 'dir' } catch { return false } }
   const callId = (call) => { const c = String(call || '').replace(/^call:/, ''); if (!c || c.includes('/') || c.includes('\\')) throw new Error('call: a call\'s folder, as Echo names it'); return c }
   // A call's record is keyed by its stamp (Echo #772: a retitle keeps it, so a retitled call is never saved twice), and
-  // remembers the folder it was last seen by. Two calls started in the same second share a stamp: the record is the
-  // first one's; the other's is `<stamp>~<its folder's sha>` — told apart by Echo's calls of that day (`sharedStamp`).
-  const sharedSeen = new Map()
-  const sharedStamp = (stamp) => {
-    if (!datedStamp(stamp) || !ctx.echo) return false
-    const hit = sharedSeen.get(stamp)
-    if (hit && Date.now() - hit.at < 60 * 1000) return hit.shared
-    let shared = false
-    try {
-      const day = stamp.slice(0, 10)
-      shared = (ctx.echo.read('calls', { since: day, until: day, limit: 500 }) || []).filter((c) => stampOf(c.id, c.stamp) === stamp).length > 1
-    } catch { /* Echo can't say: the stamp alone */ }
-    sharedSeen.set(stamp, { at: Date.now(), shared })
-    return shared
+  // remembers its folder, when it started and whether it is a memo. Two calls started in the same second share a stamp:
+  // the record is the one that claimed it first; another's is `<stamp>~<its folder's sha>`. A record naming another
+  // folder is never taken on a cached or failed answer: Echo is asked again (`recordOf`).
+  // Echo's calls around a day (the day before and after too: Echo's `date` is the call's own day, a stamp its folder's),
+  // kept a minute per day; `fresh` asks Echo again. null when Echo can't say.
+  const dayRows = new Map()
+  const dayAdd = (day, n) => new Date(Date.parse(`${day}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10)
+  const rowsAround = (day, fresh = false) => {
+    const hit = dayRows.get(day)
+    if (!fresh && hit && Date.now() - hit.at < 60 * 1000) return hit.rows
+    let rows = null
+    try { rows = (ctx.echo && ctx.echo.read('calls', { since: dayAdd(day, -1), until: dayAdd(day, 1), limit: 500 })) || [] } catch { rows = null }
+    if (rows !== null) dayRows.set(day, { at: Date.now(), rows })
+    return rows
   }
-  const recKey = (call, stamp) => {
+  // The calls Echo lists with `stamp` now: [{folder, started_at, memo}], or null.
+  const callsWithStamp = (stamp, fresh = false) => {
+    if (!datedStamp(stamp)) return null
+    const rows = rowsAround(stamp.slice(0, 10), fresh)
+    return rows === null ? null : rows.filter((c) => stampOf(c.id, c.stamp) === stamp).map((c) => ({ folder: callId(c.id), started_at: c.started_at ?? null, memo: !!c.memo }))
+  }
+  const recFile = (key) => `calls/${key}.json`
+  const readRec = (key) => { try { return readJson(recFile(key), null) } catch { return { folder: '\0unreadable' } } }
+  // The records of a stamp: its own, then the others' (`<stamp>~…`).
+  const recordsOf = (main) => {
+    const out = [{ key: main, rec: readRec(main) }]
+    let names = []
+    try { names = ctx.store.list('calls') || [] } catch { /* none */ }
+    for (const n of names) if (n.startsWith(`${main}~`) && n.endsWith('.json')) { const key = n.slice(0, -5); out.push({ key, rec: readRec(key) }) }
+    return out
+  }
+  // The key of a call's record (`write`: claimed — made, or its folder brought up to date — so another call of the same
+  // second can't take it). `meta`: {started_at, memo} as Echo gave them, when it did.
+  const claimKey = (call, stamp, meta = {}, write = false) => {
     const st = stampOf(call, stamp)
     const main = callKey(st, ctx.crypto.sha256)
-    if (st === call) return main
-    let r = null
-    try { r = readJson(`calls/${main}.json`, null) } catch { /* unreadable: its own */ }
-    // None yet, this call's, or one kept before records named their folder: by the stamp. Another folder's: the
-    // same call retitled, unless another call has this stamp now.
-    if (!r || !r.folder || r.folder === call || !sharedStamp(st)) return main
-    return `${main}~${ctx.crypto.sha256(call).slice(0, 12)}`
+    if (st === call || !datedStamp(st)) return main
+    const factsOf = () => {
+      const m = { started_at: meta.started_at ?? null, memo: meta.memo == null ? null : !!meta.memo }
+      if (m.started_at == null || m.memo == null) { const row = (callsWithStamp(st) || []).find((x) => x.folder === call); if (row) { if (m.started_at == null) m.started_at = row.started_at; if (m.memo == null) m.memo = row.memo } }
+      return { started_at: m.started_at, memo: !!m.memo }
+    }
+    const claim = (key) => {
+      if (!write) return key
+      try {
+        updateJson(recFile(key), EMPTY_REC, (r) => {
+          if (r.folder === call && r.started_at != null) return
+          r.folder = call
+          const f = factsOf()
+          if (r.started_at == null && f.started_at != null) r.started_at = f.started_at
+          if (r.memo == null) r.memo = f.memo
+        })
+      } catch (e) { ctx.log(`record of ${call}: ${errText(e)}`) }
+      return key
+    }
+    const own = readRec(main)
+    if (!own) {
+      if (!write) return main
+      // Made only where none is (another process may claim it meanwhile: then read again below).
+      try { ctx.store.write(recFile(main), JSON.stringify({ ...EMPTY_REC, folder: call, ...factsOf() }, null, 2), { createNew: true }); return main } catch (e) { if (!/there already/.test(errText(e))) throw e }
+    }
+    const now = readRec(main)
+    if (now && (!now.folder || now.folder === call)) return claim(main)
+    const records = recordsOf(main)
+    if (records.some((x) => x.rec && x.rec.folder === call)) return claim(records.find((x) => x.rec && x.rec.folder === call).key)
+    const listed = callsWithStamp(st, true)
+    const key = recordOf(call, records, listed)
+    return claim(key || `${main}~${ctx.crypto.sha256(call).slice(0, 12)}`)
   }
-  const recPath = (call, stamp) => `calls/${recKey(call, stamp)}.json`
   const EMPTY_REC = { choice: null, saved: [], failed: [] }
-  const callRec = (call, stamp) => ({ ...EMPTY_REC, ...readJson(recPath(call, stamp), EMPTY_REC) })
-  const updateRec = (call, fn, stamp) => { pastGen++; return updateJson(recPath(call, stamp), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; if (!datedStamp(call)) r.folder = call; return fn(r) }) }
+  const callRec = (call, stamp, meta) => ({ ...EMPTY_REC, ...(readJson(recFile(claimKey(call, stamp, meta)), null) || EMPTY_REC) })
+  const updateRec = (call, fn, stamp, meta) => { pastGen++; return updateJson(recFile(claimKey(call, stamp, meta, true)), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; return fn(r) }) }
   const source = (call, opts) => ctx.echo.read('source', `call:${call}`, opts)
-  // A call's id in a ledger: `call:<stamp>` (`call:<folder>` when another call shares the stamp).
-  const srcIdOf = (call, stamp) => callSourceId(call, stamp, sharedStamp)
+  // A call's id in a vault's sources ledger: its record's key (`call:<stamp>`, `call:<stamp>~<sha>` for another call of
+  // the same second), claimed — so a retitled call is the same one, and two calls of one second never one.
+  const srcIdOf = (call, stamp, meta) => {
+    const st = stampOf(call, stamp)
+    if (st === call || !datedStamp(st)) return `call:${call}`
+    const key = claimKey(call, stamp, meta, true)
+    return `call:${key === callKey(st, ctx.crypto.sha256) ? st : key}`
+  }
+  // The folder a ledger's call is now: its record's (kept up to date by every claim), else the one call Echo lists with
+  // its stamp, else the call that started when its record says. null when none is.
+  const folderOfId = (id, q = {}) => {
+    const key = String(id).replace(/^call:/, '')
+    const st = stampOf(key.split('~')[0])
+    if (!datedStamp(st)) return key
+    const rec = readRec(key.includes('~') ? key : callKey(st, ctx.crypto.sha256))
+    const listed = callsWithStamp(st, true) || []
+    const folder = (rec && rec.folder) || q.folder || null
+    if (folder && listed.some((x) => x.folder === folder)) return folder
+    const started = (rec && rec.started_at) ?? q.started_at ?? null
+    const same = listed.filter((x) => started != null && x.started_at === started && !!x.memo === !!((rec && rec.memo) ?? q.memo))
+    if (same.length === 1) return same[0].folder
+    if (!key.includes('~') && listed.length === 1) return listed[0].folder
+    return folder
+  }
 
   // ── where a call goes ──
   const openThreads = () => { try { return ctx.echo.read('threads') || [] } catch { return [] } }
@@ -5655,8 +5789,33 @@ export function apply(ctx) {
   const ledgerPath = (id) => `vaults/${id}/ingest.json`
   const EMPTY_LEDGER = { baseline: null, sources: {}, queued: {}, calls: [], mails: [], runs: [] }
   // A ledger of before Echo #772 names calls by folder: read by stamp at once, and kept so at its next write.
-  const ledger = (v) => { const l = { ...EMPTY_LEDGER, ...readJson(ledgerPath(v.id), EMPTY_LEDGER) }; stampLedger(l, sharedStamp); return l }
-  const updateLedger = (v, fn) => updateJson(ledgerPath(v.id), EMPTY_LEDGER, (l) => { for (const k of Object.keys(EMPTY_LEDGER)) if (l[k] === undefined) l[k] = JSON.parse(JSON.stringify(EMPTY_LEDGER[k])); stampLedger(l, sharedStamp); return fn(l) })
+  // A ledger of before Echo #772 names calls by folder: every folder of a stamp is `call:<stamp>` (a call retitled before
+  // had two), unless Echo lists two calls with that stamp now — then each listed one its own key. Echo asked once a day
+  // of them; a stamp it can't answer for leaves the ledger as it is (asked again at the next read).
+  const ledgerMap = (l) => {
+    if (!l || l.keys === 'stamp') return null
+    const to = new Map()
+    for (const [st, folders] of ledgerFolders(l)) {
+      const listed = callsWithStamp(st)
+      if (listed === null) return null
+      if (listed.length <= 1) { for (const f of folders) to.set(f, `call:${st}`); continue }
+      const names = new Set(listed.map((x) => x.folder))
+      for (const f of folders) if (names.has(f)) to.set(f, srcIdOf(f, st, listed.find((x) => x.folder === f)))
+    }
+    return to
+  }
+  const ledger = (v) => { const l = { ...EMPTY_LEDGER, ...readJson(ledgerPath(v.id), EMPTY_LEDGER) }; const to = ledgerMap(l); if (to) stampLedger(l, to); return l }
+  const updateLedger = (v, fn) => {
+    // Worked out before the write (it may claim records): the write itself only computes.
+    let to = null
+    try { to = ledgerMap(readJson(ledgerPath(v.id), null)) } catch { /* unreadable: the write says so */ }
+    return updateJson(ledgerPath(v.id), EMPTY_LEDGER, (l) => {
+      for (const k of Object.keys(EMPTY_LEDGER)) if (l[k] === undefined) l[k] = JSON.parse(JSON.stringify(EMPTY_LEDGER[k]))
+      if (l.keys !== 'stamp' && !ledgerFolders(l).size) l.keys = 'stamp'
+      else if (to) stampLedger(l, to)
+      return fn(l)
+    })
+  }
   const sourcesDirOf = (v) => vaultPath(v, 'sources') || (v.detected && v.detected.sources) || 'raw_inbox'
   const processedOf = (v) => { const l = logOf(v); return processedPaths(l ? readSafe(v, l, 4 << 20) : '') }
   // The files of the sources folder (its README, dot names and links left out), vault-relative.
@@ -5781,12 +5940,16 @@ export function apply(ctx) {
   // (`ctx.http.askAddress`, once). A page that builds itself with JavaScript isn't run: nothing is added, said so.
   const webSource = async (v, url0) => {
     if (!ctx.web || typeof ctx.web.read !== 'function') throw new Error('Adding a web page is not yet in this Echo')
+    // A page the vault has already (its file still there) is never read again: said, nothing fetched.
+    const alreadyThere = (u) => {
+      const had = Object.entries(ledger(v).sources).find(([p, e]) => e && e.from === u && !e.of && statSafe(v, p))
+      if (had) throw new Error(`this page is in the vault already: ${had[0]}`)
+    }
     let u = String(url0 || '').trim()
     let page = null
     if (u) {
       if (!/^https?:\/\/[^\s/?#]+/i.test(u) || /\s/.test(u)) throw new Error('a web page by its address: http:// or https://')
-      const had = Object.entries(ledger(v).sources).find(([p, e]) => e && e.from === u && !e.of && statSafe(v, p))
-      if (had) throw new Error(`this page is in the vault already: ${had[0]}`)
+      alreadyThere(u)
       try { page = await ctx.web.read(u, { images: 'save' }) } catch (e) { if (!/may reach only/.test(errText(e))) throw e }
     }
     if (!page) {
@@ -5795,6 +5958,8 @@ export function apply(ctx) {
       const typed = await ctx.http.askAddress()
       if (!typed) return { cancelled: true }
       u = String(typed)
+      // The address typed in Echo's box: the same check, before anything is fetched.
+      alreadyThere(u)
       page = await ctx.web.read(u, { images: 'save' })
     }
     const md = rsTrim(String((page && page.markdown) || ''))
@@ -5823,12 +5988,13 @@ export function apply(ctx) {
     const call = src && src.id ? callId(src.id) : call0
     const across = !sameProfile(src.profile, v)
     if (across && !anyway) throw mismatch(src.profile, v)
-    const entry = callRec(call, src.stamp).saved.find((e) => e.vault === v.id)
+    const meta = { started_at: src.started_at ?? null, memo: !!(src.memo || src.kind === 'memo') }
+    const entry = callRec(call, src.stamp, meta).saved.find((e) => e.vault === v.id)
     const note = entry && statSafe(v, entry.path) ? entry.path : null
     const memo = src.memo || src.kind === 'memo'
     const date = src.date || today()
     const { title, text } = callSourceText({ title: src.title, date, memo, participants: src.participants || src.attendees, duration: src.duration_min, link: src.link || `echo://call/${call}`, note, text: src.text, transcript: transcript ? src.transcript : null, chat: chat ? chatPart(src.chat) : '' })
-    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: srcIdOf(call, src.stamp), anyway: across, text, noCommit, once })
+    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: srcIdOf(call, src.stamp, meta), anyway: across, text, noCommit, once })
   }
   // A mail as a source: its own text read from Microsoft 365 now — for a queued one only when a batch is prepared (the
   // queue keeps Recall's facts, never a message's words). Its AI profile is Recall's (its threads'); a mail Recall
@@ -5857,7 +6023,9 @@ export function apply(ctx) {
   // and the call into the queue of every routed vault whose rule asks for calls.
   const onMinutes = async (p, { catchUp = false } = {}) => {
     const call = callId(p.call || p.id)
-    const rec = callRec(call, p.stamp)
+    // Claimed first: its record (made, or its folder brought up to date when it was retitled) before anything is saved.
+    const meta = { started_at: p.started_at ?? null, memo: p.memo == null ? null : !!p.memo }
+    const rec = { ...EMPTY_REC, ...(readJson(recFile(claimKey(call, p.stamp, meta, true)), null) || {}) }
     const route = routeOf(p.threads || [])
     const out = { saved: [], queued: [] }
     for (const v of targetsOf(rec, route, p.profile)) {
@@ -5870,7 +6038,7 @@ export function apply(ctx) {
       for (const x of route.vaults) {
         const v = x.vault
         if (!v || v.ingest.calls === 'off' || !sameProfile(p.profile, v)) continue
-        try { if (queueInto(v, { id: srcIdOf(call, p.stamp), kind: 'call', title: p.title || call, date: (p.started_at || '').slice(0, 10) || null, rule: v.ingest.calls })) out.queued.push(v.id) } catch (err) { ctx.log(`queue of ${call} → ${v.id}: ${errText(err)}`) }
+        try { if (queueInto(v, { id: srcIdOf(call, p.stamp, meta), kind: 'call', title: p.title || call, date: (p.started_at || '').slice(0, 10) || null, rule: v.ingest.calls, folder: call, started_at: meta.started_at, memo: !!meta.memo })) out.queued.push(v.id) } catch (err) { ctx.log(`queue of ${call} → ${v.id}: ${errText(err)}`) }
       }
     }
     return out
@@ -5935,15 +6103,16 @@ export function apply(ctx) {
   }
   // A ledger of before Echo #772 (its calls by folder) is kept by stamp once the app starts: a call retitled since is
   // the same call, never queued or written again.
-  const stampLedgers = () => {
+  // Off `apply`'s own slice (an await of Echo's first), one vault at a time; Echo's calls asked once a day of the ledger.
+  const stampLedgers = async () => {
     for (const v of load()) {
+      try { await ctx.fs.readMany(v.root, [], 1) } catch { /* its folder gone: the ledger is the store's */ }
       try { const t = ctx.store.read(ledgerPath(v.id)); if (t && !/"keys":\s*"stamp"/.test(t)) updateLedger(v, () => {}) } catch (e) { ctx.log(`ledger of ${v.id}: ${errText(e)}`) }
     }
   }
-  if (!ctx.terminal && ctx.echo) stampLedgers()
   // The catch-up as a command (the app runs it on start; a test or a terminal asks it).
   ctx.command('catch_up', () => catchUp())
-  if (!ctx.terminal && ctx.echo) catchUp().catch((e) => ctx.log(`catch-up: ${errText(e)}`))
+  if (!ctx.terminal && ctx.echo) stampLedgers().then(() => catchUp()).catch((e) => ctx.log(`catch-up: ${errText(e)}`))
   if (!ctx.terminal) ctx.every(30, async () => { for (const v of load()) { try { await flushPending(v) } catch (e) { ctx.log(`commit of ${v.id}: ${errText(e)}`) } } })
 
   // ── commands: minutes ──
@@ -6212,8 +6381,11 @@ export function apply(ctx) {
         for (const [id, q] of Object.entries(l.queued || {})) {
           if (q.state === 'skipped') continue
           try {
+            // A queued call by the folder its record names now (retitled or not; never the stamp alone when two calls share it).
+            const folder = q.kind === 'call' ? folderOfId(id, q) : null
+            if (q.kind === 'call' && !folder) throw new Error('Echo has no call with this stamp now')
             const a = q.kind === 'call'
-              ? await callSource(v, id.replace(/^call:/, ''), { transcript: v.minutes.transcript, chat: v.minutes.chat, noCommit: true, once: true })
+              ? await callSource(v, folder, { transcript: v.minutes.transcript, chat: v.minutes.chat, noCommit: true, once: true })
               : await mailSource(v, { ...q, id }, { noCommit: true, once: true })
             written.push({ id, path: a.path, ...(a.duplicate ? { already: true } : {}) })
             items.push(...(a.items || []))
@@ -6284,8 +6456,8 @@ export function apply(ctx) {
   // on when committed), an activity line. Echo writes the few hidden files a vault needs (onetest-ai/echo#776): its
   // `.gitignore`, the skills in `.claude/skills/` (each checked by Echo: Markdown that runs nothing) — the twin skill
   // there only when the plugin's setting says "vault"; "global" offers it for the user's own Claude Code on their click
-  // (the window half's `ctx.claude.installSkill`). What Echo still refuses (Obsidian's settings in `knowledge/.obsidian/`:
-  // Echo writes `.obsidian/` only at a folder's top) is left out and said so.
+  // (the window half's `ctx.claude.installSkill`). Obsidian's settings for its pages folder, `knowledge/.obsidian/*.json`,
+  // too (Echo #781: `.obsidian` at any depth). Whatever an Echo still refuses is left out and said so.
   ctx.command('new_vault', async ({ name: n0, folder: f0, pick, git, minutes }) => {
     const folder = f0 || pick
     const name = rsTrim(String(n0 || '')).slice(0, 80)
@@ -6313,7 +6485,7 @@ export function apply(ctx) {
       if (where === 'global' && target === TWIN_SKILL) continue
       const filled = fillStarter(text, { name, owner, date })
       try { ctx.fs.write(picked, target, filled, { createNew: true }); written.push(target); lines += textLines(filled).length } catch (e) {
-        if (/hidden/.test(errText(e))) leftOut.push({ path: target, why: /\.obsidian\//.test(target) ? 'Echo writes Obsidian\'s settings only in the vault\'s top folder; Obsidian makes its own when you open knowledge/' : errText(e) })
+        if (/hidden/.test(errText(e))) leftOut.push({ path: target, why: /\.obsidian\//.test(target) ? 'This Echo writes Obsidian\'s settings only in the vault\'s top folder; Obsidian makes its own when you open knowledge/' : errText(e) })
         else throw e
       }
     }
@@ -6387,6 +6559,15 @@ export function apply(ctx) {
   })
   // The name the vault's twin skill was added under in the user's own Claude Code (from this window), or null.
   const globalTwinOf = (v) => { try { return readJson('global-skills.json', {})[v.id] || null } catch { return null } }
+  // The other vault whose twin skill has the name `n` in the user's Claude Code, or null: one name, one vault (Echo
+  // would replace or remove the plugin's skill of that name whichever vault asked).
+  const globalHolderOf = (n, id) => {
+    let m = {}
+    try { m = readJson('global-skills.json', {}) } catch { /* none */ }
+    const other = Object.entries(m).find(([vid, name]) => name === n && vid !== id)
+    if (!other) return null
+    return { id: other[0], name: (load().find((x) => x.id === other[0]) || {}).name || other[0] }
+  }
   // The twin skill: into the vault (`add`, the starter's — Echo writes a vault's `.claude/skills/<name>/SKILL.md`, onetest-ai/echo#776).
   // For every Claude Code session it is the window half's to add, on the user's click (`ctx.claude.installSkill`): the
   // host half only remembers which name it went in as (`installed`, `removed`), to show it in the vault's Settings.
@@ -6403,6 +6584,8 @@ export function apply(ctx) {
     if (op === 'installed' || op === 'removed') {
       const n = String(name || '')
       if (op === 'installed' && !/^[a-z0-9-]{1,64}$/.test(n)) throw new Error('a skill\'s name is 1–64 of a-z, 0-9 and -')
+      const holder = op === 'installed' ? globalHolderOf(n, v.id) : null
+      if (holder) throw new Error(`/${n} is ${holder.name}'s twin skill already: choose another name`)
       return updateJson('global-skills.json', {}, (m) => { if (op === 'installed') m[v.id] = n; else delete m[v.id]; return { vault: v.id, name: op === 'installed' ? n : null } })
     }
     if (op === 'global' || op === 'global_remove') throw new Error('Your own Claude Code\'s skills are added and removed in the window, on your click')
@@ -6412,8 +6595,12 @@ export function apply(ctx) {
   ctx.command('twin_text', ({ id, name }) => {
     const v = find(load(), id)
     const own = readSafe(v, '.claude/skills/twin/SKILL.md', 1 << 20)
-    const n = String(name || '') || (v.id.includes('twin') ? v.id : `${v.id}-twin`)
-    return { name: n, own: own !== null, text: twinSkillText(own ?? ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md') ?? '', { id: v.id, name: v.name, root: v.root }, n) }
+    // The name asked for; else this vault's own, else one no other vault holds (`acme-twin`, `acme-twin-2`…).
+    const base = (v.id.includes('twin') ? v.id : `${v.id}-twin`).slice(0, 60)
+    let n = String(name || '') || globalTwinOf(v) || base
+    for (let k = 2; !name && globalHolderOf(n, v.id) && k < 100; k++) n = `${base}-${k}`
+    const holder = globalHolderOf(n, v.id)
+    return { name: n, taken_by: holder ? holder.name : null, installed: globalTwinOf(v), own: own !== null, text: twinSkillText(own ?? ctx.package.read('starter/twin/.claude/skills/twin/SKILL.md') ?? '', { id: v.id, name: v.name, root: v.root }, n) }
   })
   // The system's file picker, for the Add a source sheet: names and sizes, the handles kept by the sheet.
   ctx.command('pick_files', async () => {
@@ -6844,10 +7031,10 @@ export function apply(ctx) {
     // The run's pages' tags as Echo's dictionary names them — against the taxonomy as the run left it (it may have added
     // a tag to it). Never the index, the log or the taxonomy itself.
     const taxRel = tagTaxonomy((v.detected && v.detected.taxonomies) || [])
-    let allowedRun
-    const allowedNow = () => {
-      if (allowedRun === undefined) { try { allowedRun = taxRel ? allowedOf(v, ctx.store.read(`${snap}/${taxRel}`)) : null } catch { allowedRun = allowedOf(v) } }
-      return allowedRun
+    let cxRun
+    const cxNow = () => {
+      if (cxRun === undefined) { let a; try { a = taxRel ? allowedOf(v, ctx.store.read(`${snap}/${taxRel}`)) : null } catch { a = allowedOf(v) } cxRun = tagContextOf(v, a) }
+      return cxRun
     }
     const terms = dictTerms()
     // A file of the copy as text, strictly: one that isn't UTF-8 is `binary` (never compared or written lossily). A text
@@ -6868,8 +7055,10 @@ export function apply(ctx) {
       try { listed = (await ctx.store.walk(snap, { sha: true, max: 100000 })).map((f) => ({ rel: f.path.slice(snap.length + 1), size: f.size, sha: f.sha || null })) } catch (e) { ctx.log(`walk of the copy: ${errText(e)}`) }
     }
     const rows = listed || (await snapshotFiles(v, snap)).map((rel) => ({ rel, size: null, sha: null }))
+    // Echo's host breathes every 100 files, every 20 when pages are retagged too.
+    const every = terms.length ? 20 : 100
     for (const { rel, size, sha } of rows) {
-      if (++k % 100 === 0) await breathe(v)
+      if (++k % every === 0) await breathe(v)
       if (rel.split('/').some((c) => c.startsWith('.'))) continue
       const base = bases.get(rel) || null
       if (sha && base && sha === base.sha) continue
@@ -6900,7 +7089,7 @@ export function apply(ctx) {
         let text = r.text
         const kind = changeKind(v, rel, !base)
         if (terms.length && (kind === 'new' || kind === 'edit')) {
-          const d = dictionaryRetag(text, allowedNow(), terms)
+          const d = dictionaryRetag(text, cxNow())
           if (d.changed.length) { text = d.text; f.retagged = d.changed }
         }
         ctx.store.write(`${dir}/run/${rel}`, text)

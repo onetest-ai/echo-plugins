@@ -78,8 +78,8 @@ with it and what to leave alone. You correct the description, and from then on C
 - **A new vault from the twin preset** (`new_vault`): the structure of a personal knowledge twin — rules for agents, an
   index with a table per section, tags and terms, a profile to fill, templates, its `.gitignore` and its skills
   (`/twin` to find, answer and remember; `/process-inbox` for Ingest) — in a new or empty folder, in git when you like.
-  Each skill is Markdown that runs nothing (Echo checks it). Obsidian's settings for `knowledge/` are left out (Echo
-  writes a vault's `.obsidian/` only at its top folder) and said so; Obsidian makes its own. The plugin's setting
+  Each skill is Markdown that runs nothing (Echo checks it); Obsidian's settings for `knowledge/` come too
+  (`knowledge/.obsidian/app.json`, `templates.json`: relative Markdown links, the templates folder). The plugin's setting
   "Where the twin preset puts its twin skill": the vault (its own `.claude/skills`), or global — your own Claude Code
   (`~/.claude/skills`), for every session: Knowledge shows you the skill first and adds it only when you click
   Install; Update and Remove are in the vault's Settings → Skills, and Echo never touches a skill it didn't add.

@@ -1926,14 +1926,16 @@ export async function createKnowledge(ctx, hooks = {}) {
     const name = esc(x.name || (t && t.name) || '')
     const body = `<div class="kn-field"><span>Name</span><span class="kn-inline"><code class="kn-dim">~/.claude/skills/</code><input class="search kn-in sm" id="kn-twin-name" value="${name}" aria-label="The skill's name" spellcheck="false"><code class="kn-dim">/SKILL.md</code></span></div>
       <p class="set-sub">${t && t.own ? 'This vault\'s own <code>twin</code> skill' : 'Echo\'s starter <code>twin</code> skill'}, its paths made absolute to the vault, so <code>/${name}</code> works in any folder. Read it before you install it: every Claude Code session of yours will be able to use it.</p>
+      ${t && t.taken_by ? `<p class="error">/${esc(t.name)} is ${esc(t.taken_by)}'s twin skill already: choose another name.</p>` : ''}${t && t.installed && t.installed !== t.name ? `<p class="set-sub">Installed now as /${esc(t.installed)}: Install takes that one out and adds /${esc(t.name)}.</p>` : ''}
       ${!t ? '<div class="skeleton"><i></i><i></i></div>' : `<pre class="kn-rowpre kn-twin-text" tabindex="0" aria-label="The file Echo writes">${esc(t.text)}</pre>`}
       ${v && v.profile !== 'system' ? `<div class="kn-warn">${IC.warn}<span><b>This vault is read on ${esc(profName(v.profile))}.</b> From your own Claude Code the skill reads it with that Claude Code's own account and settings, not this profile's.</span></div>` : ''}
       <p class="set-sub">It goes into your own Claude Code (<code>~/.claude</code>); sessions on other AI profiles don't see it. Remove takes out only Echo's copy.</p>${x.error ? `<p class="error">${esc(x.error)}</p>` : ''}`
-    return sheet('Use /twin from any Claude Code session', body, `<span class="grow"></span><button class="btn ghost" data-kn="sheet-close">Cancel</button><button class="btn primary" data-kn="twin-global"${t ? '' : ' disabled'}>Install</button>`, IC.ask)
+    return sheet('Use /twin from any Claude Code session', body, `<span class="grow"></span><button class="btn ghost" data-kn="sheet-close">Cancel</button><button class="btn primary" data-kn="twin-global"${t && !t.taken_by ? '' : ' disabled'}>Install</button>`, IC.ask)
   }
   /** The twin skill into the user's own Claude Code (Echo #776 `ctx.claude.installSkill`, `uses.skills`): on this click,
    *  before anything else is awaited (Echo takes it only while the click is fresh); the text the sheet showed, or the
    *  one Settings would show (Update). Echo never writes over a skill that isn't the plugin's own. */
+  const SKILL_GONE = /isn't a skill .* added/
   async function twinGlobal(v) {
     const s = st(), x = s.sheet && s.sheet.kind === 'twin' ? s.sheet : null
     const say2 = (m) => { if (x && st().sheet === x) { x.error = m; render() } else say(m) }
@@ -1942,6 +1944,10 @@ export async function createKnowledge(ctx, hooks = {}) {
     const name = (x && x.name) || (t && t.name) || ''
     // Only the text the sheet shows, as it shows it (its name typed since: read again first).
     if (!t || t.name !== name) return say2('Wait for the skill\'s text to show, then Install.')
+    if (t.taken_by) return say2(`/${name} is ${t.taken_by}'s twin skill already: choose another name.`)
+    // Update… under a new name: the old one out first (one name a vault); one Echo no longer has is gone already.
+    const old = s.settings && s.settings.global_twin
+    if (old && old !== name) { try { await ctx.claude.removeSkill(old) } catch (err) { if (!SKILL_GONE.test(String(err.message || err))) return say2(String(err.message || err)) } }
     try { await ctx.claude.installSkill(name, t.text) } catch (err) { return say2(String(err.message || err)) }
     try { await run('kn_twin', { id: v.id, op: 'installed', name }, 'twin') } catch { /* shown on the next read */ }
     if (x && st().sheet === x) s.sheet = null
@@ -1952,10 +1958,13 @@ export async function createKnowledge(ctx, hooks = {}) {
     const name = st().settings && st().settings.global_twin
     if (!name) return
     if (!ctx.claude || typeof ctx.claude.removeSkill !== 'function') return say('This Echo can\'t change your own Claude Code\'s skills.')
-    try { await ctx.claude.removeSkill(name) } catch (err) { if (!/isn't there|not there|didn't add/i.test(String(err.message || err))) return say(String(err.message || err)) }
+    // Echo's word for one it no longer has as this plugin's ("“x” isn't a skill Knowledge added": removed with the plugin
+    // when it was removed and installed again with its data kept, or by the user): gone already, forgotten here too.
+    let gone = false
+    try { await ctx.claude.removeSkill(name) } catch (err) { if (!SKILL_GONE.test(String(err.message || err))) return say(String(err.message || err)); gone = true }
     try { await run('kn_twin', { id: v.id, op: 'removed' }, 'twin') } catch { /* shown on the next read */ }
     await loadSettings(); render()
-    done(`/${name} is out of your Claude Code.`)
+    done(gone ? `/${name} was no longer in your Claude Code (removed with the plugin, or by you): forgotten here.` : `/${name} is out of your Claude Code.`)
   }
   async function loadTwinText() {
     const s = st(), x = s.sheet, v = vault()

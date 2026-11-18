@@ -1,6 +1,6 @@
 // Echo's rules for the hidden files a plugin may write in a folder it was given (onetest-ai/echo#776, Rules #768),
 // ported from Echo's code so the fake ctx refuses what Echo refuses and a test can check the plugin's own skills:
-// `grants::hidden_ok` and `plugins::claude_skills::skill_md_ok` (crates/echoctl/src). Echo's code wins where they differ.
+// `grants::hidden_ok` (with #781: `.obsidian/<name>.json` at any depth) and `plugins::claude_skills::skill_md_ok` (crates/echoctl/src). Echo's code wins where they differ.
 
 /** `plugins::claude_skills::SKILL_KEYS`: the frontmatter keys a plugin's skill may set. */
 export const SKILL_KEYS = ['name', 'description', 'when_to_use', 'argument-hint', 'disable-model-invocation', 'user-invocable']
@@ -64,11 +64,16 @@ export function hiddenOk(rel, folder = false) {
   const named = (n, ext) => n.length > ext.length && n.endsWith(ext) && !n.startsWith('.') && !n.includes(':')
   if (!folder) {
     if (p[p.length - 1] === '.gitignore') return !p.slice(0, -1).some((c) => c.startsWith('.'))
-    if (p.length === 2 && p[0] === '.obsidian') return named(p[1], '.json') && !['community-plugins.json', 'core-plugins.json'].includes(p[1].toLowerCase())
+    // Echo #781: Obsidian's settings at any depth under plain folders, ASCII names only, never what switches code on.
+    if (p.length >= 2 && p[p.length - 2] === '.obsidian') {
+      const n = p[p.length - 1]
+      return !p.slice(0, -2).some((c) => c.startsWith('.')) && /^[\x00-\x7f]*$/.test(n) && named(n, '.json') && !['community-plugins.json', 'core-plugins.json', 'core-plugins-migration.json'].includes(n.toLowerCase())
+    }
     if (p.length === 4 && p[0] === '.claude' && p[1] === 'skills') return skillName(p[2]) && named(p[3], '.md')
     return false
   }
-  if ((p.length === 1 && (p[0] === '.obsidian' || p[0] === '.claude')) || (p.length === 2 && p[0] === '.claude' && p[1] === 'skills')) return true
+  if (p[p.length - 1] === '.obsidian') return !p.slice(0, -1).some((c) => c.startsWith('.'))
+  if ((p.length === 1 && p[0] === '.claude') || (p.length === 2 && p[0] === '.claude' && p[1] === 'skills')) return true
   return p.length === 3 && p[0] === '.claude' && p[1] === 'skills' && skillName(p[2])
 }
 

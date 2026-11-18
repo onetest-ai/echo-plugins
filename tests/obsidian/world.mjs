@@ -22,12 +22,12 @@ export const PROFILES = { default: 'system', profiles: [{ id: 'system', name: 'C
 
 /** The plugin over made-up Echo data; `vault(name, {git, minutes, commit})` makes one from the twin preset in a folder
  *  of its own (as the picker would give it). */
-export function world({ calls = [], threads = [], clients = [], people = [], mail = [], threadValues = {}, clientValues = {}, git = false, terminal = true, m365, web, settings = {}, me } = {}) {
+export function world({ calls = [], threads = [], clients = [], people = [], mail = [], threadValues = {}, clientValues = {}, git = false, terminal = true, m365, web, settings = {}, me, claude } = {}) {
   const base = tmp()
   const data = echoData({ calls, threads, clients, people, mail, me })
   const folders = []
   let next = null
-  const ctx = fakeCtx({ id: 'obsidian', terminal, folders, disk: true, git, markdown: true, echo: data.read, threads: threadValues, clientValues, profiles: PROFILES, inbox: true, agent: true, sessions: true, hints: true, events: ['minutes_written', 'sources_changed'], pkg: PKG, pickFolder: () => next, m365, web, settings })
+  const ctx = fakeCtx({ id: 'obsidian', terminal, folders, disk: true, git, markdown: true, echo: data.read, threads: threadValues, clientValues, profiles: PROFILES, inbox: true, agent: true, sessions: true, hints: true, events: ['minutes_written', 'sources_changed'], pkg: PKG, pickFolder: () => next, m365, web, settings, claude })
   apply(ctx)
   const vault = async (name, { minutes = 'auto', git: g = false, commit } = {}) => {
     next = npath.join(base, name.toLowerCase().replace(/[^a-z0-9]+/g, '-'))

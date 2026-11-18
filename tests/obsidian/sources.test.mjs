@@ -317,8 +317,6 @@ test('a call queued by the event is written only when the batch is prepared, in 
 
 /** #677's `starter::FILES`: the 23 files of the preset. */
 const FILES_677 = ['.claude/skills/process-inbox/SKILL.md', '.claude/skills/twin/SKILL.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', 'gitignore', 'knowledge/.obsidian/app.json', 'knowledge/.obsidian/templates.json', 'knowledge/CATALOG.md', 'knowledge/TAG_TAXONOMY.md', 'knowledge/TERMS_TAXONOMY.md', 'knowledge/action-items/README.md', 'knowledge/activities/README.md', 'knowledge/clients/README.md', 'knowledge/media/README.md', 'knowledge/notes/README.md', 'knowledge/profile/DIGITAL_PROFILE.md', 'knowledge/profile/README.md', 'knowledge/templates/meeting-note.md', 'knowledge/templates/page.md', 'knowledge/topics/README.md', 'log.md', 'raw_inbox/README.md']
-// What Echo still refuses of the preset (Echo #776 writes `.obsidian/<name>.json` only at a folder's top).
-const LEFT_OUT = ['knowledge/.obsidian/app.json', 'knowledge/.obsidian/templates.json']
 
 test('the shipped preset is #677\'s 23 files, read through ctx.package', async () => {
   assert.deepEqual(files(npath.join(PKG, 'starter/twin')), [...FILES_677].sort())
@@ -326,17 +324,17 @@ test('the shipped preset is #677\'s 23 files, read through ctx.package', async (
   assert.deepEqual((await w.ctx.run('starter_files')).slice().sort(), [...FILES_677].sort())
 })
 
-test('a new vault has the preset\'s files, filled in, its skills and .gitignore too (Echo #776); Obsidian\'s settings in knowledge/ are said as left out', async () => {
+test('a new vault has the preset\'s files, filled in, all 23: its skills and .gitignore (Echo #776), Obsidian\'s settings for knowledge/ (#781)', async () => {
   const w = world({ me: { name: 'Sam Rivera', email: 'sam@acme.example' } })
   const v = await w.vault('My twin', { minutes: 'auto' })
   const got = files(v.root)
-  assert.deepEqual(got, FILES_677.map((p) => (p === 'gitignore' ? '.gitignore' : p)).filter((p) => !LEFT_OUT.includes(p)).sort())
-  assert.equal(got.length, 21)
-  assert.deepEqual(v.left_out.map((x) => x.path).sort(), LEFT_OUT)
-  assert.ok(v.left_out.every((x) => /Obsidian's settings only in the vault's top folder/.test(x.why)))
+  assert.deepEqual(got, FILES_677.map((p) => (p === 'gitignore' ? '.gitignore' : p)).sort())
+  assert.equal(got.length, 23)
+  assert.deepEqual(v.left_out, [])
   assert.deepEqual(v.skills, { where: 'vault', in_vault: ['.claude/skills/process-inbox/SKILL.md', '.claude/skills/twin/SKILL.md'], offer: null, why: null })
   assert.equal(read(v.root, '.claude/skills/twin/SKILL.md'), read(PKG, 'starter/twin/.claude/skills/twin/SKILL.md'), 'a skill as the package ships it')
   assert.ok(read(v.root, '.gitignore').includes('.staging/'))
+  assert.equal(JSON.parse(read(v.root, 'knowledge/.obsidian/app.json')).useMarkdownLinks, true)
   for (const p of got) assert.ok(!read(v.root, p).includes('{{vault.'), p)
   assert.ok(read(v.root, 'knowledge/templates/page.md').includes('{{title}}'), 'Obsidian\'s placeholders stay')
   assert.ok(read(v.root, 'README.md').startsWith('# My twin\n'))

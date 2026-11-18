@@ -488,7 +488,11 @@ test('call_knowledge: the vaults, the targets by the call\'s route and profile, 
   assert.ok(!('later' in k), 'saving works: the chip and the minutes line promise it')
   await w.ctx.run('call_choice', { call: CALL, vault: 'none' })
   assert.equal((await w.ctx.run('call_knowledge', { call: page })).record.choice, 'none')
+  // Retitled in Echo (its folder renamed, the stamp kept): the same record. A folder Echo doesn't list is no retitle.
+  assert.equal((await w.ctx.run('call_knowledge', { call: { ...page, name: '2026-11-05_090012-not-in-echo' } })).record.choice, null, 'a folder Echo doesn\'t list never takes another call\'s record')
+  w.data.calls[0].folder = '2026-11-05_090012-retitled'
   assert.equal((await w.ctx.run('call_knowledge', { call: { ...page, name: '2026-11-05_090012-retitled' } })).record.choice, 'none', 'a retitled call keeps its record by its stamp')
+  w.data.calls[0].folder = CALL
   await w.ctx.run('call_choice', { call: CALL, vault: null })
   await w.ctx.run('save_minutes', { call: CALL, vault: v.id })
   assert.deepEqual((await w.ctx.run('call_knowledge', { call: page })).record.saved.map((e) => [e.vault, e.how]), [[v.id, 'manual']])

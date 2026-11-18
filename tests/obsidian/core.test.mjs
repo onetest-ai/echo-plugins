@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import * as nfs from 'node:fs'
 import * as npath from 'node:path'
-import { stampOf, callSourceId, stampLedger, datedStamp, webPictures, webSourceText, tagForm, dictionaryTag, dictionaryRetag, twinSkillText, fmSplit, fmParse, fmGet, propText } from '../../plugins/obsidian/main.js'
+import { stampOf, stampLedger, ledgerFolders, recordOf, datedStamp, webPictures, webSourceText, tagForm, tagContext, dictionaryTag, dictionaryRetag, twinSkillText, fmSplit, fmParse, fmGet, propText } from '../../plugins/obsidian/main.js'
 import { world, call, read, write, exists, PKG, tmp } from './world.mjs'
 import { twin, vault } from './twin.mjs'
 import { skillMdProblem, hiddenOk } from '../helpers/echo-rules.mjs'
@@ -24,43 +24,70 @@ test('a call\'s stamp: the YYYY-MM-DD_HHMMSS its folder starts with, else its wh
   assert.equal(stampOf('imported-notes'), 'imported-notes', 'a folder without one is its own stamp')
   assert.equal(stampOf('whatever', '2026-01-01_000000'), '2026-01-01_000000')
   assert.ok(datedStamp(STAMP) && !datedStamp('imported-notes') && !datedStamp(`${STAMP}-x`))
-  const none = () => false, both = () => true
-  assert.equal(callSourceId(CALL, undefined, none), `call:${STAMP}`)
-  assert.equal(callSourceId(CALL, STAMP, both), `call:${CALL}`, 'two calls in one second: kept apart by folder')
-  assert.equal(callSourceId('imported-notes', undefined, both), 'call:imported-notes')
 })
 
-test('a ledger of before #772 (calls by folder) is read by stamp: its calls, queue and sources; two folders of one stamp stay apart', () => {
+test('a ledger of before #772: every folder of a stamp is one call — a call retitled before (two folders) too — unless Echo says two calls share it', () => {
   const l = {
-    calls: [`call:${CALL}`, 'call:imported-notes', 'call:2026-11-06_100000-a', 'call:2026-11-06_100000-b'],
-    queued: { 'call:2026-11-07_080000-standup': { id: 'call:2026-11-07_080000-standup', kind: 'call', title: 'Standup' }, 'mail:m1': { id: 'mail:m1', kind: 'mail' } },
-    sources: { 'raw_inbox/echo/a.md': { from: `call:${CALL}` }, 'raw_inbox/b.pdf': { by: 'file' } },
+    calls: [`call:${STAMP}-sync`, `call:${STAMP}-sync-with-acme`, 'call:imported-notes', 'call:2026-11-06_100000-a', 'call:2026-11-06_100000-b'],
+    queued: {
+      'call:2026-11-07_080000-standup': { id: 'call:2026-11-07_080000-standup', kind: 'call', title: 'Standup', added: '2026-11-07T09:00:00Z' },
+      'call:2026-11-07_080000-standup-acme': { id: 'call:2026-11-07_080000-standup-acme', kind: 'call', title: 'Standup with Acme', added: '2026-11-07T10:00:00Z' },
+      'mail:m1': { id: 'mail:m1', kind: 'mail' },
+    },
+    sources: { 'raw_inbox/echo/a.md': { from: `call:${STAMP}-sync` }, 'raw_inbox/b.pdf': { by: 'file' } },
   }
-  assert.equal(stampLedger(l, (s) => s === '2026-11-07_080000'), true)
-  assert.deepEqual(l.calls, [`call:${STAMP}`, 'call:imported-notes', 'call:2026-11-06_100000-a', 'call:2026-11-06_100000-b'])
-  assert.deepEqual(Object.keys(l.queued), ['call:2026-11-07_080000-standup', 'mail:m1'], 'Echo says another call shares that stamp: by folder')
+  assert.deepEqual([...ledgerFolders(l).keys()].sort(), ['2026-11-05_090012', '2026-11-06_100000', '2026-11-07_080000'])
+  // Echo: 11-05 and 11-07 are one call each; 11-06 is two calls (each its own key), one of them gone.
+  const to = new Map([[`${STAMP}-sync`, `call:${STAMP}`], [`${STAMP}-sync-with-acme`, `call:${STAMP}`], ['2026-11-07_080000-standup', 'call:2026-11-07_080000'], ['2026-11-07_080000-standup-acme', 'call:2026-11-07_080000'], ['2026-11-06_100000-a', 'call:2026-11-06_100000']])
+  assert.equal(stampLedger(l, to), true)
+  assert.deepEqual(l.calls, [`call:${STAMP}`, 'call:imported-notes', 'call:2026-11-06_100000', 'call:2026-11-06_100000-b'], 'the retitled pair is one call; the shared stamp\'s other folder kept')
+  assert.deepEqual(Object.keys(l.queued), ['call:2026-11-07_080000', 'mail:m1'], 'two queue entries of one call become one')
+  assert.equal(l.queued['call:2026-11-07_080000'].title, 'Standup', 'the earliest kept')
   assert.equal(l.sources['raw_inbox/echo/a.md'].from, `call:${STAMP}`)
   assert.equal(l.keys, 'stamp')
-  assert.equal(stampLedger(l, () => false), false, 'once')
+  assert.equal(stampLedger(l, new Map()), false, 'once')
 })
 
-test('a retitled call is the same call: its note isn\'t written twice, it is queued once, and prepared by its stamp', async () => {
+test('which record is a call\'s: never another folder\'s on a failed read; a retitle only when that folder is gone and it started then', () => {
+  const A = `${STAMP}-acme-sync`, B = `${STAMP}-memo`, at = '2026-11-05T09:00:12+02:00'
+  const recs = [{ key: STAMP, rec: { folder: A, started_at: at, memo: false } }]
+  assert.equal(recordOf(B, recs, null), null, 'Echo couldn\'t say: a record of its own')
+  assert.equal(recordOf(B, recs, [{ folder: A, started_at: at, memo: false }, { folder: B, started_at: at, memo: true }]), null, 'A is still there: B is another call')
+  assert.equal(recordOf(`${A}-renamed`, recs, [{ folder: `${A}-renamed`, started_at: at, memo: false }]), STAMP, 'A retitled')
+  assert.equal(recordOf(`${B}-renamed`, recs, [{ folder: `${B}-renamed`, started_at: at, memo: true }]), null, 'gone, but not the same kind: not A')
+  const two = [...recs, { key: `${STAMP}~abc`, rec: { folder: B, started_at: at, memo: true } }]
+  assert.equal(recordOf(`${B}-renamed`, two, [{ folder: A, started_at: at, memo: false }, { folder: `${B}-renamed`, started_at: at, memo: true }]), `${STAMP}~abc`, 'B retitled keeps its own record')
+  const old = [{ key: STAMP, rec: { folder: A } }]
+  assert.equal(recordOf(`${A}-renamed`, old, [{ folder: `${A}-renamed`, started_at: at }]), STAMP, 'a record from before: the one gone, the one without a record')
+  assert.equal(recordOf(B, old, [{ folder: B, started_at: at }, { folder: 'x', started_at: at }]), null, 'two without a record: none taken')
+})
+
+const notesOf = (v) => filesIn(npath.join(v.root, 'knowledge/notes')).filter((p) => p !== 'README.md')
+async function sameSecond({ wrapCalls } = {}) {
+  const A = `${STAMP}-acme-sync`, B = `${STAMP}-memo`
+  const w = world({ calls: [call(A, 'Acme sync'), call(B, 'A memo', { memo: true })] })
+  const v = await w.vault('My twin', { minutes: 'auto' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.run('set', { id: v.id, key: 'ingest.calls', value: 'add' })
+  if (wrapCalls) { const read = w.ctx.echo.read; w.ctx.echo.read = (k, a, o) => (k === 'calls' ? wrapCalls(() => read(k, a, o)) : read(k, a, o)) }
+  return { w, v, A, B }
+}
+
+test('a retitled call is the same call: its note isn\'t written twice, it is queued once, and prepared as it is named now', async () => {
   const w = world({ calls: [call(CALL, 'Weekly delivery sync')] })
   const v = await w.vault('My twin', { minutes: 'auto' })
   await w.ctx.run('default', { id: v.id })
   await w.ctx.run('set', { id: v.id, key: 'ingest.calls', value: 'prepare' })
   await w.ctx.fire('minutes_written', w.data.payload(CALL))
-  const notes = () => filesIn(npath.join(v.root, 'knowledge/notes')).filter((p) => p !== 'README.md')
-  assert.equal(notes().length, 1)
+  assert.equal(notesOf(v).length, 1)
   assert.deepEqual(Object.keys(ledgerOf(w.ctx, v.id).queued), [`call:${STAMP}`])
   const rec = JSON.parse(w.ctx.files[`calls/${STAMP}.json`])
-  assert.equal(rec.folder, CALL, 'the record says which folder it saw last')
-  // Echo renames the folder (the call retitled): the same stamp.
+  assert.deepEqual([rec.folder, rec.started_at, rec.memo], [CALL, '2026-11-05T09:00:12+02:00', false], 'the record says which folder it saw last, when it started, its kind')
   const renamed = `${STAMP}-weekly-sync-with-acme`
   w.data.calls[0].folder = renamed
   w.data.calls[0].title = 'Weekly sync with Acme'
   await w.ctx.fire('minutes_written', w.data.payload(renamed, true))
-  assert.equal(notes().length, 1, 'the note is updated in place, never a second one')
+  assert.equal(notesOf(v).length, 1, 'the note is updated in place, never a second one')
   assert.deepEqual(Object.keys(ledgerOf(w.ctx, v.id).queued), [`call:${STAMP}`], 'queued once')
   assert.equal(JSON.parse(w.ctx.files[`calls/${STAMP}.json`]).folder, renamed)
   const s = await w.ctx.run('call_knowledge', { call: { name: renamed, stamp: STAMP, notes: true } })
@@ -70,25 +97,74 @@ test('a retitled call is the same call: its note isn\'t written twice, it is que
   const l = ledgerOf(w.ctx, v.id)
   assert.deepEqual([l.calls, Object.keys(l.queued)], [[`call:${STAMP}`], []])
   const src = Object.entries(l.sources).find(([, e]) => e.by === 'call')
-  assert.ok(read(v.root, src[0]).includes('Weekly sync with Acme'), 'read by its stamp: the call as it is named now')
+  assert.ok(read(v.root, src[0]).includes('Weekly sync with Acme'), 'read as the call is named now')
   await w.ctx.fire('minutes_written', w.data.payload(renamed, true))
   assert.deepEqual(Object.keys(ledgerOf(w.ctx, v.id).queued), [], 'prepared once: never queued again')
 })
 
-test('two calls started in the same second: their records and queue entries stay apart, by folder', async () => {
-  const a = `${STAMP}-acme-sync`, b = `${STAMP}-memo`
-  const w = world({ calls: [call(a, 'Acme sync'), call(b, 'A memo', { memo: true })] })
-  const v = await w.vault('My twin', { minutes: 'auto' })
-  await w.ctx.run('default', { id: v.id })
-  await w.ctx.run('set', { id: v.id, key: 'ingest.calls', value: 'add' })
-  await w.ctx.fire('minutes_written', w.data.payload(a))
-  await w.ctx.fire('minutes_written', w.data.payload(b))
+test('two calls of one second: B\'s minutes arriving within a minute of A\'s never go over A\'s note — its own record, note and queue entry', async () => {
+  const { w, v, A, B } = await sameSecond()
+  await w.ctx.fire('minutes_written', w.data.payload(A))
+  await w.ctx.fire('minutes_written', w.data.payload(B))
   const recs = Object.keys(w.ctx.files).filter((k) => k.startsWith('calls/')).sort()
   assert.equal(recs.length, 2, recs.join(', '))
   assert.ok(recs[0] === `calls/${STAMP}.json` && recs[1].startsWith(`calls/${STAMP}~`), recs.join(', '))
-  assert.deepEqual(recs.map((k) => JSON.parse(w.ctx.files[k]).folder), [a, b])
-  assert.deepEqual(Object.keys(ledgerOf(w.ctx, v.id).queued).sort(), [`call:${a}`, `call:${b}`])
-  assert.equal(filesIn(npath.join(v.root, 'knowledge/notes')).filter((p) => p !== 'README.md').length, 2)
+  assert.deepEqual(recs.map((k) => JSON.parse(w.ctx.files[k]).folder), [A, B])
+  assert.equal(notesOf(v).length, 2)
+  const q = Object.keys(ledgerOf(w.ctx, v.id).queued).sort()
+  assert.deepEqual(q, [`call:${STAMP}`, recs[1].slice(6, -5) && `call:${recs[1].slice(6, -5)}`])
+  const p = await w.ctx.run('prepare_sources', { vault: v.id })
+  assert.deepEqual(p.failed, [])
+  const titles = Object.entries(ledgerOf(w.ctx, v.id).sources).filter(([, e]) => e.by === 'call').map(([path]) => read(v.root, path).split('\n').find((x) => x.startsWith('title:'))).sort()
+  assert.deepEqual(titles, ['title: A memo', 'title: Acme sync'], 'each prepared as itself, not the stamp twice')
+})
+
+test('two calls of one second: when Echo can\'t say which calls there are, B gets a record of its own — never A\'s', async () => {
+  let fail = false
+  const { w, v, A, B } = await sameSecond({ wrapCalls: (read) => { if (fail) throw new Error('Echo is busy'); return read() } })
+  await w.ctx.fire('minutes_written', w.data.payload(A))
+  fail = true
+  await w.ctx.fire('minutes_written', w.data.payload(B))
+  assert.equal(notesOf(v).length, 2, 'A\'s note kept, B\'s its own')
+  assert.equal(JSON.parse(w.ctx.files[`calls/${STAMP}.json`]).folder, A)
+})
+
+test('the day Echo lists a call by is its own, not its stamp\'s: a call started just past midnight is still found with its stamp', async () => {
+  const A = '2026-11-05_235959-late-call', B = '2026-11-05_235959-late-memo'
+  const w = world({ calls: [call(A, 'Late call', { started_at: '2026-11-06T00:00:00+02:00' }), call(B, 'Late memo', { memo: true, started_at: '2026-11-06T00:00:00+02:00' })] })
+  const v = await w.vault('My twin', { minutes: 'auto' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.fire('minutes_written', w.data.payload(A))
+  await w.ctx.fire('minutes_written', w.data.payload(B))
+  assert.equal(notesOf(v).length, 2)
+  assert.equal(Object.keys(w.ctx.files).filter((k) => k.startsWith('calls/2026-11-05_235959')).length, 2)
+})
+
+test('a call of a shared second, retitled: the same record and queue entry — no third', async () => {
+  const { w, v, A, B } = await sameSecond()
+  await w.ctx.fire('minutes_written', w.data.payload(A))
+  await w.ctx.fire('minutes_written', w.data.payload(B))
+  const before = Object.keys(ledgerOf(w.ctx, v.id).queued).sort()
+  w.data.calls[1].folder = `${STAMP}-memo-on-pricing`
+  await w.ctx.fire('minutes_written', w.data.payload(`${STAMP}-memo-on-pricing`, true))
+  assert.equal(Object.keys(w.ctx.files).filter((k) => k.startsWith('calls/')).length, 2, 'no third record')
+  assert.equal(notesOf(v).length, 2, 'no third note')
+  assert.deepEqual(Object.keys(ledgerOf(w.ctx, v.id).queued).sort(), before, 'no second queue entry')
+})
+
+test('a ledger of before, with a call retitled then: kept by stamp, and the call\'s next event isn\'t queued a third time', async () => {
+  const w = world({ calls: [call(`${STAMP}-sync-with-acme`, 'Sync with Acme')] })
+  const v = await w.vault('My twin', { minutes: 'off' })
+  await w.ctx.run('default', { id: v.id })
+  await w.ctx.run('set', { id: v.id, key: 'ingest.calls', value: 'add' })
+  const l = ledgerOf(w.ctx, v.id)
+  delete l.keys
+  l.queued = { [`call:${STAMP}-sync`]: { id: `call:${STAMP}-sync`, kind: 'call', title: 'Sync', state: 'queued', rule: 'add', added: '2026-11-05T10:00:00Z' }, [`call:${STAMP}-sync-with-acme`]: { id: `call:${STAMP}-sync-with-acme`, kind: 'call', title: 'Sync with Acme', state: 'queued', rule: 'add', added: '2026-11-05T11:00:00Z' } }
+  w.ctx.files[`vaults/${v.id}/ingest.json`] = JSON.stringify(l)
+  assert.deepEqual((await w.ctx.run('sources', { vault: v.id })).sources.filter((x) => x.queued).map((x) => x.id), [`call:${STAMP}`], 'read by stamp at once: one call')
+  await w.ctx.fire('minutes_written', w.data.payload(`${STAMP}-sync-with-acme`, true))
+  const after = ledgerOf(w.ctx, v.id)
+  assert.deepEqual([after.keys, Object.keys(after.queued)], ['stamp', [`call:${STAMP}`]])
 })
 
 test('the recording\'s events are heard by the call\'s stamp: a call retitled while it records is the same one when transcribed', async () => {
@@ -136,8 +212,9 @@ test('the twin\'s SKILL.md files pass Echo\'s skill_md_ok, as shipped and as the
     assert.equal(skillMdProblem(twinSkillText(md, { id: 'acme-twin', name: 'Acme -- twin <x>', root: '/Users/sam/Notes/Acme twin' }, 'acme-twin')), null, `${n} for every session`)
   }
   assert.ok(hiddenOk('.claude/skills/twin/SKILL.md') && hiddenOk('.gitignore') && hiddenOk('.obsidian/app.json'))
-  assert.ok(!hiddenOk('knowledge/.obsidian/app.json'), 'Echo writes .obsidian/ only at a folder\'s top: the preset says it left those out')
-  assert.ok(!hiddenOk('.obsidian/community-plugins.json') && !hiddenOk('.claude/settings.json') && !hiddenOk('.claude/skills/Twin/SKILL.md'))
+  // Echo #781: `.obsidian/<name>.json` at any depth under plain folders.
+  assert.ok(hiddenOk('knowledge/.obsidian/app.json') && hiddenOk('knowledge/.obsidian', true) && hiddenOk('a/b/.obsidian/templates.json'))
+  for (const no of ['.obsidian/community-plugins.json', 'knowledge/.obsidian/Core-Plugins.json', 'knowledge/.obsidian/core-plugins-migration.json', 'knowledge/.obsidian/plugins/x.json', 'knowledge/.obsidian/themes/x.json', '.hidden/.obsidian/app.json', 'knowledge/.obsidian/\u017fnippets.json', '.claude/settings.json', '.claude/skills/Twin/SKILL.md']) assert.ok(!hiddenOk(no), no)
 })
 
 test('skill_md_ok as ported: what Echo takes and what it refuses (its own cases)', () => {
@@ -173,7 +250,7 @@ test('a new vault in git commits its skills and .gitignore with the rest; a skil
 // ── echo#764: a web page as a source ──
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000200000002008020000', 'hex')
-function webWorld({ listed = 'https://wiki.acme.example', page } = {}) {
+function webWorld({ listed = 'https://wiki.acme.example', page, claude } = {}) {
   const dir = tmp()
   nfs.writeFileSync(npath.join(dir, '01.png'), PNG)
   nfs.writeFileSync(npath.join(dir, '02.png'), PNG)
@@ -198,7 +275,7 @@ function webWorld({ listed = 'https://wiki.acme.example', page } = {}) {
   }
   let typedNow = null
   let typed = null
-  w = world({ web })
+  w = world({ web, claude })
   w.ctx.http = { askAddress: async () => { asked.push(['ask']); typedNow = typed; return typed } }
   return { w, asked, type: (u) => { typed = u } }
 }
@@ -239,7 +316,21 @@ test('a page elsewhere: Echo asks for its address in its own box, reads that one
   assert.deepEqual(filesIn(npath.join(v.root, 'raw_inbox/web')), before)
 })
 
-test('a web page\'s pictures go into the copy with it when it is prepared; other sources\' don\'t', () => {
+test('a web page\'s pictures go into the copy with it when it is prepared; other sources\' don\'t', async () => {
+  let seen = null
+  const claude = async (opts, run) => { seen = { exclude: opts.exclude, page: run.read(pagePath), pic: run.read(`${pagePath.slice(0, -3)}/01.png`), other: run.read('raw_inbox/other.md') }; return { answer: 'Nothing.' } }
+  let pagePath = null
+  const { w } = webWorld({ claude })
+  const v = await w.vault('Twin', { minutes: 'off' })
+  write(v.root, 'raw_inbox/other.md', '# Other\n')
+  pagePath = (await w.ctx.run('add_source', { vault: v.id, kind: 'web', url: 'https://wiki.acme.example/rollout' })).path
+  await w.ctx.run('ingest_go', { id: v.id, sources: [pagePath], wait: true })
+  assert.ok(seen.page && seen.pic !== null, 'the page and its picture are in the copy')
+  assert.equal(seen.other, null, 'another source isn\'t')
+  assert.ok(seen.exclude.includes('raw_inbox/other.md') && !seen.exclude.some((p) => p.startsWith('raw_inbox/web')), seen.exclude.join(', '))
+})
+
+test('a web page\'s Markdown points at its pictures; one Echo couldn\'t save keeps its address', () => {
   const p = webPictures('![a](https://x.example/a.png) ![b](https://x.example/b%7Cc.png) ![a again](https://x.example/a.png)', [
     { src: 'https://x.example/a.png', saved: { file: 'h1', name: '01.png' } },
     { src: 'https://x.example/b|c.png', saved: { file: 'h2', name: '02.png' } },
@@ -248,6 +339,33 @@ test('a web page\'s pictures go into the copy with it when it is prepared; other
   assert.equal(p.md, '![a](2026-11-18-plan%20%282%29/01.png) ![b](2026-11-18-plan%20%282%29/02.png) ![a again](2026-11-18-plan%20%282%29/01.png)')
   assert.deepEqual([p.files.map((f) => f.name), p.failed], [['01.png', '02.png'], 1])
   assert.equal(webSourceText('https://x.example/', '', 'Text', '2026-11-18', 't').title, 'https://x.example/')
+})
+
+test('a page added twice through Echo\'s box is refused before anything is fetched', async () => {
+  const { w, asked, type } = webWorld()
+  const v = await w.vault('Twin', { minutes: 'off' })
+  type('https://blog.example/post')
+  const r = await w.ctx.run('add_source', { vault: v.id, kind: 'web', url: '' })
+  assert.equal(r.url, 'https://blog.example/post')
+  const n = asked.length
+  type('https://blog.example/post')
+  await assert.rejects(w.ctx.run('add_source', { vault: v.id, kind: 'web', url: '' }), /in the vault already: raw_inbox\/web\//)
+  assert.deepEqual(asked.slice(n), [['ask']], 'Echo\'s box asked, the page not read again')
+})
+
+test('the twin skill in your own Claude Code: one name, one vault; the default name is one no other vault holds', async () => {
+  const w = world()
+  const a = await w.vault('Acme')
+  const b = await w.vault('Acme Twin')
+  assert.equal((await w.ctx.run('twin_text', { id: a.id })).name, 'acme-twin')
+  await w.ctx.run('twin', { id: a.id, op: 'installed', name: 'acme-twin' })
+  const t = await w.ctx.run('twin_text', { id: b.id })
+  assert.deepEqual([t.name, t.taken_by], ['acme-twin-2', null], 'Acme Twin\'s default steps aside')
+  assert.equal((await w.ctx.run('twin_text', { id: b.id, name: 'acme-twin' })).taken_by, 'Acme', 'asked for: said whose it is')
+  await assert.rejects(w.ctx.run('twin', { id: b.id, op: 'installed', name: 'acme-twin' }), /is Acme's twin skill already/)
+  assert.equal((await w.ctx.run('twin_text', { id: a.id })).installed, 'acme-twin', 'the sheet knows what it is installed as (Update… under a new name takes it out first)')
+  assert.ok(!twinSkillText('x', { id: 'v', name: 'a --> b', root: '/r' }, 'n').includes('-->”'), 'a vault\'s name never closes the comment')
+  assert.ok(!/<!--[^]*-->[^]*-->/.test(twinSkillText('x', { id: 'v', name: 'a ---> <!-- b', root: '/r' }, 'n')))
 })
 
 // ── step 7: tags through Echo's dictionary ──
@@ -269,9 +387,37 @@ test('a tag Echo\'s dictionary knows by another name is that name; the vault\'s 
   assert.deepEqual(dictionaryTag('idea', ['meeting', 'client', 'concept'], TERMS), { to: 'concept', term: 'Concept' })
   assert.equal(dictionaryTag('akme', ['meeting', 'client', 'concept'], TERMS), null, 'the taxonomy allows none of its names: left for Health')
   assert.equal(dictionaryTag('client', ['client'], [{ name: 'Customer', synonyms: ['client'] }]), null, 'a tag the taxonomy allows is never changed')
-  const r = dictionaryRetag('---\ntags: [akme, meeting]\n---\n# Acme\n\nAbout #controlplane today; `#akme` in code stays.\n', null, TERMS)
+  const page = '---\ntags: [akme, meeting]\n---\n# Acme\n\nAbout #controlplane today; `#akme` in code stays.\n'
+  // Control Plane is the client acme's term: only in a vault for acme.
+  const anyVault = dictionaryRetag(page, tagContext(null, TERMS))
+  assert.equal(anyVault.text, page.replace('[akme,', '[acme-corp,'))
+  assert.deepEqual(anyVault.changed.map((c) => [c.from, c.to]), [['akme', 'acme-corp']], 'a client\'s term never in another\'s vault')
+  const r = dictionaryRetag(page, tagContext(null, TERMS, new Set(['acme'])))
   assert.equal(r.text, '---\ntags: [acme-corp, meeting]\n---\n# Acme\n\nAbout #control-plane today; `#akme` in code stays.\n')
   assert.deepEqual(r.changed.map((c) => [c.from, c.to]), [['akme', 'acme-corp'], ['controlplane', 'control-plane']])
+  // What Obsidian doesn't take as a tag is never one.
+  assert.deepEqual(['2026', '/acme', 'acme/', '12-34', 'a/b'].map(tagForm), ['', '', '', '', 'a/b'])
+  assert.equal(dictionaryTag('x', null, [{ name: '2026' , synonyms: ['x'] }]), null)
+  // One lookup a tag: 5,000 terms, 200 tags, at once.
+  const many = Array.from({ length: 5000 }, (_, i) => ({ name: `Term ${i}`, synonyms: [`syn-${i}`, `alias ${i}`], spellings: [`spell${i}`] }))
+  const big = `---\ntags: [${Array.from({ length: 200 }, (_, i) => `syn-${i}`).join(', ')}]\n---\n# Many\n`
+  const t0 = Date.now()
+  const cx = tagContext(null, many)
+  const got = dictionaryRetag(big, cx)
+  assert.equal(got.changed.length, 200)
+  assert.ok(Date.now() - t0 < 2000, `${Date.now() - t0} ms`)
+})
+
+test('a client\'s dictionary terms apply only in its vaults (For whom, its threads, its Profile)', async () => {
+  const t = twin()
+  write(t, 'knowledge/topics/plan.md', '---\ntitle: Plan\ntags: [cp]\n---\n# Plan\n')
+  write(t, 'knowledge/TAG_TAXONOMY.md', '# Tags\n\n```\nmeeting, client, concept, control-plane\n```\n')
+  const terms = [{ name: 'Control Plane', synonyms: ['cp'], client: 'acme' }]
+  const ctx = await vault(t, { echo: { clients: [{ id: 'acme', name: 'Acme' }], threads: [], calls: [], sources: [], dictionary: { terms } } })
+  const key = 'unknown_tag:knowledge/topics/plan.md:#cp'
+  assert.equal((await ctx.run('health_finding', { id: 'twin', key })).choices[0].choice, 'tag:meeting', 'not acme\'s vault: its term not offered')
+  await ctx.run('belongs', { id: 'twin', belongs: [{ client: 'acme' }] })
+  assert.equal((await ctx.run('health_finding', { id: 'twin', key })).choices[0].label, 'Use #control-plane — Control Plane in Echo\'s dictionary')
 })
 
 test('Health: a tag the taxonomy doesn\'t allow offers the one Echo\'s dictionary says it is, first', async () => {

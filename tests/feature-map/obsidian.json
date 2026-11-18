@@ -256,7 +256,7 @@
   },
   {
    "id": "F-OB-49",
-   "title": "The twin preset: a new vault in a new or empty folder from #677's 23 files (shipped in the plugin), name, owner and day filled in, its .gitignore and .claude/skills (twin, process-inbox — Markdown Echo checks runs nothing) written too, git init and one first commit of them all when asked, registered as twin@1 with commits on; Obsidian's settings for knowledge/ left out and said (Echo writes .obsidian only at a folder's top); the setting \"global\" keeps the twin skill out of the vault and offers it for the user's own Claude Code",
+   "title": "The twin preset: a new vault in a new or empty folder from #677's 23 files (shipped in the plugin), name, owner and day filled in, its .gitignore, .claude/skills (twin, process-inbox — Markdown Echo checks runs nothing) and Obsidian's settings for knowledge/ (knowledge/.obsidian/*.json, Echo #781) written too, git init and one first commit of them all when asked, registered as twin@1 with commits on; anything an Echo refuses left out and said; the setting \"global\" keeps the twin skill out of the vault and offers it for the user's own Claude Code",
    "priority": "high",
    "check": "agent"
   },

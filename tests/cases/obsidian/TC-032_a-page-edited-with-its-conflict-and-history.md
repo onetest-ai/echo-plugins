@@ -36,5 +36,5 @@ tags: [obsidian, knowledge, window, pages, git]
 | 7 | History rail | Two versions; click the older one: "version of <date>", its diff, *Restore this version* |
 | 8 | *Restore this version* → *Restore* | Refused: "clients/acme.md has changes that are not committed — commit them first, or copy what you need from this version"; the file as it was |
 | 9 | `git checkout -- knowledge/clients/acme.md` in `$T`; History → the older version → *Restore* | "Restored, in a new commit."; a commit "Restore knowledge/clients/acme.md to <id>" |
-| 10 | Header *New page*: "Pricing model", *Create page* (Add a row to the index ticked) | The page opens in the editor at `…/pages/Pricing%20model.md`; CATALOG.md has its row; Home's *What's new* lists it "New in Echo" |
+| 10 | Header *New page* (acme.md open): "Pricing model", *Create page* (Add a row to the index ticked) | *In* is the open page's folder, clients; the page, named in that folder's way, opens in the editor at `…/pages/clients%2Fpricing-model.md`; CATALOG.md has its row under Clients; Home's *What's new* lists it "New in Echo" |
 | 11 | notes/2026-01-08-weekly.md → the rail's "Not in the index — … *Add a row…*" | The *Add to the index* sheet: its row under "Notes", "1 of 1 will be added"; *Add 1 row* → "1 row added to the index and committed." |

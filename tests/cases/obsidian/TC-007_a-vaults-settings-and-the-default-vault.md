@@ -27,7 +27,7 @@ tags: [obsidian, settings]
 | 4 | `set` `key` "pages", `value` "Decisions"; then "Nope"; then `key` "notes", `value` "../x" | `overrides.pages` "Decisions"; then "“Nope” isn't in this vault"; then "“../x” must be a path inside the vault" |
 | 5 | `set` `key` "scope", `value` "all" | Fails "no setting “scope”" (minutes follow the thread's or client's vault, not a per-vault scope) |
 | 6 | `echoctl plugin call obsidian default '{"id":"acme-wiki"}'`; `view` | `{"default": "acme-wiki"}`; `view` says `default` "acme-wiki" |
-| 7 | `ECHOCTL_PICK_FOLDER="$VAULTS/acme-wiki/Decisions" echoctl plugin call obsidian add '{"wait":true}'`; `ECHOCTL_PICK_FOLDER="$VAULTS" … add`; `ECHOCTL_PICK_FOLDER="$VAULTS/acme-wiki" … add` | "This folder is inside “<its name>”, which is connected already"; "This folder holds “<its name>”, which is connected already" (its name as `view` shows it: "Acme wiki" after TC-003); `{"id": "acme-wiki", "already": true}` |
+| 7 | `ECHOCTL_PICK_FOLDER="$VAULTS/acme-wiki/Decisions" echoctl plugin call obsidian add '{"wait":true}'`; `ECHOCTL_PICK_FOLDER="$VAULTS" … add`; `ECHOCTL_PICK_FOLDER="$VAULTS/acme-wiki" … add` | "This folder is inside “<its name>”, which is connected already"; "This folder holds “<its name>”, which is connected already" (its name as `view` shows it); `{"id": "acme-wiki", "already": true}` |
 | 8 | `echoctl plugin call obsidian remove '{"id":"acme-wiki"}'`; `view`; `ls "$ECHOCTL_HOME/.echo/plugins/obsidian/vaults"` | `true`; no vaults, `default` null; no `acme-wiki` folder left |
 
 ## Expected Final State

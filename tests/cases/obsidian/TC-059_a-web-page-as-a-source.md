@@ -15,7 +15,8 @@ tags: [obsidian, knowledge, ingest, sources, web]
 
 ## Preconditions
 - TC-038 done (my-twin), `. <dir>/env`, `obs() { echoctl plugin call obsidian "$@"; }`; acme-twin connected for the window
-  steps (`ECHOCTL_PICK_FOLDER="$VAULTS/acme-twin" obs add '{"wait":true}'`)
+  steps (`ECHOCTL_PICK_FOLDER="$VAULTS/acme-twin" obs add '{"wait":true}'`), its first open's question answered
+  (`obs baseline '{"vault":"acme-twin","done":true}'`, as TC-030 step 7 or TC-052 step 1 does)
 - The fake web site `up.sh` started (never the internet): `$FAKE_WEB` and `$FAKE_WEB_OTHER`, both on 127.0.0.1; Echo's
   own box answers `$ECHOCTL_ASK_ADDRESS` in this development build (`$FAKE_WEB_OTHER/rollout.html` for the window; a CLI
   step may set its own)

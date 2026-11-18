@@ -29,7 +29,7 @@ tags: [obsidian, knowledge, window, pages]
 | 1 | `#obsidian:knowledge/acme-twin/pages` | The tree: clients, notes (open), topics folders with their counts, CATALOG.md marked "index", TAG_TAXONOMY.md; "N pages · sources and templates hidden"; the index opens ("CATALOG.md · the index") |
 | 2 | `#obsidian:knowledge/acme-twin/pages/clients%2Facme.md` | The bar "clients / acme.md", Read · Edit, *Obsidian* (an `obsidian://` link), ⋯; the properties (tags: client); "Acme Corp"; links `2026-01-01-kickoff` and `the rollout` with `href="#obsidian:knowledge/acme-twin/pages/…"`; "Pricing model" dashed (Echo's `a.md-missing`, no href) |
 | 3 | Click *the rollout* | The address `…/pages/topics%2Frollout.md`, "topics / rollout.md"; Back returns to acme.md |
-| 4 | Click "Pricing model" | The *New page* sheet with "Pricing model" as its name; *Cancel* |
+| 4 | Click "Pricing model" | The *New page* sheet with "Pricing model" as its name, *In* the pages' top folder (a missing link's page is made there, not in clients); *Cancel* |
 | 5 | The Links rail | *Linked from* 3 (Knowledge Catalog, Kickoff, Rollout by region, each with its line), *Links from this page* 3 (Pricing model "no such page — make it"), *Local graph* drawn |
 | 6 | ⋯ of the page | *Show in Finder*, *Copy path*, *Ask about it*, *History* |
 | 6a | *Show in Finder* | `<dir>/open.log` gains `reveal <$T>/knowledge/clients/acme.md` |

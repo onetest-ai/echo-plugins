@@ -84,7 +84,7 @@ with it and what to leave alone. You correct the description, and from then on C
   (`~/.claude/skills`), for every session: Knowledge shows you the skill first and adds it only when you click
   Install; Update and Remove are in the vault's Settings → Skills, and Echo never touches a skill it didn't add.
   A vault without `process-inbox` gets the starter's on your word (Ingest → Add the starter's process-inbox).
-- **Tags through Echo's dictionary** — a tag your Echo dictionary (Recall → Dictionary) knows by another name (`#akme` for Acme Corp) is
+- **Tags through Echo's dictionary** — a tag your Echo dictionary (Settings → Vocabulary) knows by another name (`#akme` for Acme Corp) is
   written as that name in what Echo proposes: an Ingest run's pages (said on the change), an AI check's fix, and
   Health's fix of a tag the taxonomy doesn't allow (the dictionary's tag offered first). The vault's own tag taxonomy
   wins: a tag is only ever turned into one it allows. Knowledge only reads the dictionary; it never adds to it.

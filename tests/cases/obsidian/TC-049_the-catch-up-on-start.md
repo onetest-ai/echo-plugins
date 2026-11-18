@@ -1,6 +1,6 @@
 ---
 id: TC-049
-title: The catch-up when Echo starts — the calls with minutes and Recall's mail since the last day seen go through the same routing as the live events; a call whose record has the vault isn't written again, a source the ledger has isn't queued again; the first look only notes the day
+title: The catch-up when Echo starts — the calls with minutes and Intake's mail since the last day seen go through the same routing as the live events; a call whose record has the vault isn't written again, a source the ledger has isn't queued again; the first look only notes the day
 priority: high
 type: functional
 requirements: [F-OB-53]

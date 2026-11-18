@@ -58,7 +58,7 @@ function knSwitcherEntries(vaults, recallOn, pluginTabs) {
   const out = [{ kind: 'head', label: 'Your vaults' }]
   for (const v of vaults) out.push({ kind: 'vault', id: v.id, name: v.name, pages: v.pages, star: !!(v.minutes && v.minutes.mode === 'auto'), available: v.available !== false })
   out.push({ kind: 'connect', label: 'Connect a folder…' }, { kind: 'new', label: 'Start a new vault…' })
-  if (recallOn) out.push({ kind: 'sep' }, { kind: 'head', label: "Echo's index" }, { kind: 'recall', label: 'Recall' })
+  if (recallOn) out.push({ kind: 'sep' }, { kind: 'head', label: "Echo's index" }, { kind: 'recall', label: 'Intake' })
   if (pluginTabs.length) {
     out.push({ kind: 'sep' }, { kind: 'head', label: 'From plugins' })
     for (const t of pluginTabs) out.push({ kind: 'plugin', tab: t.tab, label: t.label, plugin: t.plugin })

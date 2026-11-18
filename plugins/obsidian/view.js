@@ -344,7 +344,7 @@ export async function createKnowledge(ctx, hooks = {}) {
         case 'vault': return `<button class="menu-item kn-mi${x.id === s.vault ? ' on' : ''}" role="menuitem" data-kn="vault" data-id="${esc(x.id)}"><span class="kn-gem sm">${IC.gem}</span><span class="grow">${esc(x.name)}</span><span class="kn-mi-r">${x.available ? `${x.pages == null ? '' : `${nf(x.pages)} pages`}${x.star ? ' · ★ minutes' : ''}` : 'folder not found'}</span></button>`
         case 'connect': return `<button class="menu-item kn-mi" role="menuitem" data-kn="connect">${IC.folder}<span class="grow">${esc(x.label)}</span></button>`
         case 'new': return `<button class="menu-item kn-mi" role="menuitem" data-kn="new">${IC.plus}<span class="grow">${esc(x.label)}</span></button>`
-        case 'recall': return `<button class="menu-item kn-mi" role="menuitem" data-kn="recall">${IC.recall}<span class="grow">Recall</span><span class="kn-mi-r">what was said</span></button>`
+        case 'recall': return `<button class="menu-item kn-mi" role="menuitem" data-kn="recall">${IC.recall}<span class="grow">Intake</span><span class="kn-mi-r">mail and channels</span></button>`
       }
       return ''
     }
@@ -380,7 +380,7 @@ export async function createKnowledge(ctx, hooks = {}) {
 
   // ── nothing connected yet ──
   function emptyView() {
-    const recall = recallOn() ? '<p class="kn-empty-foot">Recall — Echo\'s index of what was said in your calls, mail and folders — is in the switcher above.</p>' : ''
+    const recall = recallOn() ? '<p class="kn-empty-foot">Intake — what Echo reads from your threads\' mail and channels — is in the switcher above.</p>' : ''
     return `<div class="kn-empty"><span class="kn-gem big">${GEM_BIG}</span><h2>Your knowledge, in files you own</h2>
       <p class="kn-empty-lead">A vault is a folder of Markdown — your second brain. Echo shows it, lets you edit and graph it, saves your meeting minutes into it, and Claude answers from it.</p>
       <div class="kn-choices">
@@ -2473,7 +2473,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     } catch (e) { if (st().sheet) { st().sheet.error = String(e.message || e); render() } else say(`Not saved: ${e.message || e}`) }
   }
 
-  // ── Settings → Knowledge: the vaults, above Recall ──
+  // ── Settings → Intake: the vaults (Knowledge), above Intake's own settings ──
   function settingsVaults() {
     const d = st().data
     if (!d) { load().then(render); return '' }
@@ -2545,7 +2545,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     switch (d.kn) {
       case 'switcher': s.switcher = !s.switcher; return render()
       case 'vault': s.switcher = false; return goVault(d.id, s.tabs[d.id] || 'home')
-      case 'recall': s.switcher = false; return go('brain/sources')
+      case 'recall': s.switcher = false; return go('settings/brain') // Settings → Intake (its id stays brain)
       case 'connect': return openConnect()
       case 'new': return openNew()
       case 'tab': e.preventDefault(); s.menu = null; return goVault(s.vault, d.knTab, d.knTab === 'pages' ? s.path : d.knTab === 'health' ? s.hlKey : d.knTab === 'ingest' ? s.ingRun : '')

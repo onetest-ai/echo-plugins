@@ -92,7 +92,7 @@ test('a queued mail keeps its profile: the vault switched to another, prepare re
   await w.ctx.run('set', { id: v.id, key: 'profile', value: '' })
   const again = await w.ctx.run('prepare_sources', { vault: v.id })
   assert.equal(again.written.length, 1)
-  assert.deepEqual(w.ctx.m365Log, [['mailThread', 'AAMk1']], 'by Recall\'s m365_id')
+  assert.deepEqual(w.ctx.m365Log, [['mailThread', 'AAMk1']], 'by Intake\'s m365_id')
 })
 
 test('a mail with no id stays queued with why (no search for it); a channel\'s post isn\'t queued, said in the ledger', async () => {
@@ -110,7 +110,7 @@ test('a mail with no id stays queued with why (no search for it); a channel\'s p
   assert.equal((await w.ctx.run('sources', { vault: v.id })).sources[0].why, 'this mail can\'t be read until Echo gives its id')
 })
 
-test('a mail or a chat the user adds is checked against the vault\'s profile (the default one\'s when Recall has none)', async () => {
+test('a mail or a chat the user adds is checked against the vault\'s profile (the default one\'s when Intake has none)', async () => {
   const chat = { id: '19:x', topic: 'Ops', members: [], url: null, since: '2026-11-01', until: '2026-11-07', messages: [{ at: '2026-11-02T10:00:00Z', from: 'Sam Rivera', text: 'Hi.', files: [] }] }
   const w = world({ m365: { mailThread: async (id) => THREAD(id), chat: async () => chat } })
   const v = await w.vault('Twin', { minutes: 'off' })
@@ -187,7 +187,7 @@ test('the catch-up: a first start notes the day; the next saves only calls with 
   // A read that fails keeps the day.
   w.ctx.files['seen.json'] = JSON.stringify({ since: '2026-11-09' })
   const read0 = w.ctx.echo.read
-  w.ctx.echo.read = (kind, ...a) => { if (kind === 'sources') throw new Error('Recall is busy'); return read0(kind, ...a) }
+  w.ctx.echo.read = (kind, ...a) => { if (kind === 'sources') throw new Error('Intake is busy'); return read0(kind, ...a) }
   assert.deepEqual(await w.ctx.run('catch_up'), { first: false, ok: false })
   assert.equal(JSON.parse(w.ctx.files['seen.json']).since, '2026-11-09')
 })

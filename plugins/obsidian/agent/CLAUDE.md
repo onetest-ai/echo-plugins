@@ -73,7 +73,7 @@ without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `wher
   A web page there (`raw_inbox/web/`, `kind: web`, its `url`) was read once when the user added it, its pictures in the
   folder of its name; never fetch it again to "refresh" it.
 - Tags: use the vault's tag taxonomy (its `TAG_TAXONOMY.md` or `tags.md`) when it has one; Echo's dictionary
-  (Recall → Dictionary) names the user's clients, products and terms — prefer its name for a tag the taxonomy
+  (Settings → Vocabulary) names the user's clients, products and terms — prefer its name for a tag the taxonomy
   allows. Echo turns tags into the dictionary's names in what it proposes from Ingest and the AI checks.
 - Turning sources into pages is the vault's own ingest skill, run by Echo on a copy of the vault when the user prepares
   changes (the Knowledge activity's Ingest tab); every change waits for the user's review there. Health's AI checks

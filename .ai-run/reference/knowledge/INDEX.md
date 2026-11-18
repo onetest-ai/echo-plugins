@@ -57,6 +57,6 @@ The port is complete in `knowledge-1.0` (tracking PR #22 → `main`); Knowledge 
 - #31 Echo core's new APIs adopted (stamps, vault and global skills, web pages, strict reads, hidden folders) and tags
   through Echo's dictionary
 - #23 this reference
-- STEP9_PR step 9: #17's cases on this plugin's fixture (TC-063–TC-067; what 1.0 dropped is in
+- #32 step 9: #17's cases on this plugin's fixture (TC-063–TC-067; what 1.0 dropped is in
   `tests/cases/obsidian/README.md`, *From #17*), the 0.8 list cut short (TC-068), the full Knowledge and Scheduler
   suites as the release gate. #17 and onetest-ai/echo#677 close with it.

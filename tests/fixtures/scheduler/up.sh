@@ -4,8 +4,8 @@
 #   tests/fixtures/scheduler/down.sh <dir>
 # <dir> must not exist yet. It builds Echo's standard made-up data (Echo's tests/fixtures/make_data.py; its `claude` is
 # the test fake, which refuses every run — but Echo writes the run's first log line, with the model it asked for,
-# before Claude Code starts), installs this checkout's Scheduler from a local marketplace, puts one made-up routine in
-# its store whose model is free text (`gateway-digest`, model `acme-gw/sonnet-large`, off), and serves Echo's window at
+# before Claude Code starts), installs this checkout's Scheduler from a local marketplace, puts two made-up routines of
+# before in its store (`gateway-digest`: model free text `acme-gw/sonnet-large`, `tools: read`; `folder-notes`: `tools: folder`; both off), and serves Echo's window at
 # http://127.0.0.1:<port>. Echo's jobs are on their defaults, with a month of made-up runs (`jobs-runs/*.jsonl`: Needs
 # you now, Thread sync, Fetch, Recall; one failed run of Needs you now today) and the timed jobs' next looks. CLI steps run after `. <dir>/env` (`echoctl` is then the debug build); `$R` is the
 # plugin's routines folder, `$RUNS` its runs.
@@ -46,6 +46,8 @@ dir="$(cd "$dir" && pwd)"
   echoctl plugin install scheduler --from local --yes >> "$dir/install.log"
   # A routine written before the model was picked from a list: its model is free text. Off, so it never runs by itself.
   mkdir -p "$R"
+  # A routine written when its permissions could be "your folder session's" (`tools: folder`, Auto since Echo 0.10.0). Off.
+  printf -- '---\nname: Folder notes\nschedule: daily 18:00\nprofile:\nmodel:\ntools: folder\ndeliver:\nmail_to:\nskip_empty: true\nenabled: false\n---\nWhat did I change in my notes today?\n' > "$R/folder-notes.md"
   printf -- '---\nname: Gateway digest\nschedule: weekdays 08:30\nprofile:\nmodel: acme-gw/sonnet-large\ntools: read\ndeliver:\nmail_to:\nskip_empty: true\nenabled: false\n---\nWhat changed in the Acme thread since yesterday?\n' > "$R/gateway-digest.md"
   # Echo's jobs as if they had run (Echo's own records of them, made up, in its words and counts only): a month of
   # Needs you now (one slow pass, failed runs two days ago and today) and Thread sync with model costs, Fetch with none, Recall today; the timed

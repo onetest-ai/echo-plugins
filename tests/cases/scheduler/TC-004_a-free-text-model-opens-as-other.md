@@ -23,10 +23,10 @@ tags: [scheduler, model, migration]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | Read the row "Gateway digest"; click it | The row reads "Weekdays at 08:30 · reads only · acme-gw/sonnet-large", its switch off; the panel's "AI" ends " · acme-gw/sonnet-large" |
+| 1 | Read the row "Gateway digest"; click it | The row reads "Weekdays at 08:30 · Auto · acme-gw/sonnet-large", its switch off; the panel's "AI" ends " · acme-gw/sonnet-large" |
 | 2 | "Edit" | "Model" has "Other…" picked; the field "Other model" holds "acme-gw/sonnet-large" |
-| 3 | Click "Save" without a change; `cat "$R/gateway-digest.md"` | `model: acme-gw/sonnet-large`; name, schedule, `tools: read`, `enabled: false` and the prompt as they were (the save may write an empty key as `key: `, with a space) |
-| 4 | `echoctl plugin call scheduler run_wait '{"id":"gateway-digest","deliver":false}'`; the run's `log.txt`, first line | "… Echo runs “Gateway digest” on <profile>, model acme-gw/sonnet-large (asked: read permissions …" |
+| 3 | Click "Save" without a change; `cat "$R/gateway-digest.md"` | `model: acme-gw/sonnet-large`; `tools: auto` (its `read` of before, saved as Auto — TC-010); name, schedule, `enabled: false` and the prompt as they were (the save may write an empty key as `key: `, with a space) |
+| 4 | `echoctl plugin call scheduler run_wait '{"id":"gateway-digest","deliver":false}'`; the run's `log.txt`, first line | "… Echo runs “Gateway digest” on <profile>, model acme-gw/sonnet-large (asked: auto; runs with …" |
 
 ## Expected Final State
-`gateway-digest` unchanged.
+`gateway-digest` unchanged but for `tools: auto`.

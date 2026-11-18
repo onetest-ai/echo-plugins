@@ -1,0 +1,264 @@
+{
+ "comment": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [
+   "A|1"
+  ],
+  "headings": []
+ },
+ "multiComment": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [],
+  "headings": []
+ },
+ "tagKey": {
+  "title": "n",
+  "tags": [
+   "solo"
+  ],
+  "aliases": [],
+  "props": {
+   "tag": "solo"
+  },
+  "links": [],
+  "headings": []
+ },
+ "tagsKeyStr": {
+  "title": "n",
+  "tags": [
+   "one",
+   "two",
+   "three"
+  ],
+  "aliases": [],
+  "props": {
+   "tags": "one, two #three"
+  },
+  "links": [],
+  "headings": []
+ },
+ "tagsHash": {
+  "title": "n",
+  "tags": [
+   "x",
+   "y"
+  ],
+  "aliases": [],
+  "props": {
+   "tags": [
+    "#x",
+    "y/"
+   ]
+  },
+  "links": [],
+  "headings": []
+ },
+ "numTag": {
+  "title": "n",
+  "tags": [
+   "a1",
+   "2026/q1",
+   "/x",
+   "s",
+   "ü"
+  ],
+  "aliases": [],
+  "props": {},
+  "links": [],
+  "headings": []
+ },
+ "headingTag": {
+  "title": "n",
+  "tags": [
+   "notag"
+  ],
+  "aliases": [],
+  "props": {},
+  "links": [
+   "H|2"
+  ],
+  "headings": [
+   "1:Title #notag",
+   "2:Sub [[H]]"
+  ]
+ },
+ "inlineCode": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [],
+  "headings": []
+ },
+ "fence": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [],
+  "headings": []
+ },
+ "indentCode": {
+  "title": "n",
+  "tags": [
+   "i"
+  ],
+  "aliases": [],
+  "props": {},
+  "links": [
+   "I|1"
+  ],
+  "headings": []
+ },
+ "mdLinks": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [
+   "c d.md|1|y|M",
+   "e f.md|1|z|M",
+   "p.png|1|i|E|M",
+   "[x].md|1|n|M"
+  ],
+  "headings": []
+ },
+ "wikiForms": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [
+   "A|1|h|al",
+   "A|1|b",
+   "img.png|1|E",
+   "1|local",
+   "a|1"
+  ],
+  "headings": []
+ },
+ "propLinks": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {
+   "company": "[[Acme]]",
+   "list": [
+    "[[Beta]]"
+   ],
+   "md": "[t](x.md)"
+  },
+  "links": [
+   "Acme|2|P",
+   "Beta|4|P"
+  ],
+  "headings": []
+ },
+ "aliases": {
+  "title": "n",
+  "tags": [],
+  "aliases": [
+   "One",
+   "Two"
+  ],
+  "props": {
+   "aliases": [
+    "One",
+    "Two"
+   ],
+   "alias": "z"
+  },
+  "links": [],
+  "headings": []
+ },
+ "aliasStr": {
+  "title": "n",
+  "tags": [],
+  "aliases": [
+   "a",
+   "b"
+  ],
+  "props": {
+   "aliases": "a, b"
+  },
+  "links": [],
+  "headings": []
+ },
+ "title": {
+  "title": "Q: x",
+  "tags": [],
+  "aliases": [],
+  "props": {
+   "title": "Q: x"
+  },
+  "links": [],
+  "headings": [
+   "1:H1"
+  ]
+ },
+ "noTitle": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [],
+  "headings": [
+   "1:Heading title"
+  ]
+ },
+ "crlf": {
+  "title": "n",
+  "tags": [
+   "w",
+   "t"
+  ],
+  "aliases": [],
+  "props": {
+   "tags": [
+    "w"
+   ]
+  },
+  "links": [
+   "A|4"
+  ],
+  "headings": []
+ },
+ "bom": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [
+   "A|4"
+  ],
+  "headings": []
+ },
+ "mathInline": {
+  "title": "n",
+  "tags": [
+   "inmath"
+  ],
+  "aliases": [],
+  "props": {},
+  "links": [
+   "M|1"
+  ],
+  "headings": []
+ },
+ "html": {
+  "title": "n",
+  "tags": [],
+  "aliases": [],
+  "props": {},
+  "links": [
+   "Y|1"
+  ],
+  "headings": []
+ }
+}

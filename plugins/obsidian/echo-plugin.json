@@ -1,29 +1,38 @@
 {
   "id": "obsidian",
-  "name": "Obsidian vaults",
-  "version": "0.8.0",
-  "echo": ">=0.9.9",
-  "summary": "Connect the Obsidian vaults you already have: Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
+  "name": "Knowledge",
+  "version": "1.0.0",
+  "echo": ">=0.10.0",
+  "summary": "Your notes as Knowledge: connect the folders of notes you keep (an Obsidian vault, any folder of Markdown); Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "agent": {
-    "summary": "The user's Obsidian vaults and Echo's Knowledge: which vault to look in, asking Echo's index of them, adding notes in each vault's own way",
+    "summary": "The user's Knowledge vaults (Obsidian vaults and other folders of notes): which vault to look in, asking Echo's index of them, adding notes in each vault's own way",
     "prefix": "kb"
   },
   "uses": {
     "folders": {
-      "what": "Obsidian vaults"
+      "what": "folders of notes (Knowledge vaults)",
+      "write": true
     },
     "claude": {},
     "echo": {
       "read": [
         "clients",
         "threads",
-        "dictionary",
-        "sources"
-      ],
-      "write": [
+        "source",
+        "sources",
+        "calls",
+        "me",
+        "recording",
         "dictionary"
       ]
     },
+    "network": {
+      "hosts_from": [
+        "web_sites"
+      ],
+      "ask": true
+    },
+    "skills": true,
     "sessions": {
       "skills": true,
       "read": true,
@@ -37,19 +46,41 @@
         "tags",
         "where",
         "tasks",
-        "unresolved"
+        "unresolved",
+        "rename_plan"
+      ]
+    },
+    "events": {
+      "on": [
+        "minutes_written",
+        "sources_changed",
+        "recording_started",
+        "recording_stopped",
+        "transcribed"
+      ]
+    },
+    "m365": {
+      "read": [
+        "mail",
+        "chats"
       ]
     }
   },
-  "main": "main.js",
-  "client": "client.js",
   "settings": [
     {
-      "key": "knowledge",
-      "label": "Knowledge",
-      "type": "bool",
-      "default": false,
-      "help": "Echo keeps the lasting facts it learns from your calls and mail as its own Obsidian vault — Knowledge → Notes; Claude in Echo answers from it."
+      "key": "skills",
+      "label": "Where the twin preset puts its twin skill",
+      "type": "string",
+      "default": "vault",
+      "help": "vault: the new vault's own .claude/skills; global: your own Claude Code (~/.claude/skills), for every session — Knowledge shows it to you first and adds it only when you click Install"
+    },
+    {
+      "key": "web_sites",
+      "label": "Sites Knowledge reads pages from",
+      "type": "string",
+      "help": "Addresses of sites, comma-separated (https://wiki.acme.example): a page there is read as soon as you add it in Ingest. Any other page, Echo asks you for its address in its own box"
     }
-  ]
+  ],
+  "main": "main.js",
+  "client": "client.js"
 }

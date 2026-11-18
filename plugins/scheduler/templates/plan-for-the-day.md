@@ -3,7 +3,7 @@ name: Plan for the day
 order: 1
 description: Each workday morning: your meetings, what you owe (late first), what you wait for, what waits in Echo.
 schedule: weekdays 08:30
-tools: read
+tools: auto
 deliver: mail
 skip_empty: false
 ---

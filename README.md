@@ -22,10 +22,10 @@ An Echo plugin is a package that brings **its own code** — the way dsh-desktop
 |---|---|
 | [Scheduler](plugins/scheduler) | Your own Claude prompts on a schedule, answers delivered to you in Telegram, Teams or mail |
 | [Telegram](plugins/telegram) | Your Claude · Echo folder session from your phone, through your own bot |
-| [Obsidian vault](plugins/obsidian) | Your vault as Echo's second brain; minutes and people written into it |
+| [Knowledge](plugins/obsidian) | Your folders of notes (Obsidian vaults, any Markdown) as Knowledge, in an activity of its own: described for Claude and indexed as Obsidian does; pages, graph and Health (code and AI checks, fixes as diffs); your calls' minutes into each thread's or client's vault; Ingest of calls, mail, files and web pages by the vault's own skill, every change reviewed; the twin preset and its skills, global on a click; tags through Echo's dictionary |
 | [GitHub](plugins/github) | CI, pull requests and reviews on Today; GitHub's items in My work and in each thread's Work; a thread's repos |
 
-Each needs Echo 0.9.9 or later, which reads a plugin's part for Claude (`agent/`) — until then Echo lists them as "Needs a newer Echo". Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
+Each needs Echo 0.9.9 or later, which reads a plugin's part for Claude (`agent/`) — until then Echo lists them as "Needs a newer Echo"; Knowledge 1.0 and Scheduler 0.8 need Echo 0.10.0. Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
 
 ## Make a marketplace of your own
 

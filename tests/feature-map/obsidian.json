@@ -21,12 +21,6 @@
    "check": "agent"
   },
   {
-   "id": "F-OB-04",
-   "title": "Knowledge is an entry for Claude while it is on and holds notes, first; turned off, the entry goes",
-   "priority": "medium",
-   "check": "agent"
-  },
-  {
    "id": "F-OB-05",
    "title": "A vault's description is the user's data to Claude: a hostile \"when\" line (a |, tags, a line break, an instruction) stays one escaped row of the core, and no words of the user's description go into the guide, which points to the description as data",
    "priority": "high",
@@ -40,9 +34,363 @@
   },
   {
    "id": "F-OB-07",
-   "title": "Claude in Echo may run the index's read commands without asking (uses.sessions.commands: search, info, links, backlinks, resolve, tags, where, tasks, unresolved — named on the install sheet, not rename_plan); they work from the laid-out launcher and only read",
+   "title": "Claude in Echo may run the index's commands without asking (uses.sessions.commands: search, info, links, backlinks, resolve, tags, where, tasks, unresolved, rename_plan — named on the install sheet); they work from the laid-out launcher and only read",
    "priority": "high",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-08",
+   "title": "Updated from Obsidian vaults 0.8: the update asks again (it may now change the folders), the vaults keep their ids, descriptions, for whom and Claude's entries, each takes a call's minutes only when asked; 0.8's facts vault, its pipeline's state, its entry for Claude and its commands are gone at once, and a second load changes nothing",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-09",
+   "title": "A vault's settings (minutes auto/ask/off, AI profile, commit, ingest, its folders) are checked as the user sets them; one vault is the default for minutes, and removing it leaves none",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-10",
+   "title": "A folder that is a vault already, is inside one, or holds one isn't connected again, and the folder is given back",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-11",
+   "title": "Echo finds a vault's shape without changing it — its pages folder, index, notes folder and naming, templates, sources, taxonomies, rules, skills, Obsidian's settings — when it is connected, when asked to read it again (the user's overrides kept), and once in the background for a vault from 0.8",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-12",
+   "title": "One index per vault over its pages folder (sources, templates and machinery left out), rebuilt by size and time, with a revision; Claude's index commands keep their arguments and answers, their note paths relative to the pages folder, named as `pages` when it isn't the vault's root",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-13",
+   "title": "A page reads as safe HTML: links to the vault's pages route inside Echo, a missing page is marked, https and Echo's links kept, images only png/jpg/gif/webp from inside the vault, the vault's own markup (scripts, javascript: and file: links, raw HTML, code) stays text; with its links, backlinks and their lines, local graph, and whether the index lists it",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-14",
+   "title": "An edit is saved only over the text it was opened with: a change made meanwhile comes back as a conflict with what is there now and is never written over; line endings are kept; a page that isn't UTF-8 or is over 2 MB is read only",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-15",
+   "title": "A new page from the vault's template (title, date, time filled) or its page format, named in the folder's own way, never over a page that is there, with a row in the index's table for its folder when asked",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-16",
+   "title": "In a vault in git: a save, a new page and a restore commit only the files Echo wrote when the vault's commit is on; a page's history, a version's text and changes; a restore never over changes git hasn't got nor over a change made while git was asked, never of a version too large or not UTF-8, and is a new commit",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-17",
+   "title": "Find pages in a vault: by #tag, then by title, path and words in the text, each text hit with its line as plain text",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-18",
+   "title": "The vault's graph: pages with their top folder, tags and number of links, links as edges, tags as nodes when asked, the index a hub; the Knowledge activity draws it",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-19",
+   "title": "A vault's checks, read only: pages the index doesn't list, broken links, isolated pages, pages without properties, tags the taxonomy doesn't allow, index rows to missing pages",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-20",
+   "title": "Every change Echo makes in a vault leaves a line in its activity log (what, by whom, lines added and removed, the commit, the version restored, the index row written with it), the last 2,000 kept",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-21",
+   "title": "Paths never leave the vault: no `..`, absolute path, drive, device name or link, and never a dot folder (.git, .obsidian), the sources or the templates as a page — read or written",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-22",
+   "title": "A page is read, written, asked of git and committed by its real name: typed in another case, or reached through a folder linked inside the vault, it is that file — Echo's commit never takes the user's uncommitted edits along and restore's guard holds",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-23",
+   "title": "A vault from 0.8 keeps 0.8's index — its whole folder, sources and templates included — until the user confirms the shape Echo found (or sets one of its folders); a vault connected in 1.0 uses the shape at once",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-24",
+   "title": "Links and tags are read as Obsidian (and 0.8) reads them, by one reader for Claude's commands, pages, the graph and the checks: none inside %%…%%, <!-- -->, $$…$$ or any code span; a heading's links and #tags count; tags from tags: or tag:, split at commas and spaces; no tag after ( ; no Markdown link with a space in its bare address",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-30",
+   "title": "Knowledge is the plugin's own activity (a folder of notes icon in the activity bar, full screen): #17's header, vault switcher, ⋯ menu and tabs Home · Pages · Graph · Ingest · Health · Settings (no Ask), its own routes #obsidian:knowledge/<vault>/<tab>/<path> (a vault opens on Home, the last one again), its badge the changes waiting and the findings that need the user",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-31",
+   "title": "A page reads as #17 read it: the tree with its filters and find, the page's properties and Echo's safe HTML, its links routing inside the activity, a missing page offered to make, web links opened by Echo, the Links, Outline and History rails and the local graph",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-32",
+   "title": "A page is edited as #17 did: the editor with its live preview, typed text kept across Echo's redraws, a save only over what was opened (committed when the vault commits), a change on disk shown as the conflict with Compare, Take theirs and Keep mine; a new page; a page's row put in the index",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-33",
+   "title": "A page's history in the activity: its versions from git, a version's diff, Restore — refused over changes git hasn't got, else a new commit",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-34",
+   "title": "The Graph tab draws #17's live graph: by folder or tag with its legend, find, a page selected with its card and its local graph, the index and isolated pages hidden or shown, tags as nodes",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-35",
+   "title": "The Health tab lists the findings by group and kind (the AI checks' first in their group) with #17's score, trend (one point a day) and filters; a finding with its pages, its fix as a diff, Ask about it and Ignore / List again",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-36",
+   "title": "Home: what changed in the last 14 days (Echo's writes and git's commits), the Health card, where to start reading, the vault's card and the Ask card",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-37",
+   "title": "A vault's Settings tab keeps 0.8's What Claude knows (its state, the When-line and the five parts changed in place, read again, confirm, a new reading proposed) and For whom (clients and threads), then #17's Structure, Meeting minutes, Ingest, Ask, Schema, Skills and Git & AI; a setting changed is kept; Remove asks first",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-38",
+   "title": "Ask the vault opens Claude Code in Echo's panel, in its own tab Claude · Knowledge, in the vault as its own project at its root (its CLAUDE.md, AGENTS.md and .claude/skills), on the user's click only; nothing is typed into it",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-39",
+   "title": "A call's page shows Knowledge in Echo's generic slots and promises nothing this version doesn't do: the chip (call.header) says saving minutes comes in a later version; the ⋯ menu's Save to Knowledge… opens the save sheet over the call saying so (call.menu, ctx.ui.sheet); no line while the minutes come (call.minutes); the host keeps where they would go (thread's vault, else client's, else the default; automatic; the call's profile) and the user's choice per call by its stamp",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-40",
+   "title": "Echo's Settings → From plugins → Knowledge lists the vaults and opens each in the activity; ⌘K has Knowledge's actions",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-41",
+   "title": "What #17 drew as coming is real: a web page as a source (Echo's own reader), the twin skill for every Claude Code session (added on the user's click), the starter's process-inbox written into a vault on the user's word — never a promise of a later version",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-42",
+   "title": "A call's minutes go to the vault set on any of its threads, else its client's (each of its threads' clients), else the default vault; \"none\" on a thread or client stops them; a call in two threads with two vaults goes into both; a vault since removed counts as not set",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-43",
+   "title": "A vault's minutes mode: auto writes the note when Echo tells minutes_written, ask and off write nothing by themselves (the user's command saves); the rule's notes are committed once per quiet window (two minutes after the last), only Echo's files still as it wrote them",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-44",
+   "title": "The profile guard: a call whose AI profile isn't the vault's (none = the default profile) is never saved into it by itself; by hand only with \"anyway\", which the call's record keeps",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-45",
+   "title": "A note of Echo's the user changed is never written over: minutes written again leave it (kept), the user's command too; replaced or a new note beside it only on the user's word",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-46",
+   "title": "Past minutes: the calls routed to a vault since a day, on its profile, not saved there yet and not opted out, saved in one go with one commit",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-47",
+   "title": "An event only queues its source: minutes_written and sources_changed put a call or a mail (Recall's facts, no text) in the queue of each routed vault whose rule (ingest.calls / ingest.mail: add or prepare) asks, on its profile, each once; nothing written into the vault, no model run",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-48",
+   "title": "Preparing a batch writes the queued sources into the vault's sources folder: a call as Echo's minutes, a mail's own text read from Microsoft 365 only then; what can't be read stays queued with why; a skipped one isn't prepared; the ledger remembers a call once its file is deleted",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-49",
+   "title": "The twin preset: a new vault in a new or empty folder from #677's 23 files (shipped in the plugin), name, owner and day filled in, its .gitignore, .claude/skills (twin, process-inbox — Markdown Echo checks runs nothing) and Obsidian's settings for knowledge/ (knowledge/.obsidian/*.json, Echo #781) written too, git init and one first commit of them all when asked, registered as twin@1 with commits on; anything an Echo refuses left out and said; the setting \"global\" keeps the twin skill out of the vault and offers it for the user's own Claude Code",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-50",
+   "title": "A thread's and a client's Profile have a \"Knowledge vault\" row: what it inherits (its client's vault, the default), a vault of its own or none picked in place, and that vault's minutes Auto / Ask / Off",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-51",
+   "title": "Sources the user adds: files handed over (picked or dropped) copied as they are under a safe name, never over a file, (2) for a taken one or one the ledger or log.md knows; the folder made with the preset's README; a call (another profile only \"anyway\"); a web page only by Echo's own reader (TC-059); the first open's question; a skip with a note",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-52",
+   "title": "The Knowledge activity's step-4 sheets work on the host's commands: a call's chip and save sheet save (call_knowledge without `later`), Ingest's queue and Add a source (a call, files, mail and Teams search, a web page read by Echo), a vault's Settings preview a call and save the past minutes, the New vault sheet makes a twin",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-53",
+   "title": "The catch-up when Echo starts: the calls with minutes and Recall's mail since the last day seen go through the live events' routing (a call whose record has the vault isn't written again, a source the ledger has isn't queued again); the day moves only when both reads answered; the first start only notes it",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-54",
+   "title": "Health's fixes are diffs computed again from the finding's key — the window never sends a path or a text — and written only over the text they were shown on (base and sha): a broken link pointed to the closest page (the same name elsewhere or but for case; a name 1–2 characters apart only as a guess), the link removed keeping its words, a dead index row pointed or removed, properties added in the file's own line endings, a row in the index with the vault's log line, a tag replaced by one the taxonomy allows; one commit of the files that were clean, an activity line each",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-55",
+   "title": "Fix all applies only the certain fixes of a kind — never a guess or an AI check's fix — in one write per file and one commit; a page changed since its fix was shown is left as it is and said, a fix with nothing left to do is skipped with why",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-56",
+   "title": "The score is D32: Links 25, Index 20, Properties 15, Consistency 25, Freshness 15, each weight × max(0, 1 − 5 × pages touched ÷ pages in scope), rounded half up; Freshness counts only after an AI check ('code checks only' until then); ignored findings neither listed nor counted; one point a day kept 90 days",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-57",
+   "title": "AI checks run only on the user's click: Claude Code read-only in the vault on its AI profile (≤ 300 pages: else those changed in 30 days and the pages they link to), its findings its final answer; a finding is kept only when every quote is on its page and its fix's text is there exactly once (at most 200), checked again each time Health looks; one check per vault, Stop, never while a call is recorded or transcribed; Health keeps when, the run, its cost, kept and dropped",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-58",
+   "title": "An Ingest run: the queue prepared first (calls and mail made files of the sources folder), then the vault's ingest skill (its setting, else process-inbox, else the one about an inbox) on a copy of the vault over the batch's sources (20 at most), one run per vault, never while a call is recorded or transcribed; when it ends the copy is compared with the vault by sha — instruction files, hidden files and sources are never taken back, a path the vault can't take or a non-text file is shown but not written — each change with its diff and the run's quotes checked in its own sources (a PDF's: 'Echo can't check quotes in this kind of file'); the copy removed",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-59",
+   "title": "An Ingest run's review: approve, reject, edit (the user's text), take the run's; a rejected new page takes its index rows and log lines along (D28); Write puts index rows and log lines onto the files as they are now (D42) and every other change only where the vault's file is still as the run found it (else 'changed in the vault since the run', Compare); one commit of the written files that were clean, activity lines, the run's sources done with what was kept; Discard, Prepare again, Stop, Run again; a failed run keeps its log 30 days",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-60",
+   "title": "THE RULE's batching: an event (minutes_written, sources_changed) only queues its source; a vault whose new calls' or mail's rule is 'Add and prepare changes' starts one run over everything queued once N sources wait or the first has waited N hours (Settings → Ingest, 5 and 24 by default), never per event, never while a run of the vault goes or a call is recorded",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-61",
+   "title": "The activity's badge and Home: Ingest's number counts the changes still waiting for an answer, Health's the findings only the user can decide, the badge both; Home's Coming in shows the changes waiting by run, the new sources by kind and the run going",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-62",
+   "title": "The activity corrects its own address in place, never a step in the window's history (Echo's ctx.go replace): Knowledge opened names its vault, a discarded run's address goes, a removed vault's goes — Back skips them; a tab, page or run the user opens is a step",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-63",
+   "title": "A call is known by its stamp (the YYYY-MM-DD_HHMMSS its folder starts with, unique in Echo 0.10.0, kept when it is retitled): its record (where its minutes went, the user's choice), its id in a vault's queue and ledger (call:<stamp>), the recording's events — a retitled call is the same call: its note updated in place, queued and prepared once, read by its stamp as named now; two calls of consecutive seconds each their own; in data from before 0.10.0 a second folder of one stamp never takes the first's record (nothing written, the Inbox says why); a ledger of before (by folder) kept by stamp",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-64",
+   "title": "The twin skill for every Claude Code session: the vault's Settings → Skills (or a new twin vault when the setting says global) shows the skill first, its paths absolute to the vault, and adds it to the user's own Claude Code only on their click (Install; Update…, Remove), never over a skill that is there already and not the plugin's, on test data only in the test's own Claude Code folder",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-65",
+   "title": "A web page as a source: read once, when the user adds it (Ingest → Add a source → A web page), as Echo's safe Markdown with who wrote it and when, its pictures saved beside it in a folder of its name (part of the page, not sources of their own, in the copy with it) — at once on a site listed in the plugin's settings, else after the user types its address in Echo's own box; cancelled adds nothing; a page that needs JavaScript or that moved adds nothing, said; the same page twice is refused; never read again by itself",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-66",
+   "title": "Pages are read strictly (Echo #763): a page that isn't UTF-8 is shown as Echo reads it and not editable, a save only over the text read; a version restored only when it is UTF-8 (a U+FFFD that is the page's own is kept); links resolved by how Echo says each was written (markdown.links detail); a run's text file in another encoding shown read-only in the review, never written",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-67",
+   "title": "Tags through Echo's dictionary (read only): a tag the dictionary knows by another name is that name in what Echo proposes — an Ingest run's pages (said on the change), an AI check's fix, Health's fix of a tag the taxonomy doesn't allow (the dictionary's tag first); the vault's own taxonomy wins (only a tag it allows); the taxonomy, index and log never retagged; nothing added to the dictionary",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-68",
+   "title": "Folders Echo refuses (Echo #784): a folder picked that is hidden or inside a hidden one is said in Echo's own words in the Connect sheet, nothing connected; a vault whose saved folder is inside a hidden one is read only, said once above its tabs — no Ingest run, save, commit or prepare tried",
+   "priority": "medium",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-69",
+   "title": "The plugin turned off, on again, removed and installed again (#17's lifecycle): the vaults' files, the list of vaults, their settings and descriptions, the calls' records, a pending commit and an unsaved edit (kept in the window) stay; while off, Knowledge leaves the window (its activity, its routes, its panel tab) and an event reaches nothing; on again without a restart, it returns once — one handler, one note; after a removal Echo no longer gives it the vaults' folders: the vault says so and the folder picked again brings everything back (never another folder)",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-70",
+   "title": "A list of vaults that can't be read (cut short, broken by hand, a 0.8 one included) is never written over: nothing is written while it is only read, the next change sets it aside byte for byte as vaults.json.bad-<ms>, says so in the plugin's log, and starts the list again",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-71",
+   "title": "In the native desktop with the person's own accounts (#17's TC-004): the system's folder and file pickers, a file dropped on Ingest, Open in Obsidian opening Obsidian, Ask the vault on a signed-in Claude Code, an Ingest run and AI checks on the profile chosen, mail and Teams from a connected Microsoft 365, the panel's session closed when the plugin is turned off; macOS and Windows",
+   "priority": "high",
+   "check": "person"
   }
  ]
 }

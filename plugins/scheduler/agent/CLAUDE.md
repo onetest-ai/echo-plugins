@@ -18,8 +18,9 @@ a run Echo started is refused, so tell them where instead. The jobs run on their
 ## What it keeps (in Echo's data folder, `.echo/plugins/scheduler/`)
 
 - `routines/<id>.md` — one routine a file: frontmatter (`name`, `schedule` — `daily 09:00`, `weekdays 09:00`,
-  `mon,thu 09:00`, `every 2h`, `every 30m`, at most every 15 minutes —, `profile`, `model`, `tools` — `read` (read only,
-  Echo's guard), `folder` (as the user's Echo folder session) or `skip` (everything, no questions) —, `deliver` —
+  `mon,thu 09:00`, `every 2h`, `every 30m`, at most every 15 minutes —, `profile`, `model`, `tools` — `auto` (Claude Code's
+  auto mode; on a model without it, edits accepted) or `skip` (every permission check skipped): a run acts on its own
+  either way; `read` and `folder`, from before, are Auto —, `deliver` —
   `teams`, `mail`, `telegram`, `today` —, `mail_to`, `skip_empty`, `enabled`), then the user's prompt.
 - `runs/<id>/<stamp>/result.json` — each run (the last 20 a routine): when, `state` (`done`, `empty`: nothing worth
   sending, `failed`), the start of its answer or why it failed, where it was sent, the model, tokens and cost.

@@ -8,7 +8,7 @@
 //   schedule: mon 09:00        # daily HH:MM · weekdays HH:MM · mon,thu HH:MM · every 2h · every 30m
 //   profile:                   # an AI profile id (empty: the default)
 //   model:                     # empty: the profile's minutes model
-//   tools: read                # read · folder · skip — the user's pick, the prompt being theirs
+//   tools: auto                # auto · skip — the user's pick, the prompt being theirs (read, folder: before, taken as auto)
 //   deliver: telegram, mail    # teams · mail · telegram · today (the ways its manifest asks for)
 //   mail_to:                   # mail only: other addresses (empty: the user)
 //   skip_empty: true           # nothing worth sending → nothing sent
@@ -26,6 +26,15 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DELIVER_TO = ['teams', 'mail', 'telegram', 'today']
 const validKind = (k) => DELIVER_TO.includes(k)
 const NOTHING = 'NOTHING'
+// What Claude may do, the routine's own choice: Auto, or every permission check skipped (the choices of Echo's routines
+// setting, Settings → AI & minutes → Claude's permissions). Echo takes `read` and `folder` (values of before) as auto,
+// and an empty value as the user's routines setting; the plugin reads all three as an explicit Auto, the safer choice
+// (the routines setting may be Skip), and always passes `auto` or `skip`.
+const TOOLS = ['auto', 'skip']
+export const toolsOf = (v) => {
+  const t = String(v == null ? '' : v).trim()
+  return t === '' || t === 'read' || t === 'folder' ? 'auto' : t
+}
 const KEEP_RUNS = 20
 
 // ── schedule ──
@@ -123,7 +132,7 @@ export function parseRoutine(id, text) {
     schedule: f.schedule || '',
     profile: f.profile || '',
     model: f.model || '',
-    tools: f.tools || 'read',
+    tools: toolsOf(f.tools),
     deliver: list(f.deliver),
     mail_to: list(f.mail_to),
     skip_empty: flag('skip_empty', true),
@@ -137,7 +146,7 @@ export function parseRoutine(id, text) {
 function check(r) {
   if (!String(r.name).trim()) throw new Error('a routine needs a name')
   parseSchedule(r.schedule)
-  if (!['read', 'folder', 'skip'].includes(r.tools)) throw new Error(`tools “${r.tools}”: read, folder or skip`)
+  if (!TOOLS.includes(r.tools)) throw new Error(`tools “${r.tools}”: auto or skip`)
   const bad = r.deliver.find((d) => !validKind(d))
   if (bad) throw new Error(`deliver “${bad}” isn't a way it sends (${DELIVER_TO.join(', ')})`)
   const addr = r.mail_to.find((a) => !validAddress(a))
@@ -163,6 +172,24 @@ export function steps(log) {
     .map(([, t, text]) => ({ t, text: text.trim().replace(/\S*\/scripts\/echoctl\b/g, 'echoctl') }))
     .filter((x) => /^(→|✗|Finished|Not allowed|Echo runs)/.test(x.text) || x.text.startsWith('stderr'))
     .slice(0, 60)
+}
+
+/** What a run asked Claude Code for, from the record Echo keeps in its folder (`permissions.json`: `{asked, used}`);
+ *  '' when there is none (a run before Echo kept it). */
+export function askedOf(json) {
+  try { const a = JSON.parse(json || 'null'); return a && typeof a.asked === 'string' ? a.asked : '' } catch { return '' }
+}
+
+/** A routine's file with only its `enabled:` line changed (added to the frontmatter when missing): switching a
+ *  routine on or off rewrites nothing else, so a routine of before keeps its values until the user saves it. */
+export function setEnabled(text, on) {
+  const t = String(text)
+  if (!t.startsWith('---\n')) throw new Error('a routine starts with its frontmatter')
+  const end = t.indexOf('\n---', 3)
+  if (end < 0) throw new Error('a routine’s frontmatter isn’t closed')
+  const head = t.slice(0, end), rest = t.slice(end)
+  const line = `enabled: ${on ? 'true' : 'false'}`
+  return (/^enabled:.*$/m.test(head) ? head.replace(/^enabled:.*$/m, line) : `${head}\n${line}`) + rest
 }
 
 export function renderRoutine(r) {
@@ -191,7 +218,7 @@ export function apply(ctx) {
   const save = (input) => {
     const r = {
       id: String(input.id || ''), name: String(input.name || '').trim(), schedule: String(input.schedule || '').trim(),
-      profile: String(input.profile || '').trim(), model: String(input.model || '').trim(), tools: String(input.tools || 'read'),
+      profile: String(input.profile || '').trim(), model: String(input.model || '').trim(), tools: toolsOf(input.tools),
       deliver: (input.deliver || []).map(String), mail_to: (Array.isArray(input.mail_to) ? input.mail_to : list(input.mail_to)).map(String),
       skip_empty: input.skip_empty !== false, enabled: input.enabled !== false, prompt: String(input.prompt || ''),
     }
@@ -216,13 +243,29 @@ export function apply(ctx) {
     while (runs.length > KEEP_RUNS) ctx.store.remove(`runs/${id}/${runs.shift()}`)
   }
 
+  /** A run's folder, taken before anything else waits: its start to the second, `-2`, `-3`… when a run of the routine
+   *  has that second already — the folder made with its `started.json` (never over one), so two runs of one second
+   *  (a scheduled run and Run now, the app and a terminal, a double click on Try) never share a folder. */
+  const takeStamp = (id, base) => {
+    let names = []
+    try { names = ctx.store.list(`runs/${id}`) || [] } catch { /* no runs yet */ }
+    for (let k = 1; k < 1000; k++) {
+      const s = k === 1 ? base : `${base}-${k}`
+      if (names.includes(s)) continue
+      try { ctx.store.write(`runs/${id}/${s}/started.json`, JSON.stringify({ at: new Date().toISOString() }), { createNew: true }); return s } catch (e) {
+        if (!/there already/.test(String((e && e.message) || e))) throw e
+      }
+    }
+    throw new Error(`no free run folder for ${base}`)
+  }
   /** Run a routine now: Claude Code, then its deliveries. The run's record (also kept as its last). */
   const run = async (id, deliver = true, draft = null, given = null) => {
     const r = draft || get(id)
     if (running.has(id)) throw new Error(`“${r.name}” is running already`)
     running.add(id)
     const started = new Date()
-    const stamp = given || started.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    let stamp
+    try { stamp = given || takeStamp(id, started.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)) } catch (e) { running.delete(id); throw e }
     const sch = words(parseSchedule(r.schedule))
     const rec = { at: started.toISOString(), run: stamp, trial: !deliver }
     try {
@@ -351,6 +394,7 @@ export function apply(ctx) {
       record: rec, running: !rec,
       answer, answer_html: answer ? ctx.markdown(answer) : '', words: answer.split(/\s+/).filter(Boolean).length,
       prompt: ctx.store.read(`${dir}/prompt.md`) || '', steps: steps(ctx.store.read(`${dir}/log.txt`)),
+      asked: askedOf(ctx.store.read(`${dir}/permissions.json`)),
       split: rec && rec.usage ? costSplit(rec.usage) : null,
     }
   })
@@ -359,10 +403,11 @@ export function apply(ctx) {
     const r = { ...routine, deliver: [], mail_to: [] }
     if (!r.name) r.name = 'Draft'
     if (!r.schedule) r.schedule = 'daily 09:00'
-    if (r.tools && !['read', 'folder', 'skip'].includes(r.tools)) throw new Error(`tools “${r.tools}”`)
+    r.tools = toolsOf(r.tools)
+    if (!TOOLS.includes(r.tools)) throw new Error(`tools “${r.tools}”: auto or skip`)
     if (!String(r.prompt || '').trim()) throw new Error('write what Claude should do first')
-    const draft = { ...r, id: '_draft', skip_empty: false, tools: r.tools || 'read' }
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    const draft = { ...r, id: '_draft', skip_empty: false }
+    const stamp = takeStamp('_draft', new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15))
     running.delete('_draft')
     run('_draft', false, draft, stamp).catch((e) => ctx.log('try', e.message || e))
     return { id: '_draft', run: stamp }
@@ -377,7 +422,13 @@ export function apply(ctx) {
     ctx.inbox.clear(`routine-${id}`)
     return true
   })
-  ctx.command('enable', ({ id, on }) => save({ ...get(id), enabled: on !== false }))
+  ctx.command('enable', ({ id, on }) => {
+    get(id)
+    const text = setEnabled(ctx.store.read(`routines/${id}.md`), on !== false)
+    const r = parseRoutine(id, text)
+    ctx.store.write(`routines/${id}.md`, text)
+    return r
+  })
   // Started, not waited for (a run takes minutes); `run_wait` waits (the CLI).
   ctx.command('run', ({ id }) => { get(id); run(id).catch((e) => ctx.log('run', id, e.message || e)); return { started: true } })
   ctx.command('run_wait', ({ id, deliver }) => run(id, deliver !== false))

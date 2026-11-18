@@ -4849,7 +4849,7 @@ export function apply(ctx) {
         const l = readPeople(v)
         const theirs = Object.values(l.theirs || {}).map((t) => (t && typeof t === 'object' ? t : { path: t, keys: [] }))
         const conflicts = theirs.filter((t) => (t.keys || []).length)
-        return { dir: peopleDirOf(v), pages: Object.keys(l.pages || {}).length, theirs: theirs.length - conflicts.length, kept: conflicts.length, kept_first: conflicts.slice(0, THEIRS_SHOWN).map((t) => ({ name: t.name || (t.path || '').split('/').pop().replace(/\.md$/, ''), keys: t.keys })), unknown: (l.last && l.last.unknown) || 0, last: l.last || null }
+        return { dir: peopleDirOf(v), pages: Object.keys(l.pages || {}).length, theirs: theirs.length - conflicts.length, kept: conflicts.length, kept_first: conflicts.slice(0, THEIRS_SHOWN).map((t) => ({ name: t.name || (t.path || '').split('/').pop().replace(/\.md$/, ''), keys: t.keys })), last: l.last || null }
       })(), in_home: false, ingest_skill: chosen ? { name: chosen.name, path: chosen.path } : null, ingest_found: found ? found.name : '',
     }
   })
@@ -5760,9 +5760,9 @@ export function apply(ctx) {
   const clientVal = (id) => { try { return ctx.clients ? ctx.clients.get(id, 'vault') : null } catch { return null } }
   // A call's threads as Echo gives them ({id, name, client, client_name}), or their ids (a source's list): completed
   // from the open threads.
-  const threadRefs = (list) => {
-    const open = openThreads()
-    const clients = clientsList()
+  const threadRefs = (list, pre = null) => {
+    const open = pre ? pre.threads : openThreads()
+    const clients = pre ? pre.clients : clientsList()
     return (list || []).map((t) => {
       const id = typeof t === 'string' ? t : t && t.id
       if (!id) return null
@@ -5772,9 +5772,10 @@ export function apply(ctx) {
       return { id, name: (typeof t === 'object' && t.name) || o.name || id, client, client_name: cname }
     }).filter(Boolean)
   }
-  const routeOf = (threads, vs = load()) => {
+  // `pre`: Echo's open threads and clients already read (a run of person pages reads them once).
+  const routeOf = (threads, vs = load(), pre = null) => {
     const ids = new Set(vs.map((v) => v.id))
-    const r = routeCall(threadRefs(threads), { thread: threadVal, client: clientVal, def: prefs().default, has: (id) => ids.has(id) })
+    const r = routeCall(threadRefs(threads, pre), { thread: threadVal, client: clientVal, def: prefs().default, has: (id) => ids.has(id) })
     return { ...r, vaults: r.vaults.map((x) => ({ ...x, vault: vs.find((v) => v.id === x.id) })) }
   }
   const why = (x) => (x.from === 'thread' ? `set on the thread ${x.by}` : x.from === 'client' ? `${x.by}'s vault` : 'the default vault')
@@ -5876,8 +5877,8 @@ export function apply(ctx) {
   // `people_sync` / the vault's Settings → People button, whatever its mode — the only one that writes again a page the
   // user deleted, and that adopts a page of the user's with the person's file name and no `echo:` (only when it has
   // none of Echo's keys, or each with Echo's own value). A page is this person's by its `echo:` property (a renamed or
-  // moved page stays theirs). A thread's place goes into a vault only when the thread's AI profile is known and is the
-  // vault's (as a call's minutes go only to a vault on their profile); `reports_to` / `reports` name only people with a
+  // moved page stays theirs). A thread's place goes into a vault only when the thread's AI profile (Echo's `threads` row)
+  // is the vault's; `reports_to` / `reports` name only people with a
   // place in the vault. Only Echo's properties are merged in, only over the text read, only when their values changed.
   // Its ledger, `vaults/<id>/people.json` (written with the store's update): {pages: {key: path} (what Echo wrote),
   // gone: {key: day} (deleted by the user), theirs: {key: {path, name, keys}} (a page of the user's: `keys` the ones of
@@ -5910,47 +5911,26 @@ export function apply(ctx) {
     peopleHeld = { at: Date.now(), list: Array.isArray(list) ? list : [] }
     return peopleHeld.list
   }
-  // The threads' AI profiles for a run (a save's batch, a catch-up over every vault, an Update): `echo.read('threads')`
-  // doesn't give a thread's profile (onetest-ai/echo#818 will), a call does — the profile Echo pinned on it. One read of
-  // the newest 500 calls a run (each read of calls is Echo computing People once), grouped by thread: a thread's profile
-  // is known when its newest calls in it alone (20 at most) all have one; else (none of them there, or two profiles) it
-  // is unknown. → Map thread → profile id | null.
-  const threadProfilesOf = async (v, run) => {
-    if (run.profiles) return run.profiles
-    await breathe(v) // Echo's read in a slice of its own
-    let rows = []
-    try { rows = ctx.echo.read('calls', { limit: 500 }) || [] } catch (e) { ctx.log(`calls for the threads' profiles: ${errText(e)}`) }
-    const seen = new Map()
-    for (const c of rows) {
-      const ts = (c.threads || []).map((t) => (typeof t === 'string' ? t : t && t.id)).filter(Boolean)
-      if (ts.length !== 1 || typeof c.profile !== 'string' || !c.profile) continue
-      const x = seen.get(ts[0]) || { n: 0, ps: new Set() }
-      if (x.n >= 20) continue
-      x.n++
-      x.ps.add(c.profile)
-      seen.set(ts[0], x)
-    }
-    run.profiles = new Map([...seen].map(([t, x]) => [t, x.ps.size === 1 ? [...x.ps][0] : null]))
-    return run.profiles
-  }
-  // Who has a place in `v` in this run: each person with only the threads routed here whose AI profile is known and is
-  // the vault's; `unknown` the threads routed here whose profile Echo can't tell (left out).
+  // Who has a place in `v` in this run: each person with only the threads routed here whose AI profile is the vault's —
+  // the thread's own, as Echo's `threads` row gives it (its pin, else the default profile's; onetest-ai/echo#818). A row
+  // without `profile` (an Echo before it) goes into no vault. Echo's open threads and clients are read once a run.
   const peopleScope = async (v, run) => {
-    const open = new Set(openThreads().map((t) => t.id))
+    if (!run.threads) run.threads = openThreads()
+    if (!run.clients) run.clients = clientsList()
+    const open = new Set(run.threads.map((t) => t.id))
+    const profile = new Map(run.threads.map((t) => [t.id, typeof t.profile === 'string' && t.profile ? t.profile : null]))
     const vs = load()
-    const here = new Set()
-    for (const p of run.people) for (const t of personThreads(p, open)) if (!here.has(t.thread) && routeOf([t.thread], vs).vaults.some((x) => x.id === v.id)) here.add(t.thread)
-    const ok = new Set(), unknown = []
-    if (here.size) {
-      const profiles = await threadProfilesOf(v, run)
-      for (const t of here) {
-        const p = profiles.get(t)
-        if (p == null) unknown.push(t)
-        else if (sameProfile(p, v)) ok.add(t)
+    const ok = new Set(), seen = new Set()
+    for (const p of run.people) {
+      for (const t of personThreads(p, open)) {
+        if (seen.has(t.thread)) continue
+        seen.add(t.thread)
+        const pr = profile.get(t.thread)
+        if (pr != null && sameProfile(pr, v) && routeOf([t.thread], vs, run).vaults.some((x) => x.id === v.id)) ok.add(t.thread)
       }
     }
     const todo = peopleOfVault(run.people, v.id, open, (t) => (ok.has(t) ? [v.id] : []))
-    return { todo, keys: new Set(todo.map((x) => x.person.key)), unknown }
+    return { todo, keys: new Set(todo.map((x) => x.person.key)) }
   }
   // The pages of a vault that name a person (`echo: echo://person/…`), by that link → vault-relative path.
   const personPagesOf = async (v) => {
@@ -5979,12 +5959,12 @@ export function apply(ctx) {
   const scoped = (p, keys) => ({ ...p, reports_to: p.reports_to && p.reports_to.key && keys.has(p.reports_to.key) ? p.reports_to : null, reports: (Array.isArray(p.reports) ? p.reports : []).filter((x) => x && keys.has(x.key)) })
   // One batch of person pages into `v`. `o`: {keys (a Set: only these people; null: everyone with a place here),
   // recreate (people_sync: a deleted page written again, a page of the user's adopted), run (the reads shared by a
-  // run: {people, profiles}), commit: 'now' (one commit of its own) | 'with' (the caller's batch commits: its paths
+  // run: {people, threads, clients}), commit: 'now' (one commit of its own) | 'with' (the caller's batch commits: its paths
   // given back), later (past minutes: the vault's index cleared once by the caller), checked (paths the caller asked
   // git about already), batch (past minutes' Map of what it wrote)}.
-  // → {dir, added, changed, unchanged, adopted, gone, theirs, unknown, skipped, index, written, dirty, commit}.
+  // → {dir, added, changed, unchanged, adopted, gone, theirs, skipped, index, written, dirty, commit}.
   const writePeople = async (v, o = {}) => {
-    const out = { vault: v.id, dir: null, added: 0, changed: 0, unchanged: 0, adopted: 0, gone: [], theirs: [], unknown: [], skipped: [], index: null, written: [], dirty: new Set(), commit: null }
+    const out = { vault: v.id, dir: null, added: 0, changed: 0, unchanged: 0, adopted: 0, gone: [], theirs: [], skipped: [], index: null, written: [], dirty: new Set(), commit: null }
     if (!available(v) || hiddenText(v.root)) { out.skipped.push({ why: hiddenText(v.root) || `the vault's folder isn't there: ${v.root}` }); return out }
     // Echo's reads of people and calls are synchronous and can be long (Echo computes People for each): each starts a
     // slice of its own (a breath before it), and each is read once a run.
@@ -5992,7 +5972,6 @@ export function apply(ctx) {
     if (!run.people) { await breathe(v); run.people = peopleNow() }
     const people = run.people
     const scope = await peopleScope(v, run)
-    out.unknown = scope.unknown
     let todo = scope.todo
     if (o.keys) todo = todo.filter((x) => o.keys.has(x.person.key))
     const dir = peopleDirOf(v)
@@ -6157,8 +6136,7 @@ export function apply(ctx) {
         const path = t && typeof t === 'object' ? t.path : t
         if (!path || !statSafe(v, path) || (!o.keys && !scope.keys.has(k))) delete l.theirs[k]
       }
-      const full = !o.keys
-      l.last = { at: new Date().toISOString(), added: out.added, changed: out.changed + out.adopted, unchanged: out.unchanged, gone: out.gone.length, theirs: Object.keys(l.theirs).length, skipped: out.skipped.length, unknown: full ? out.unknown.length : (l.last && l.last.unknown) || 0 }
+      l.last = { at: new Date().toISOString(), added: out.added, changed: out.changed + out.adopted, unchanged: out.unchanged, gone: out.gone.length, theirs: Object.keys(l.theirs).length, skipped: out.skipped.length }
     })
     return out
   }
@@ -6673,7 +6651,7 @@ export function apply(ctx) {
     return r
   }
   // A batch's answer as a command gives it.
-  const peopleBrief = (r) => ({ vault: r.vault, dir: r.dir, added: r.added, changed: r.changed, adopted: r.adopted, unchanged: r.unchanged, gone: r.gone.length, theirs: r.theirs.length, unknown: r.unknown, skipped: r.skipped, index: r.index, commit: r.commit })
+  const peopleBrief = (r) => ({ vault: r.vault, dir: r.dir, added: r.added, changed: r.changed, adopted: r.adopted, unchanged: r.unchanged, gone: r.gone.length, theirs: r.theirs.length, skipped: r.skipped, index: r.index, commit: r.commit })
   // (b) At most once a day, on start: the person pages of every vault whose minutes are Automatic, one batch and one
   // commit a vault; a page the user deleted stays deleted. The day is kept once Echo's people were read.
   const peopleCatchUp = async () => {
@@ -6687,7 +6665,7 @@ export function apply(ctx) {
     await breathe(first) // Echo's read of People in a slice of its own
     try { list = ctx.echo.read('people') || [] } catch (e) { ctx.log(`catch-up of people: ${errText(e)}`); return { ok: false } }
     const vaults = {}
-    const run = { people: list } // Echo's people and the threads' profiles read once for every vault
+    const run = { people: list } // Echo's people, threads and clients read once for every vault
     for (const v of load()) {
       if (v.minutes.mode !== 'auto' || !available(v) || hiddenText(v.root)) continue
       try { vaults[v.id] = peopleBrief(await serial(v.id, () => writePeople(v, { run, commit: 'now' }))) } catch (e) { ctx.log(`person pages of ${v.id}: ${errText(e)}`) }

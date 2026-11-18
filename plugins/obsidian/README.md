@@ -70,9 +70,8 @@ with it and what to leave alone. You correct the description, and from then on C
 - **Your people as person pages** — Echo's people (People in a thread) get a page each, `people/<Name>.md` in the
   vault's pages folder (`knowledge/people/` in a twin; a `people` folder it has already), in the vaults their threads'
   calls go to — each page listing only that vault's threads, with their role and stance, and only threads on the
-  vault's AI profile, as the minutes. Echo tells a thread's profile from its recent calls in it alone; a thread whose
-  calls are on two profiles, or that has none yet, goes into no vault (Settings → People says how many were left out)
-  — until Echo gives a thread's own profile (onetest-ai/echo#818). Echo writes only its own properties (`origin:
+  vault's AI profile — the thread's own, as Echo gives it (its pin, else your default profile). Echo writes only its
+  own properties (`origin:
   echo`, `echo:` the person's link, `reports_to`, `reports` — only people with a place in that vault, as a [[link]]
   when they have a page there, else their name — and `threads`), and only when their values changed (Obsidian laying
   them out its own way is no change); everything else on a page is yours and Ingest's, never written over. A page you

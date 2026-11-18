@@ -75,14 +75,10 @@ The port is complete in `knowledge-1.0` (tracking PR #22 → `main`); Knowledge 
   name and no `echo:` is left alone by the automatic batches and adopted by `people_sync`; Echo's properties are
   compared by value; a blank or comment line inside Echo's `threads:` block belongs to it; one index write, one activity
   row and a breath of Echo's host every 25 pages a batch, rows a stopped run owed kept in the ledger (`unindexed`).
-- **The AI-profile gate on person pages.** A thread's place goes into a vault only when the thread's AI profile is
-  known and is the vault's, as a call's minutes go only to a vault on their profile. `echo.read('threads')` gives no
-  profile, `ctx.threads` holds only the plugin's own values, and a mail source's profile is its threads' only when
-  they agree; the most direct source a plugin has is calls — each carries the `profile` Echo pinned on it
-  (`ai::call_profile_id`). One `echo.read('calls', {limit: 500})` a run (each read of calls is Echo computing People
-  once; a run is a save's batch, an Update, or the catch-up over every vault), grouped by thread: a thread's profile is
-  known when its newest calls in it alone (20 at most) all have one. Otherwise — two profiles, or no call in the newest
-  500 — it is unknown and its place goes into no vault (Settings → People says how many threads were left out).
+- **The AI-profile gate on person pages.** A thread's place goes into a vault only when the thread's AI profile is the
+  vault's (`sameProfile`): Echo's own thread profile, the `profile` of its `echo.read('threads')` row (onetest-ai/echo#818:
+  the thread's pin, else the default profile's id). A row without it (an Echo before #818) goes into no vault. Echo's
+  threads and clients are read once a run (a save's batch, an Update, or the catch-up over every vault); no calls are
+  read for it. The minutes' own gate is unchanged: per call, by the call's profile (a call may run on its own pin).
   `reports_to` / `reports` name only people with a place in the vault, so no one's name crosses to a vault on another
-  profile. When onetest-ai/echo#818 lands (a thread's own profile in `echo.read('threads')`), the gate uses it and the
-  calls read goes.
+  profile.

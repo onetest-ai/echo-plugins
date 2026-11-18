@@ -33,7 +33,8 @@ export function minutesParts(md, body = true) {
 }
 
 /** Echo's data: `calls` [{folder, title, notes, profile, threads: [ids], app, started_at, ended_at, memo, transcript,
- *  chat, attendees: [{name, email}]}], `threads` [{id, name, client}], `clients` [{id, name}], `people` [{key, name,
+ *  chat, attendees: [{name, email}]}], `threads` [{id, name, client, profile}] (`profile`: the thread's AI profile, as
+ *  Echo #818 gives it — the default `system` when not given; `null`: a row without it, as an Echo before #818), `clients` [{id, name}], `people` [{key, name,
  *  email}], `mail` (Intake's items), `me`. Its `read` kinds for fakeCtx's `echo`, `payload(folder)` (minutes_written). */
 export function echoData({ calls = [], threads = [], clients = [], people = [], mail = [], me = { name: null, email: null } } = {}) {
   const thread = (id) => { const t = threads.find((x) => x.id === id); if (!t) return null; const c = clients.find((x) => x.id === t.client); return { id: t.id, name: t.name, client: t.client || null, client_name: c ? c.name : null } }
@@ -85,7 +86,7 @@ export function echoData({ calls = [], threads = [], clients = [], people = [], 
     return { id: `call:${folder}`, link: `echo://call/${folder}`, call: folder, stamp: stampOf(folder), revision: minutes.revision, rewritten, client: clientOf(refs), threads: refs, profile: c.profile === undefined ? 'system' : c.profile, participants: participants(c), minutes, ...facts(c) }
   }
   return {
-    read: { clients, threads: threads.map((t) => ({ ...t, stage: 'active', group: 'delivery' })), people, me, source, calls: callsRead, sources },
+    read: { clients, threads: threads.map((t) => ({ ...t, stage: 'active', group: 'delivery', ...(t.profile === null ? {} : { profile: t.profile || 'system' }) })), people, me, source, calls: callsRead, sources },
     payload, calls, thread,
   }
 }

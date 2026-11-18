@@ -454,3 +454,13 @@ test('THE RULE: an event only queues its source; the prepare rule starts one run
   assert.match(JSON.parse(ctx.files['vaults/twin/ingest.json']).queued['call:2026-11-07_x'].why, /no call/)
   void _apply
 })
+
+test('a Markdown source reads as it came, as safe HTML, never as a page to edit; a path outside the sources folder stays a page\'s', async () => {
+  const { ctx } = await ingestVault()
+  const p = await ctx.run('page', { id: 'twin', path: SOURCE })
+  assert.deepEqual([p.source, p.editable, p.text, p.title], [true, false, null, 'Northwind · Weekly delivery sync'])
+  assert.match(p.html, /the pilot moves to 18 November/)
+  await assert.rejects(ctx.run('page', { id: 'twin', path: 'raw_inbox/none.md' }), /no source raw_inbox\/none\.md/)
+  await assert.rejects(ctx.run('page', { id: 'twin', path: 'raw_inbox/../AGENTS.md' }))
+  await assert.rejects(ctx.run('save_page', { id: 'twin', path: SOURCE, text: 'x', base: p.base }))
+})

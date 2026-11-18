@@ -23,12 +23,12 @@ tags: [obsidian, knowledge, window, ingest, health]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `#obsidian:knowledge/acme-twin/home` | Coming in: "1 new source" (or by kind: Files 1) with *Prepare*; Health's card; the activity's badge 1 (the tag only the user decides) |
-| 2 | Ingest; `raw_inbox/fallback.md` ticked; *Prepare changes* | The address `…/ingest/<run>`; "Preparing changes · 1 source", then the review: "2 changes from 1 source" |
-| 3 | The tabs and the activity bar | "Ingest 2", "Health 1"; the badge on Knowledge 3 |
-| 4 | `#obsidian:knowledge/acme-twin/home` | Coming in: "2 changes wait for your review", the run's source, *Review* |
-| 5 | *Review* | The run's review opens |
-| 6 | Approve one, reject the other | "Ingest" without a number once both are answered (*Write 1 approved*); the badge 1 |
-| 7 | *Write 1 approved* | "Wrote knowledge/topics/<page>.md into acme-twin. Committed (<id>). The run is done: 1 of its 2 changes kept." |
-| 8 | Dark scheme: Home, Ingest and Health | Drawn in Echo's dark theme, nothing unreadable |
+| 1 | `#obsidian:knowledge/acme-twin/home` | Coming in: "1 source not processed yet", files 1, *Prepare changes*; the activity's badge none (nothing waits: TC-034 ignored the one finding only the user decides) |
+| 2 | Ingest; `raw_inbox/fallback.md` ticked (the only New one); *Prepare changes* | The address `…/ingest/<run>`; the run's review: "2 changes from 1 source", "… · $0.07 · ingest" |
+| 3 | The tabs and the activity bar | "Ingest 2", "Health" without a number; the badge on Knowledge 2 |
+| 4 | `#obsidian:knowledge/acme-twin/home` | Coming in: "2 changes wait for your review", "fallback.md (2)", *Review* |
+| 5 | *Review* | The run's review opens (`…/ingest/<run>`) |
+| 6 | Approve `knowledge/topics/fallback.md`, reject `knowledge/topics/budget.md` | "Ingest" without a number, the badge gone; *Write 1 approved* |
+| 7 | *Write 1 approved* | "Wrote knowledge/topics/fallback.md into acme-twin. Committed (<id>). The run is done: 1 of its 2 changes kept." |
+| 8 | Dark scheme: Home, Ingest (the source Fallback: "Done · kept 1", its text as it came, read only) and Health | Drawn in Echo's dark theme, nothing unreadable |
 | 9 | The page's console | No error from the plugin |

@@ -3965,6 +3965,18 @@ export function apply(ctx) {
   })
   ctx.command('page', async ({ id, path }) => {
     const v = vaultOf(id)
+    // A Markdown source of the vault's sources folder (Ingest shows it as it came): read only, as safe HTML whose links
+    // stay text — never a page, never edited.
+    const asked = rsTrim(String(path ?? ''))
+    if (pathProblem(asked) === null && asked.startsWith(`${sourcesDirOf(v)}/`) && isMd(asked)) {
+      const sst = statSafe(v, asked, { sha: true })
+      if (!sst || sst.kind !== 'file' || sst.real == null) throw new Error(`there is no source ${asked} in this vault`)
+      const text = readSafe(v, sst.real, READ_MAX) ?? ''
+      const sp = scanPage(asked, text, sst.size, sst.mtime)
+      let html = null
+      try { html = utf8Len(text) <= MD_MAX ? ctx.markdown(fmSplit(text)[1]) : null } catch { /* shown as too large */ }
+      return { path: asked, ...pg(v), title: sp.title, props: sp.props, has_props: sp.has_props, tags: sp.tags, outline: sp.headings, html, links: [], backlinks: [], local: { nodes: [], edges: [] }, base: sst.sha, text: null, editable: false, size: sst.size, mtime: sst.mtime, in_index: null, is_index: false, in_git: false, source: true }
+    }
     const { page, rel, st } = checkedPage(v, path, { sha: true })
     const ix = await index(v)
     const read = readPage(v, rel, st)

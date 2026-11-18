@@ -32,7 +32,7 @@ function knRouteOf({ vault, tab = 'home', path = '' }) {
 const KN_CALLS_RULE = [
   ['off', 'Off', 'The default. Minutes are saved as you set above and nothing else happens.'],
   ['add', 'Add to the inbox', 'The call joins the inbox as a source. You prepare changes when you want.'],
-  ['prepare', 'Add and prepare changes', 'A run starts by itself, when none is going. Its changes wait for your review; nothing is merged by itself.'],
+  ['prepare', 'Add and prepare changes', 'Runs start by themselves, in batches (below), never during a call. Their changes wait for your review; nothing is merged by itself.'],
 ]
 /** The three choices with the vault's one checked (a value Echo doesn't know reads as Off). */
 function knCallsRule(value) {

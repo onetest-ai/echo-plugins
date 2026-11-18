@@ -2139,7 +2139,9 @@ export async function createKnowledge(ctx, hooks = {}) {
     if (!v) return `<div class="kn">${head()}<div class="kn-tabs kn-tabs-empty"></div><div class="kn-body">${emptyView()}</div></div>`
     if (v.available === false) return `<div class="kn">${head()}<div class="kn-tabs kn-tabs-empty"></div><div class="kn-body">${missingView(v)}</div></div>`
     const body = s.tab === 'home' ? homeView() : s.tab === 'graph' ? graphView() : s.tab === 'settings' ? settingsView() : s.tab === 'health' ? healthView() : s.tab === 'ingest' ? ingestView() : pagesView()
-    return `<div class="kn">${head()}${tabs()}<div class="kn-body">${body}</div></div>`
+    // A vault inside a hidden folder (Echo changes nothing there): said once, above every tab — nothing is tried again.
+    const ro = v.read_only ? `<div class="kn-warn kn-ro" role="status">${IC.warn}<span>${esc(v.read_only)}.</span></div>` : ''
+    return `<div class="kn">${head()}${tabs()}${ro}<div class="kn-body">${body}</div></div>`
   }
   function after() {
     const s = st()

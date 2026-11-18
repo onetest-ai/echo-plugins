@@ -2287,6 +2287,26 @@ export function stampOf(folder, given) {
   const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(s)
   return m ? m[1] : s
 }
+/** Echo's word that a keyed run's gate stayed busy (onetest-ai/echo#783: `run({key})`, `claude.stop(key)`). */
+export const KEY_BUSY = /the run's key is busy/
+/** `fn()` once more, `wait` ms later, when Echo said the run's key was busy; its second refusal is the caller's. */
+export async function busyRetry(fn, wait = 1000, sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  try { return await fn() } catch (e) {
+    if (!KEY_BUSY.test(String((e && e.message) || e))) throw e
+    await sleep(wait)
+    return fn()
+  }
+}
+/** The first hidden folder of a vault's path (`.vaults` in `/Users/sam/.vaults/acme`), or null: Echo changes nothing in
+ *  a folder at or inside a hidden one (onetest-ai/echo#784) — the vault is read only, said plainly. */
+export function hiddenPart(root) {
+  return String(root || '').split(/[\\/]/).find((c) => c.startsWith('.') && c !== '.' && c !== '..') ?? null
+}
+/** What a vault in such a folder says, or null. */
+export function hiddenText(root) {
+  const h = hiddenPart(root)
+  return h ? `This vault is inside a hidden folder (“${h}”), where Echo changes nothing: it is read only here. Move it to a folder that isn't hidden and connect it again` : null
+}
 /** Is `stamp` one a folder's name starts with (`YYYY-MM-DD_HHMMSS`)? */
 export const datedStamp = (stamp) => /^\d{4}-\d{2}-\d{2}_\d{6}$/.test(String(stamp || ''))
 /** A sources ledger of before onetest-ai/echo#772 (calls by `call:<folder>`) by stamp: its calls, its queue's keys and
@@ -4457,7 +4477,7 @@ export function apply(ctx) {
   const proposedOf = (id) => { const t = ctx.store.read(`vaults/${id}/proposed.md`); return t ? parse(t) : null }
   const PATHS = ['pages', 'index', 'notes', 'naming', 'templates', 'sources']
   const vaultValue = (v, there, git, def) => ({
-    ...v, profile: v.profile || def, available: there, git,
+    ...v, profile: v.profile || def, available: there, git, read_only: hiddenText(v.root),
     pages: v.detected && typeof v.detected.md_files === 'number' ? v.detected.md_files : null,
     paths: Object.fromEntries(PATHS.map((k) => [k, k === 'naming' ? vaultPath(v, k) || DATE_SLUG : vaultPath(v, k)])),
     description: description(v.id), proposed: proposedOf(v.id),
@@ -4481,7 +4501,9 @@ export function apply(ctx) {
   // yet — `add {root}` connects it; `unpick` gives it back.
   ctx.command('pick', async () => {
     ctx.log('pick: the folder picker asked')
-    const root = await ctx.system.pickFolder('A folder of notes for Knowledge')
+    // Echo may refuse the folder picked (#784: a hidden one or inside one; its own files): its words, in the sheet.
+    let root
+    try { root = await ctx.system.pickFolder('A folder of notes for Knowledge') } catch (e) { return { path: null, name: '', refused: echoWords(e) } }
     if (!root) return null
     const name = root.split(/[\\/]/).filter(Boolean).pop() || 'Vault'
     const vs = load()
@@ -5355,6 +5377,8 @@ export function apply(ctx) {
   }
   const today = () => ymd(new Date())
   const errText = (e) => String((e && e.message) || e)
+  // Echo's own words for a refusal, without what wraps them on the way here.
+  const echoWords = (e) => errText(e).replace(/^(Error: )+/, '').replace(/^plugin [\w-]+: /, '')
   // An AI profile as a vault or a call names it: `null` is the default profile.
   const profileOf = (p, ps = profilesNow()) => p || ps.default || null
   const profileName = (id, ps = profilesNow()) => ((ps.profiles || []).find((p) => p.id === id) || {}).name || id || 'the default profile'
@@ -5527,6 +5551,7 @@ export function apply(ctx) {
   // the caller's one commit). → {vault, path, state, index, commit, paths (to commit)}.
   const saveInto = async (call, v, how = {}, commitMode = 'now') => {
     if (!available(v)) throw new Error(`the vault's folder isn't there: ${v.root}`)
+    if (hiddenText(v.root)) throw new Error(hiddenText(v.root))
     const manual = !!how.manual
     const transcript = how.transcript != null ? !!how.transcript : v.minutes.transcript
     const chat = how.chat != null ? !!how.chat : v.minutes.chat
@@ -5652,6 +5677,8 @@ export function apply(ctx) {
   // The pending commits of a vault, once it has been quiet long enough (or now): one commit of the files Echo wrote that
   // are still as it wrote them.
   const flushPending = async (v, force = false) => {
+    // Nothing is ever written in a vault inside a hidden folder: no commit tried there every quiet window.
+    if (hiddenText(v.root)) return null
     const q = readJson(pendingPath(v.id), null)
     if (!q || !(q.items || []).length) return null
     if (!force && Date.now() - (q.at || 0) < QUIET_MS) return null
@@ -6600,7 +6627,8 @@ export function apply(ctx) {
   // Echo's own): an empty read.
   const breathe = (v) => ctx.fs.readMany(v.root, [], 1)
   // A run's Claude Code stopped by its key (core #778); an Echo without `ctx.claude.stop` lets it finish on its own.
-  const stopClaude = async (key) => { try { return ctx.claude && ctx.claude.stop ? !!(await ctx.claude.stop(key)) : false } catch (e) { ctx.log(`stop ${key}: ${errText(e)}`); return false } }
+  // Echo's key gate busy (#783): tried once more a second later, then the error is shown.
+  const stopClaude = async (key) => { try { return ctx.claude && ctx.claude.stop ? !!(await busyRetry(() => ctx.claude.stop(key))) : false } catch (e) { ctx.log(`stop ${key}: ${errText(e)}`); return false } }
 
   // ── Echo records or transcribes a call: runs wait (X-S2, "recording has priority") ──
   // Heard from Echo's events; Echo tells no plugin what is going when it starts, so a recording already going when the
@@ -6709,7 +6737,7 @@ export function apply(ctx) {
       await waitQuiet(token, (w) => { updateLintRun(v, run, (r) => { r.waiting = w }); if (w) lintEvent(v, run, { type: 'notice', kind: 'waiting', text: w }) })
       if (token.stop) return
       if (token.stop) return
-      const res = await ctx.claude.run({ folder: v.root, path: '', mode: 'read', profile: v.profile || '', title: `AI checks of ${v.name}`, prompt: lintPrompt(pages), dir: `vaults/${v.id}/lint-runs/${run}`, timeout: 20, key: `lint-${run}` })
+      const res = await busyRetry(() => ctx.claude.run({ folder: v.root, path: '', mode: 'read', profile: v.profile || '', title: `AI checks of ${v.name}`, prompt: lintPrompt(pages), dir: `vaults/${v.id}/lint-runs/${run}`, timeout: 20, key: `lint-${run}` }))
       const u = (res && res.usage) || {}
       const cost = typeof u.cost_usd === 'number' ? u.cost_usd : null
       const spent = { cost, tokens_in: u.input_tokens ?? null, tokens_out: u.output_tokens ?? null }
@@ -7055,7 +7083,7 @@ export function apply(ctx) {
       const exclude = await copyExclude(v, batch)
       // Stopped while the run was made ready: Claude Code never starts.
       if (token.stop) return
-      const res = await ctx.claude.run({ folder: v.root, path: '', mode: 'copy', profile: v.profile || '', title: `Ingest into ${v.name}`, prompt: ingestPrompt(skill.name, batch, notes), dir: `${ingDir(v.id, run)}/claude`, timeout: 20, key: `ingest-${run}`, ...(exclude.length ? { exclude } : {}) })
+      const res = await busyRetry(() => ctx.claude.run({ folder: v.root, path: '', mode: 'copy', profile: v.profile || '', title: `Ingest into ${v.name}`, prompt: ingestPrompt(skill.name, batch, notes), dir: `${ingDir(v.id, run)}/claude`, timeout: 20, key: `ingest-${run}`, ...(exclude.length ? { exclude } : {}) }))
       snap = res && res.snapshot ? res.snapshot : null
       const u = (res && res.usage) || {}
       const spent = { cost: typeof u.cost_usd === 'number' ? u.cost_usd : null, tokens_in: u.input_tokens ?? null, tokens_out: u.output_tokens ?? null }
@@ -7270,6 +7298,8 @@ export function apply(ctx) {
   })
   ctx.command('ingest_go', async ({ id, sources, again, wait }) => {
     const v = vaultOf(id)
+    // A vault Echo changes nothing in: no Claude run whose changes could never be written.
+    if (hiddenText(v.root)) throw new Error(hiddenText(v.root))
     const s = await ingestStart(v, { wanted: sources, again: again || null })
     const { p, ...out } = s
     if (wait ?? ctx.terminal) { await p; return { ...out, ...ingFind(v, s.run) } }
@@ -7415,7 +7445,7 @@ export function apply(ctx) {
     const started = []
     for (const v of load()) {
       if (v.ingest.calls !== 'prepare' && v.ingest.mail !== 'prepare') continue
-      if (!available(v) || !skillOf(v)) continue
+      if (!available(v) || !skillOf(v) || hiddenText(v.root)) continue
       let l
       try { l = ledger(v) } catch { continue }
       // A queued item that couldn't be prepared (no sign-in, a mail gone) is tried again only after a while, longer each

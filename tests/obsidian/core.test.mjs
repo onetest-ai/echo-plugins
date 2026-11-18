@@ -5,11 +5,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import * as nfs from 'node:fs'
 import * as npath from 'node:path'
-import { stampOf, stampLedger, datedStamp, webPictures, webSourceText, tagForm, tagContext, dictionaryTag, dictionaryRetag, twinSkillText, fmSplit, fmParse, fmGet, propText } from '../../plugins/obsidian/main.js'
+import { busyRetry, hiddenPart, hiddenText, apply, stampOf, stampLedger, datedStamp, webPictures, webSourceText, tagForm, tagContext, dictionaryTag, dictionaryRetag, twinSkillText, fmSplit, fmParse, fmGet, propText } from '../../plugins/obsidian/main.js'
 import { world, call, read, write, exists, PKG, tmp } from './world.mjs'
 import { twin, vault } from './twin.mjs'
 import { skillMdProblem, hiddenOk } from '../helpers/echo-rules.mjs'
 import { knTwinInstall, knTwinRemove, KN_SKILL_GONE } from '../../plugins/obsidian/model.js'
+import { knUnpickOf } from '../../plugins/obsidian/seam.js'
+import { fakeCtx } from '../helpers/fake-ctx.mjs'
 import { CALL } from './echo-data.mjs'
 
 const STAMP = '2026-11-05_090012'
@@ -517,4 +519,76 @@ test('a taxonomy Knowledge can\'t read changes no tag (never read as "no taxonom
   const run = (await ctx.run('ingest_go', { id: 'twin', sources: ['raw_inbox/idea.md'], wait: true })).run
   const c = (await ctx.run('ingest_changes', { id: 'twin', run })).changes.find((x) => x.path === 'knowledge/topics/ship.md')
   assert.deepEqual(c.retagged, [], 'without its taxonomy Echo can\'t know which tags it allows: none changed')
+})
+
+// ── echo#783: a keyed run's gate busy; echo#784: one skill check, hidden folders refused ──
+
+test('a run\'s key busy (Echo #783): tried once more a second later; a second refusal is shown, other errors never retried', async () => {
+  const waits = []
+  const sleep = async (ms) => { waits.push(ms) }
+  let n = 0
+  assert.equal(await busyRetry(async () => { if (n++ === 0) throw new Error('the run\'s key is busy: try again'); return 'ran' }, 1000, sleep), 'ran')
+  assert.deepEqual([n, waits], [2, [1000]])
+  await assert.rejects(busyRetry(async () => { throw new Error('the run\'s key is busy: try again') }, 1000, sleep), /key is busy/)
+  let m = 0
+  await assert.rejects(busyRetry(async () => { m++; throw new Error('Claude Code isn\'t set up') }, 1000, sleep), /isn't set up/)
+  assert.equal(m, 1, 'not retried')
+})
+
+test('Ingest and the AI check: a busy key once is retried and runs; busy twice, the run says Echo\'s words', async () => {
+  const t = twin()
+  write(t, '.claude/skills/process-inbox/SKILL.md', '---\nname: process-inbox\ndescription: Turn the sources in raw_inbox/ into pages\n---\n# Process inbox\n')
+  write(t, 'raw_inbox/idea.md', '# An idea\n')
+  write(t, 'raw_inbox/idea2.md', '# Another\n')
+  let busy = 1
+  const claude = async () => { if (busy-- > 0) throw new Error('the run\'s key is busy: try again'); return { answer: JSON.stringify({ findings: [] }) } }
+  const ctx = await vault(t, { claude })
+  const r1 = await ctx.run('ingest_go', { id: 'twin', sources: ['raw_inbox/idea.md'], wait: true })
+  assert.equal(r1.state, 'review', JSON.stringify(r1))
+  await ctx.run('ingest_discard', { id: 'twin', run: r1.run })
+  busy = 2
+  const r2 = await ctx.run('ingest_go', { id: 'twin', sources: ['raw_inbox/idea2.md'], wait: true })
+  assert.equal(r2.state, 'failed')
+  assert.match(JSON.stringify(r2), /key is busy/)
+  busy = 1
+  const l = await ctx.run('lint', { id: 'twin', wait: true })
+  assert.equal((await ctx.run('lint_run', { id: 'twin', run: l.run, from: 0 })).state, 'done')
+})
+
+test('a folder Echo refuses when picked (hidden, or inside a hidden one: Echo #784) is said in Echo\'s own words in the Connect sheet', async () => {
+  const base = tmp()
+  const hidden = npath.join(base, '.notes', 'acme')
+  nfs.mkdirSync(hidden, { recursive: true })
+  write(hidden, 'a.md', '# A\n')
+  const ctx = fakeCtx({ id: 'obsidian', terminal: true, folders: [], disk: true, markdown: true, pkg: PKG, pickFolder: () => hidden, echo: { clients: [], threads: [] }, store: {} })
+  apply(ctx)
+  const p = await ctx.run('pick', { for: 'connect' })
+  assert.equal(p.path, null)
+  assert.match(p.refused, /^\/.*\/\.notes\/acme is a hidden folder or inside one \(“\.notes”\), where other programs keep their settings: pick a folder that isn't hidden$/)
+  assert.deepEqual(knUnpickOf({ kind: 'connect', picked: null }, p), [], 'nothing to give back')
+})
+
+test('a vault whose saved folder is inside a hidden one: read only, said once — no run, no save, no commit tried again', async () => {
+  const base = tmp()
+  const root = npath.join(base, '.vaults', 'twin')
+  nfs.mkdirSync(root, { recursive: true })
+  twin(root)
+  write(root, '.claude/skills/process-inbox/SKILL.md', '---\nname: process-inbox\ndescription: x\n---\n# P\n')
+  let runs = 0
+  const ctx = await vault(nfs.realpathSync(root), { claude: async () => { runs++; return { answer: 'x' } } })
+  const v = (await ctx.run('kn', {})).vaults[0]
+  assert.match(v.read_only, /inside a hidden folder \(“\.vaults”\), where Echo changes nothing: it is read only here/)
+  await assert.rejects(ctx.run('ingest_go', { id: 'twin', sources: ['raw_inbox/deck.pdf'], wait: true }), /read only here/)
+  assert.equal(runs, 0, 'no Claude run whose changes could never be written')
+  assert.equal(hiddenText('/Users/sam/Notes/acme'), null)
+  assert.equal(hiddenPart('/Users/sam/.obsidian-vaults/acme'), '.obsidian-vaults')
+})
+
+test('skill_md_ok as on Echo main (#784): the frontmatter ends only at a line `---`; ~~~! and ```! blocks, !$ and a lone CR refused; the twin\'s skills pass', () => {
+  assert.match(skillMdProblem('---\nname: x\n----\n---\n'), /“----” in its frontmatter/, '`----` is no end: a line of the frontmatter, refused')
+  assert.match(skillMdProblem('---\nname: x\n---x\n'), /“---x” in its frontmatter/, '`---x` is no end either')
+  assert.match(skillMdProblem('---\nname: x\ndescription: y\n'), /no closing/)
+  assert.equal(skillMdProblem('---\nname: x\n---   \nbody\n'), null, 'trailing spaces after `---` end it')
+  for (const md of ['~~~!\nid\n~~~', '```!\nid\n```', 'Run !$0', 'a\rb']) assert.ok(skillMdProblem(md), md)
+  for (const n of ['twin', 'process-inbox']) assert.equal(skillMdProblem(read(PKG, `starter/twin/.claude/skills/${n}/SKILL.md`)), null, n)
 })

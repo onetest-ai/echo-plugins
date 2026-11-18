@@ -175,7 +175,15 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   const handle = (path) => { const h = { file: `h${handlesMap.size + 1}`, name: npath.basename(path), size: nfs.statSync(path).size }; handlesMap.set(h.file, path); return h }
   if (pickFolder !== undefined || pickFiles !== undefined || disk) {
     ctx.system = {
-      pickFolder: async () => { const f = typeof pickFolder === 'function' ? pickFolder() : pickFolder; if (!f) return null; if (folders && !folders.includes(f)) folders.push(f); return nfs.realpathSync.native(f) },
+      pickFolder: async () => {
+        const f = typeof pickFolder === 'function' ? pickFolder() : pickFolder
+        if (!f) return null
+        // grants::grant (Echo #784): a hidden folder or one inside it is refused, in Echo's words.
+        const h = nfs.realpathSync.native(f).split(npath.sep).find((c) => c.startsWith('.') && c !== '.' && c !== '..')
+        if (h) throw new Error(`${nfs.realpathSync.native(f)} is a hidden folder or inside one (“${h}”), where other programs keep their settings: pick a folder that isn't hidden`)
+        if (folders && !folders.includes(f)) folders.push(f)
+        return nfs.realpathSync.native(f)
+      },
       pickFiles: async (prompt, o = {}) => { const list = (typeof pickFiles === 'function' ? pickFiles() : pickFiles) || []; return (o.multiple ? list : list.slice(0, 1)).map(handle) },
     }
     ctx.files = { read: (file, o = {}) => { const p = handlesMap.get(typeof file === 'object' ? file.file : file); if (!p) throw new Error('that file isn\'t there'); return nfs.readFileSync(p, 'utf8').slice(0, Math.min(o.max || 1 << 20, 4 << 20)) } }
@@ -340,6 +348,9 @@ function diskFs(folders, fsLog, handlePath = () => null) {
   // Markdown in `.claude/skills/<name>/`), never a link, its nearest folder there inside the root.
   const writable = (root0, rel, folder = false) => {
     const root = rootOf(root0)
+    // grants::writable_as (Echo #784): a folder at or inside a hidden one, granted by an older Echo, is never written.
+    const h = root.split(npath.sep).find((c) => c.startsWith('.') && c !== '.' && c !== '..')
+    if (h) throw new Error(`${root} is a hidden folder or inside one (“${h}”): nothing in it is changed`)
     inside(root, rel)
     const r = plain(root, rel)
     if (!r) throw new Error('not the folder itself')

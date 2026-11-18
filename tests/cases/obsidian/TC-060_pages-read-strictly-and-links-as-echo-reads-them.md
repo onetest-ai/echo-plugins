@@ -24,7 +24,7 @@ tags: [obsidian, knowledge, pages, encoding, links]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `obs page '{"id":"acme-twin","path":"topics/legacy-1251.md"}' \| python3 -c 'import json,sys; p=json.load(sys.stdin); print(p["editable"], repr(p["text"]))'` | `False` and the text with U+FFFD where the bytes aren't UTF-8 — shown, never editable |
+| 1 | `obs page '{"id":"acme-twin","path":"topics/legacy-1251.md"}' \| python3 -c 'import json,sys; p=json.load(sys.stdin); print(p["editable"], p["utf8"], repr(p["html"]))'` | `False False` and the page's HTML with U+FFFD where the bytes aren't UTF-8 — shown as Echo reads it, never editable; in the window its *Edit* is off, titled "Not UTF-8 text: shown as Echo reads it, read only" |
 | 2 | `obs save_page '{"id":"acme-twin","path":"topics/legacy-1251.md","text":"# x\n","base":"<the page's base>"}'` | Fails "topics/legacy-1251.md isn't UTF-8 text, so Echo doesn't edit it"; `xxd` of the file unchanged |
 | 3 | `obs page '{"id":"acme-twin","path":"topics/both.md"}' \| python3 -c 'import json,sys; print(json.load(sys.stdin)["html"])'` | Both links to acme lead to `#obsidian:knowledge/acme-twin/pages/clients/acme.md`; `Nowhere` is `<a class="md-missing" data-md-missing="Nowhere" …>` (a page not written yet) |
 | 4 | The page in the window (`#obsidian:knowledge/acme-twin/pages/topics%2Fboth.md`), a click on *Nowhere* | Pages opens acme.md for the first two; *Nowhere* offers to create the page |

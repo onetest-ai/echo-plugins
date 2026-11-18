@@ -4171,7 +4171,9 @@ export function apply(ctx) {
     const ip = indexPageOf(v)
     return {
       path: page, ...pg(v), title: p.title, props: p.props, has_props: p.has_props, tags: p.tags, outline: p.headings,
-      html: editable ? renderPage(v, ix, page, read.text) : null, links, backlinks, local: { nodes, edges },
+      // A page in another encoding (a cp1251 note, say) is shown as Echo reads it (U+FFFD where a byte isn't UTF-8), read
+      // only; only one over 2 MB isn't drawn.
+      html: read.st.size <= EDIT_MAX ? renderPage(v, ix, page, read.text) : null, utf8: read.utf8, links, backlinks, local: { nodes, edges },
       base: read.sha, text: editable ? read.text : null, editable, size: read.st.size, mtime: read.st.mtime,
       in_index: listed !== null && inScopeOf(v)(page) ? listed.has(page) : null, is_index: page === ip,
       in_git: !!(await gitInfo(v)).repo,

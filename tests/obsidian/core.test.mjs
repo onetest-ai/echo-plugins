@@ -110,7 +110,8 @@ test('a page is read strictly: one not UTF-8 is shown as Echo reads it and not e
   write(t, 'knowledge/topics/both.md', '# Both\n\n[[acme]] and [Acme](../clients/acme.md) and [[Nowhere]].\n')
   const ctx = await vault(t)
   const p = await ctx.run('page', { id: 'twin', path: 'topics/legacy.md' })
-  assert.equal(p.editable, false)
+  assert.deepEqual([p.editable, p.utf8], [false, false])
+  assert.ok(p.html.includes('\uFFFD'), 'shown as Echo reads it, read only — not "too large"')
   await assert.rejects(ctx.run('save_page', { id: 'twin', path: 'topics/legacy.md', text: '# x\n', base: p.base }), /isn't UTF-8 text/)
   const asked = []
   const links = ctx.markdown.links

@@ -343,15 +343,15 @@ test('new page: properties stay valid YAML; a template with % never breaks', asy
   assert.equal(slugify('Ünïcode — names!'), 'ünïcode-names')
 })
 
-test('page: a page that isn\'t UTF-8 is read but not edited', async () => {
+test('page: a page that isn\'t UTF-8 is shown as Echo reads it (read only, the user\'s word for cp1251 notes) but not edited', async () => {
   const root = twin(tmp())
   nfs.mkdirSync(npath.join(root, 'knowledge/topics'), { recursive: true })
   nfs.writeFileSync(npath.join(root, 'knowledge/topics/latin.md'), Buffer.from([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]))
   const ctx = await vault(root)
   const p = await ctx.run('page', { id: 'twin', path: 'topics/latin.md' })
   assert.equal(p.editable, false, 'editing would change bytes it never showed')
-  assert.equal(p.html, null)
-  assert.equal(p.text, null)
+  assert.equal(p.html, '<h1>Caf\uFFFD</h1>', 'shown, U+FFFD where a byte isn\'t UTF-8')
+  assert.equal(p.text, null, 'never handed to the editor')
   await assert.rejects(ctx.run('save_page', { id: 'twin', path: 'topics/latin.md', text: '# Cafe\n', base: p.base }), /UTF-8/)
   assert.deepEqual([...nfs.readFileSync(npath.join(root, 'knowledge/topics/latin.md'))], [0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a])
 })

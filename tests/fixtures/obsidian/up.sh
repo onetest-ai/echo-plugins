@@ -102,7 +102,7 @@ web1=$((port + 1)); web2=$((port + 2))
 python3 -I "$here/fake_web.py" "$web1" "$web2" --log "$dir/web.log" > /dev/null 2>&1 &
 echo $! > "$dir/web.pid"
 printf 'export FAKE_WEB="http://127.0.0.1:%s"\nexport FAKE_WEB_OTHER="http://127.0.0.1:%s"\nexport ECHOCTL_ASK_ADDRESS="http://127.0.0.1:%s/rollout.html"\n' "$web1" "$web2" "$web2" >> "$dir/env"
-# A made-up dictionary (Recall → Dictionary) in the test data's Recall folder, as Echo keeps it: terms with other names
+# A made-up dictionary (Settings → Vocabulary) in the test data's `recall/` folder, as Echo keeps it: terms with other names
 # and spellings, for tags through Echo's dictionary (TC-061). The standard data has none.
 home="$(. "$dir/env" && printf '%s' "$ECHOCTL_HOME")"
 case "$home" in "$dir"/*) ;; *) echo "ECHOCTL_HOME isn't inside $dir: stopping" >&2; exit 1;; esac

@@ -2473,7 +2473,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     } catch (e) { if (st().sheet) { st().sheet.error = String(e.message || e); render() } else say(`Not saved: ${e.message || e}`) }
   }
 
-  // ── Settings → Intake: the vaults (Knowledge), above Intake's own settings ──
+  // ── Settings → From plugins → Knowledge: the vaults ──
   function settingsVaults() {
     const d = st().data
     if (!d) { load().then(render); return '' }

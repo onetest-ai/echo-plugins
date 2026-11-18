@@ -124,12 +124,13 @@ test('health: the code checks\' findings by group, keyed the same across reads, 
   assert.ok(after.ignored.some((x) => x.key === f.key))
   const one = await ctx.run('health_finding', { id: 'twin', key: f.key })
   assert.equal(one.ignored, true)
-  assert.match(one.error, /fixes and AI checks aren't in this version/)
+  assert.deepEqual(one.choices.map((c) => c.choice), ['row'], 'its fix: a row in the index')
+  assert.equal(one.fix.choice, 'row')
   await ctx.run('ignore', { id: 'twin', key: f.key, on: false })
   assert.ok((await ctx.run('health', { id: 'twin' })).findings.some((x) => x.key === f.key))
 })
 
-test('home: what changed (Echo\'s writes, git\'s commits), the Health card, where to start reading, the vault\'s card; Ingest says it is to come', async () => {
+test('home: what changed (Echo\'s writes, git\'s commits), the Health card, what comes in, where to start reading, the vault\'s card', async () => {
   const root = twin(tmp())
   const ctx = await vault(root)
   const p = await ctx.run('page', { id: 'twin', path: 'clients/acme.md' })
@@ -139,15 +140,15 @@ test('home: what changed (Echo\'s writes, git\'s commits), the Health card, wher
   assert.equal(h.whats_new.rows[0].who, 'Edited in Echo')
   assert.equal(h.hubs.index.path, 'CATALOG.md')
   assert.equal(typeof h.health.score, 'number')
-  assert.match(h.coming_in.error, /Ingest isn't in this version/)
+  assert.deepEqual([h.coming_in.waiting, h.coming_in.new, h.coming_in.running], [0, 1, null], 'the sources folder\'s PDF is new; nothing waits')
   assert.equal(h.vault.pages_root, 'knowledge')
 })
 
-test('the later step says so and does nothing: Ingest\'s runs, Health\'s fixes and AI checks', async () => {
+test('Health\'s fixes, the AI checks and Ingest answer now: without Claude in this Echo they say why, nothing written', async () => {
   const root = twin(tmp())
   const ctx = await vault(root)
-  for (const [c, word] of [['ingest_go', 'Ingest'], ['ingest_apply', 'Ingest'], ['fix', 'fixes and AI checks'], ['lint', 'fixes and AI checks']]) {
-    await assert.rejects(ctx.run(c, { id: 'twin' }), new RegExp(`${word}.* in this version of Knowledge yet`), c)
-  }
+  await assert.rejects(ctx.run('ingest_go', { id: 'twin', sources: [], wait: true }), /no ingest skill/)
+  await assert.rejects(ctx.run('ingest_apply', { id: 'twin', run: 'x' }), /no run x/)
+  await assert.rejects(ctx.run('fix', { id: 'twin', key: 'broken:x' }), /isn't there any more/)
   assert.deepEqual(acts(ctx), [], 'nothing written')
 })

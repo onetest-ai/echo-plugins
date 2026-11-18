@@ -37,10 +37,28 @@ with it and what to leave alone. You correct the description, and from then on C
   if Echo found them wrong. `default` names the vault a call's minutes go to when its thread or client has none.
 - **The Knowledge activity** (Knowledge in the activity bar, the folder of notes icon; #17's Knowledge 0.1.1 client):
   a vault's Home (what changed, its health, where to start reading), Pages (read, edit, conflicts, history), Graph,
-  Ingest, Health (the code checks' findings and the score) and Settings — with "What Claude knows" (the description
-  above and whom the vault is for). *Ask the vault* opens Claude Code in Echo's panel, in the vault as its own project:
-  you ask there. A call's page shows where its minutes go (its chip, its ⋯ items, the line while they come). Ingest
-  runs, Health's fixes and AI checks come in a later version: until then they say so. Settings → From plugins → Knowledge lists the vaults and opens them.
+  Ingest, Health and Settings — with "What Claude knows" (the description above and whom the vault is for). *Ask the
+  vault* opens Claude Code in Echo's panel, in the vault as its own project: you ask there. A call's page shows where
+  its minutes go (its chip, its ⋯ items, the line while they come). The activity's badge counts the changes waiting
+  for your review and the findings only you can decide. Settings → From plugins → Knowledge lists the vaults and opens
+  them.
+- **Health** — the code checks' findings (pages the index doesn't list, broken links, pages without properties, tags
+  the taxonomy doesn't allow, index rows to missing pages…), a score of 0–100 by five weighted categories with a point
+  a day for 90 days, and fixes shown as a diff before anything is written: a broken link pointed to the closest page,
+  a row added to the index, properties added, a tag replaced. A fix is written only over the text it was shown on;
+  *Fix all* applies only the certain ones (never a guess), in one commit. *Run AI checks* — only when you click —
+  runs Claude Code read-only in the vault on its AI profile: contradictions, possible duplicates, stale statements,
+  links worth adding, missing summaries; a finding is kept only when every quote is on its page and its fix's text is
+  there once, and is checked again each time Health looks. Ignore any finding; *Show ignored* lists them.
+- **Ingest** — *Prepare changes* runs the vault's own ingest skill (Settings → Ingest, else `process-inbox`) on a copy
+  of the vault (the other sources left out), over a batch of its sources (20 at most), never while Echo records or
+  transcribes a call — Echo says whether it does ("whether Echo is recording or transcribing a call now" on the
+  install sheet). *Stop* ends the run's Claude Code at once. Nothing is
+  written until you review each change: its diff and the source words it came from (checked; a PDF's can't be);
+  approve, reject, edit or take the run's. Index rows and log lines land on the files as they are then; any other file
+  only if it hasn't changed since the run. Then one commit, the sources done. Instruction files, hidden files and the
+  sources themselves are never written back. A vault whose new calls' or mail's rule is *Add and prepare* starts one
+  run by itself once 5 sources are queued or the first has waited 24 hours (Settings → Ingest), never per call.
 - **Your calls' minutes into your vaults** — each call goes to the vault set on its thread, else its client's, else
   the default vault (a call in two threads with two vaults goes into both); set it on a thread's or client's Profile
   ("Knowledge vault": inherited, a vault, or none) with that vault's Auto / Ask / Off. Auto saves the note as soon as
@@ -52,7 +70,8 @@ with it and what to leave alone. You correct the description, and from then on C
 - **Sources for Ingest** — a vault's sources folder (`raw_inbox/`): files you hand over (copied as they are, never over
   a file), a call's minutes, a mail thread from Microsoft 365, a web page (once Echo reads web pages). New calls and
   mail of a vault's threads are queued by its rule (`ingest.calls`, `ingest.mail`: off, add, prepare) with nothing
-  written into the vault; `prepare_sources` writes them, reading a mail's own text only then.
+  written into the vault; preparing a batch (`prepare_sources`, and each Ingest run first) writes them, reading a
+  mail's own text only then.
 - **A new vault from the twin preset** (`new_vault`): the structure of a personal knowledge twin — rules for agents, an
   index with a table per section, tags and terms, a profile to fill, templates — in a new or empty folder, in git when
   you like. Echo doesn't let a plugin write hidden files, so the preset's `.claude/skills`, `.gitignore` and Obsidian

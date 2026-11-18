@@ -538,12 +538,16 @@ test('paths can\'t leave the vault, name machinery or what isn\'t a page', { ski
   }
   assert.equal(read(base, 'outside.md'), '# secret\n')
   assert.equal(pathProblem('a/./b.md'), 'not a path in this vault')
-  // A vault whose pages are its root: its sources folder is never a page.
+  // A vault whose pages are its root: its sources folder is never a page — a source reads as it came (Ingest shows
+  // it), safe HTML, never editable, never saved.
   const plain = tmp()
   write(plain, 'a.md', '# A\n')
   write(plain, 'raw_inbox/mail/x.md', '# Phase 2 <script>x</script>\n')
   const p = await vault(plain)
-  await assert.rejects(p.run('page', { id: 'twin', path: 'raw_inbox/mail/x.md' }), /isn't a page/)
+  const src = await p.run('page', { id: 'twin', path: 'raw_inbox/mail/x.md' })
+  assert.deepEqual([src.source, src.editable, src.text], [true, false, null])
+  assert.ok(!src.html.includes('<script>'), src.html)
+  await assert.rejects(p.run('save_page', { id: 'twin', path: 'raw_inbox/mail/x.md', text: 'x', base: src.base }), /isn't a page/)
 })
 
 test('activity: each write leaves a line — the editor\'s edit, a new page with its index row, a restore with its version', { skip: !hasGit && 'git is not available' }, async () => {

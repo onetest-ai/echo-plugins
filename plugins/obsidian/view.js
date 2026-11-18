@@ -857,6 +857,7 @@ export async function createKnowledge(ctx, hooks = {}) {
       <section class="set-sec" id="vs-ingest"><h3>Ingest</h3><div class="set-card">
         ${row('The ingest skill', ingSkill ? `Runs on a copy of the vault when you prepare changes. In <code>${esc(ingSkill.path)}</code>.` : 'None found: Ingest offers the starter\'s <code>process-inbox</code>.', skillSel)}
         ${row('New calls\' minutes', 'After a call\'s minutes are saved here by their rule. Only calls on this vault\'s AI profile.', `<div class="kn-radios" id="kn-set-ingest-calls" role="radiogroup" aria-label="New calls\' minutes">${knCallsRule((v.ingest || {}).calls).map((o) => `<label class="kn-radio"><input type="radio" id="kn-set-ingest-calls-${o.k}" name="kn-ingest-calls" value="${o.k}" data-kn-set="ingest.calls"${o.on ? ' checked' : ''}><span><b>${esc(o.label)}</b><span class="set-sub">${esc(o.sub)}</span></span></label>`).join('')}</div>`)}
+        ${row('Prepared in batches', 'With Add and prepare changes: one run over everything queued, once this many sources wait or the first has waited this many hours — never during a call.', `<span class="kn-batch"><input class="set-in sm" type="number" min="1" max="100" id="kn-set-batch-sources" data-kn-set="ingest.batch_sources" value="${esc(String((v.ingest || {}).batch_sources || 5))}" aria-label="Sources in a batch"> sources or <input class="set-in sm" type="number" min="1" max="168" id="kn-set-batch-hours" data-kn-set="ingest.batch_hours" value="${esc(String((v.ingest || {}).batch_hours || 24))}" aria-label="Hours the first source waits at most"> hours</span>`)}
         ${row('What a run may do', 'Read and write pages in its copy, with this skill only. No commands, no web. A step of the skill that needs a command is skipped and named in the run\'s report.', '<span class="tag">no commands</span>')}
       </div></section>
       <section class="set-sec" id="vs-ask"><h3>Ask</h3><div class="set-card">
@@ -2600,6 +2601,8 @@ export async function createKnowledge(ctx, hooks = {}) {
         if (d.knDo === 'edit') return openChangeEdit(d.path)
         // A change made in the vault since the run: its overwrite diff first, then *Take the run's*.
         if (d.knDo === 'compare') { if (rv) rv.cmp[d.path] = !rv.cmp[d.path]; render(); return focusOn(`#${t.id.replace(/-compare$/, '-take')}`, `#${t.id}`) }
+        // *Take the run's* over the vault's file as Compare showed it: a later edit refuses it (the host checks the sha).
+        if (d.knDo === 'take') { const c = ((rv && rv.data && rv.data.changes) || []).find((x) => x.path === d.path); return decide(d.path, 'take', c && c.vault_sha !== undefined ? { sha: c.vault_sha } : {}) }
         return decide(d.path, d.knDo)
       }
       case 'ing-more': { const rv = ing().review; if (rv) rv.more[d.path] = true; render(); return focusOn(`#${t.id.replace(/-more$/, '-diff')}`) }

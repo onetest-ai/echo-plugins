@@ -89,13 +89,14 @@ with it and what to leave alone. You correct the description, and from then on C
   Health's fix of a tag the taxonomy doesn't allow (the dictionary's tag offered first). The vault's own tag taxonomy
   wins: a tag is only ever turned into one it allows. Knowledge only reads the dictionary; it never adds to it.
 - **Calls are known by their stamp** — the day and time a call's folder starts with, which a retitle keeps: a call
-  you rename is the same call for its note, its record and the sources queue (two calls started in the same second are
-  kept apart by their folders).
+  you rename is the same call for its note, its record and the sources queue (Echo 0.10.0 gives every call a stamp of
+  its own). In data from before it, two calls may share a second: the second one's minutes aren't saved, and the Inbox
+  says "Echo can't tell two calls of this second apart — open it and Save again".
 - **From Obsidian vaults 0.8**: your vaults, their descriptions and Claude's entries stay; each vault takes a call's
   minutes only when you ask. Echo's own facts vault of 0.8 (the Knowledge switch, Knowledge → Notes) is gone.
 - Removing a vault from Echo takes all of this back; the folder stays as it is.
 
-Needs Echo 0.9.15 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
+Needs Echo 0.10.0 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
 entries; `client.js` wires the Knowledge activity (`view.js`, `model.js`, `knowledge.css`, through `seam.js` to the
 host half's commands) into Echo's slots; `rows.js` the "Knowledge vault" row of a thread's and a client's Profile; `starter/twin/` is the twin preset. Part of the
 [Echo plugins](../../README.md) marketplace.

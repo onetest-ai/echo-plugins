@@ -545,7 +545,7 @@ test('finding 4: a queued item that can\'t be prepared is tried again only after
   assert.equal(JSON.parse(ctx.files['vaults/twin/ingest.json']).queued['call:gone'].tries, 1, 'not tried again within the hour')
   // A good call joins: the batch runs over it and leaves the failing one queued.
   const l2 = JSON.parse(ctx.files['vaults/twin/ingest.json'])
-  l2.queued['call:2026-11-05_090012-weekly-delivery-sync'] = { id: 'call:2026-11-05_090012-weekly-delivery-sync', kind: 'call', title: 'Weekly', rule: 'prepare', state: 'queued', added: new Date().toISOString() }
+  l2.queued['call:2026-11-05_090012'] = { id: 'call:2026-11-05_090012', kind: 'call', title: 'Weekly', rule: 'prepare', state: 'queued', added: new Date().toISOString() }
   ctx.files['vaults/twin/ingest.json'] = JSON.stringify(l2)
   const started = await ctx.run('prepare_rule', {})
   assert.equal(started.length, 1)
@@ -868,7 +868,7 @@ test('the rule\'s batch takes what is New of it: a queued item whose file a run 
   await ctx.run('add_source', { vault: 'twin', kind: 'call', call: '2026-11-05_090012-weekly-delivery-sync' })
   const first = (await ctx.run('ingest_go', { id: 'twin', wait: true })).run
   const l = JSON.parse(ctx.files['vaults/twin/ingest.json'])
-  for (const c of ['2026-11-05_090012-weekly-delivery-sync', '2026-11-06_100000-pricing']) l.queued[`call:${c}`] = { id: `call:${c}`, kind: 'call', title: c, rule: 'prepare', state: 'queued', added: new Date().toISOString() }
+  for (const c of ['2026-11-05_090012', '2026-11-06_100000']) l.queued[`call:${c}`] = { id: `call:${c}`, kind: 'call', title: c, rule: 'prepare', state: 'queued', added: new Date().toISOString() }
   l.calls = []
   ctx.files['vaults/twin/ingest.json'] = JSON.stringify(l)
   const started = await ctx.run('prepare_rule', {})

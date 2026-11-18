@@ -7,7 +7,7 @@
 
 export async function createKnowledge(ctx, hooks = {}) {
   const v1 = new URL(import.meta.url).search
-  const { KN_BASE, knDecode, knParseRoute, knRouteOf, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knKeepDraft, knRestoreDraft, knDropDraft, knLineDiff, knToolRows, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, knWhen, knHomeCards, knHomeNews, knHomeRecord } = await import(`./model.js${v1}`)
+  const { KN_BASE, knDecode, knParseRoute, knRouteOf, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knKeepDraft, knRestoreDraft, knDropDraft, knLineDiff, knToolRows, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, knWhen, knHomeCards, knHomeNews, knHomeRecord, knTwinInstall, knTwinRemove } = await import(`./model.js${v1}`)
   const { knRead, knAct, knConnectArgs, knUnpickOf } = await import(`./seam.js${v1}`)
 
   const timing = {}
@@ -1935,7 +1935,8 @@ export async function createKnowledge(ctx, hooks = {}) {
   /** The twin skill into the user's own Claude Code (Echo #776 `ctx.claude.installSkill`, `uses.skills`): on this click,
    *  before anything else is awaited (Echo takes it only while the click is fresh); the text the sheet showed, or the
    *  one Settings would show (Update). Echo never writes over a skill that isn't the plugin's own. */
-  const SKILL_GONE = /isn't a skill .* added/
+  // The click's work is model.js's (`knTwinInstall`, `knTwinRemove`): the host reserves the name first, the new skill
+  // goes in before the old one comes out.
   async function twinGlobal(v) {
     const s = st(), x = s.sheet && s.sheet.kind === 'twin' ? s.sheet : null
     const say2 = (m) => { if (x && st().sheet === x) { x.error = m; render() } else say(m) }
@@ -1944,27 +1945,21 @@ export async function createKnowledge(ctx, hooks = {}) {
     const name = (x && x.name) || (t && t.name) || ''
     // Only the text the sheet shows, as it shows it (its name typed since: read again first).
     if (!t || t.name !== name) return say2('Wait for the skill\'s text to show, then Install.')
-    if (t.taken_by) return say2(`/${name} is ${t.taken_by}'s twin skill already: choose another name.`)
-    // Update… under a new name: the old one out first (one name a vault); one Echo no longer has is gone already.
-    const old = s.settings && s.settings.global_twin
-    if (old && old !== name) { try { await ctx.claude.removeSkill(old) } catch (err) { if (!SKILL_GONE.test(String(err.message || err))) return say2(String(err.message || err)) } }
-    try { await ctx.claude.installSkill(name, t.text) } catch (err) { return say2(String(err.message || err)) }
-    try { await run('kn_twin', { id: v.id, op: 'installed', name }, 'twin') } catch { /* shown on the next read */ }
+    let r
+    try { r = await knTwinInstall({ claude: ctx.claude, call, vault: v.id, name, text: t.text, old: (s.settings && s.settings.global_twin) || null }) } catch (err) { return say2(String(err.message || err)) }
     if (x && st().sheet === x) s.sheet = null
     await loadSettings(); render()
-    done(`/${name} is in your Claude Code: ~/.claude/skills/${name}/SKILL.md.`)
+    const oldNote = r.old && r.old.error ? ` /${r.old.name} is still there: ${r.old.error}.` : r.old ? ` /${r.old.name} is out.` : ''
+    done(`/${name} is in your Claude Code: ~/.claude/skills/${name}/SKILL.md.${oldNote}`)
   }
   async function twinRemove(v) {
     const name = st().settings && st().settings.global_twin
     if (!name) return
     if (!ctx.claude || typeof ctx.claude.removeSkill !== 'function') return say('This Echo can\'t change your own Claude Code\'s skills.')
-    // Echo's word for one it no longer has as this plugin's ("“x” isn't a skill Knowledge added": removed with the plugin
-    // when it was removed and installed again with its data kept, or by the user): gone already, forgotten here too.
-    let gone = false
-    try { await ctx.claude.removeSkill(name) } catch (err) { if (!SKILL_GONE.test(String(err.message || err))) return say(String(err.message || err)); gone = true }
-    try { await run('kn_twin', { id: v.id, op: 'removed' }, 'twin') } catch { /* shown on the next read */ }
+    let r
+    try { r = await knTwinRemove({ claude: ctx.claude, call, vault: v.id, name }) } catch (err) { return say(String(err.message || err)) }
     await loadSettings(); render()
-    done(gone ? `/${name} was no longer in your Claude Code (removed with the plugin, or by you): forgotten here.` : `/${name} is out of your Claude Code.`)
+    done(r.gone ? `/${name} was no longer in your Claude Code (removed with the plugin, or by you): forgotten here.` : `/${name} is out of your Claude Code.`)
   }
   async function loadTwinText() {
     const s = st(), x = s.sheet, v = vault()

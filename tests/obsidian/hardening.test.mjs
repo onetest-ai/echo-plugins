@@ -143,10 +143,10 @@ test('two prepares at once write each source once; a prepare another process hol
   assert.ok(!(`locks/prepare-${v.id}.json` in w.ctx.files), 'and let go')
   // A source the ledger has by the call it came from is never written again, even if queued again by hand.
   const l = JSON.parse(w.ctx.files[`vaults/${v.id}/ingest.json`])
-  l.queued[`call:${CALL}`] = { kind: 'call', title: 'x', added: new Date().toISOString(), state: 'queued' }
+  l.queued['call:2026-11-05_090012'] = { kind: 'call', title: 'x', added: new Date().toISOString(), state: 'queued' }
   w.ctx.files[`vaults/${v.id}/ingest.json`] = JSON.stringify(l)
   const p = await w.ctx.run('prepare_sources', { vault: v.id })
-  assert.deepEqual(p.written, [{ id: `call:${CALL}`, path: 'raw_inbox/echo/2026-11-05-weekly-delivery-sync.md', already: true }])
+  assert.deepEqual(p.written, [{ id: 'call:2026-11-05_090012', path: 'raw_inbox/echo/2026-11-05-weekly-delivery-sync.md', already: true }])
   assert.deepEqual(nfs.readdirSync(npath.join(v.root, 'raw_inbox/echo')), ['2026-11-05-weekly-delivery-sync.md'])
 })
 

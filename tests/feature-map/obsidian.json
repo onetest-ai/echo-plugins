@@ -340,7 +340,7 @@
   },
   {
    "id": "F-OB-63",
-   "title": "A call is known by its stamp (the YYYY-MM-DD_HHMMSS its folder starts with, kept when it is retitled): its record (where its minutes went, the user's choice), its id in a vault's queue and ledger (call:<stamp>), the recording's events — a retitled call is the same call: its note updated in place, queued and prepared once, read by its stamp as named now; two calls of the same second kept apart by folder; a ledger of before (by folder) read and kept by stamp",
+   "title": "A call is known by its stamp (the YYYY-MM-DD_HHMMSS its folder starts with, unique in Echo 0.10.0, kept when it is retitled): its record (where its minutes went, the user's choice), its id in a vault's queue and ledger (call:<stamp>), the recording's events — a retitled call is the same call: its note updated in place, queued and prepared once, read by its stamp as named now; two calls of consecutive seconds each their own; in data from before 0.10.0 a second folder of one stamp never takes the first's record (nothing written, the Inbox says why); a ledger of before (by folder) kept by stamp",
    "priority": "critical",
    "check": "agent"
   },

@@ -25,7 +25,7 @@
 // `vaults/<id>/lint/<run>.json` (AI checks and the findings kept), `vaults/<id>/ingest.json` (the sources ledger and its
 // runs) and `vaults/<id>/ingest/<run>/` (a run's notices, changes and review), `locks/` (one run of a kind per vault),
 // `vaults.md`, `runs/<id>/`, `calls/<stamp>.json` (where a call's minutes went: by its stamp, Echo #772, so a retitle
-// is the same call; `<stamp>~<sha>` for a second call of the same second), `global-skills.json` (the name each vault's
+// is the same call; Echo 0.10.0 gives every call a stamp of its own), `global-skills.json` (the name each vault's
 // twin skill was added under in the user's own Claude Code, from the window).
 // Tags: an AI check's fix, an Ingest run's pages and Health's tag fix take Echo's dictionary's name for a tag
 // (`echo.read('dictionary')`, read only), the vault's own tag taxonomy winning.
@@ -2287,33 +2287,19 @@ export function stampOf(folder, given) {
   const m = /^(\d{4}-\d{2}-\d{2}_\d{6})/.exec(s)
   return m ? m[1] : s
 }
-/** Is `stamp` one a folder's name starts with (two calls started in the same second may share it)? */
+/** Is `stamp` one a folder's name starts with (`YYYY-MM-DD_HHMMSS`)? */
 export const datedStamp = (stamp) => /^\d{4}-\d{2}-\d{2}_\d{6}$/.test(String(stamp || ''))
-/** The dated stamps a ledger of before onetest-ai/echo#772 names calls by folder with (`call:<folder>`): each stamp
- *  with its folders. */
-export function ledgerFolders(l) {
-  const folders = new Map()
-  const seen = (id) => {
-    if (typeof id !== 'string' || !id.startsWith('call:')) return
-    const f = id.slice(5), st = stampOf(f)
-    if (st === f || !datedStamp(st)) return
-    if (!folders.has(st)) folders.set(st, new Set())
-    folders.get(st).add(f)
-  }
-  if (!l) return folders
-  for (const id of l.calls || []) seen(id)
-  for (const id of Object.keys(l.queued || {})) seen(id)
-  for (const e of Object.values(l.sources || {})) seen(e && e.from)
-  return folders
-}
 /** A sources ledger of before onetest-ai/echo#772 (calls by `call:<folder>`) by stamp: its calls, its queue's keys and
- *  ids, its sources' `from` — each `call:<folder>` → `to.get(folder)` (`call:<stamp>`, or the call's own key when two
- *  calls really share the stamp), a folder `to` doesn't name kept as it is. Every folder of one stamp goes to the same
- *  id when the stamp is one call's — a call retitled before has two of them, still one call. Queue entries that become
- *  one keep the earliest. Marked `keys: 'stamp'`; → whether it was changed. */
-export function stampLedger(l, to) {
+ *  ids, its sources' `from` — every `call:<folder>` of a dated folder → `call:<stamp>` (a call retitled before has two
+ *  folders: one call; Echo 0.10.0 gives every call its own stamp). Queue entries that become one keep the earliest.
+ *  Marked `keys: 'stamp'`; → whether it was changed. */
+export function stampLedger(l) {
   if (!l || l.keys === 'stamp') return false
-  const map = (id) => (typeof id === 'string' && id.startsWith('call:') && to.has(id.slice(5)) ? to.get(id.slice(5)) : id)
+  const map = (id) => {
+    if (typeof id !== 'string' || !id.startsWith('call:')) return id
+    const f = id.slice(5), st = stampOf(f)
+    return st !== f && datedStamp(st) ? `call:${st}` : id
+  }
   if (Array.isArray(l.calls)) l.calls = [...new Set(l.calls.map(map))]
   if (l.queued) {
     const q = {}
@@ -2328,28 +2314,6 @@ export function stampLedger(l, to) {
   for (const e of Object.values(l.sources || {})) if (e && typeof e.from === 'string') e.from = map(e.from)
   l.keys = 'stamp'
   return true
-}
-/** Which record of a stamp is a call's (the claim of `claimKey` in the host half), from the records there are and the
- *  calls Echo lists with that stamp now (`listed`: [{folder, started_at, memo}], or null when Echo couldn't say):
- *  `records` [{key, rec}] (the stamp's own first). → a record's key, or null for a new one of its own. A record of
- *  another folder is this call retitled only when Echo no longer lists that folder and the two started at the same
- *  time as the same kind (a call or a memo); a record from before it kept those, only when it is the one record gone
- *  and this the one listed call without a record. A failed read is never a retitle. */
-export function recordOf(folder, records, listed) {
-  const mine = records.find((x) => x.rec && x.rec.folder === folder)
-  if (mine) return mine.key
-  if (!listed) return null
-  const there = new Set(listed.map((x) => x.folder))
-  const me = listed.find((x) => x.folder === folder)
-  if (!me) return null
-  const gone = records.filter((x) => x.rec && x.rec.folder && !there.has(x.rec.folder))
-  const same = gone.filter((x) => x.rec.started_at != null && x.rec.started_at === me.started_at && !!x.rec.memo === !!me.memo)
-  if (same.length === 1) return same[0].key
-  if (same.length) return null
-  const old = gone.filter((x) => x.rec.started_at == null)
-  const claimed = new Set(records.map((x) => x.rec && x.rec.folder))
-  const free = listed.filter((x) => !claimed.has(x.folder))
-  return old.length === 1 && free.length === 1 && free[0].folder === folder ? old[0].key : null
 }
 
 // ── step 5: Health's fixes and score, the AI checks' findings, an ingest run's changes (health.rs, lint.rs, ingest.rs,
@@ -5403,104 +5367,43 @@ export function apply(ctx) {
   }
   const available = (v) => { try { return ctx.fs.folders().includes(v.root) && (ctx.fs.stat(v.root, '') || {}).kind === 'dir' } catch { return false } }
   const callId = (call) => { const c = String(call || '').replace(/^call:/, ''); if (!c || c.includes('/') || c.includes('\\')) throw new Error('call: a call\'s folder, as Echo names it'); return c }
-  // A call's record is keyed by its stamp (Echo #772: a retitle keeps it, so a retitled call is never saved twice), and
-  // remembers its folder, when it started and whether it is a memo. Two calls started in the same second share a stamp:
-  // the record is the one that claimed it first; another's is `<stamp>~<its folder's sha>`. A record naming another
-  // folder is never taken on a cached or failed answer: Echo is asked again (`recordOf`).
-  // Echo's calls around a day (the day before and after too: Echo's `date` is the call's own day, a stamp its folder's),
-  // kept a minute per day; `fresh` asks Echo again. null when Echo can't say.
-  const dayRows = new Map()
-  const dayAdd = (day, n) => new Date(Date.parse(`${day}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10)
-  const rowsAround = (day, fresh = false) => {
-    const hit = dayRows.get(day)
-    if (!fresh && hit && Date.now() - hit.at < 60 * 1000) return hit.rows
-    let rows = null
-    try { rows = (ctx.echo && ctx.echo.read('calls', { since: dayAdd(day, -1), until: dayAdd(day, 1), limit: 500 })) || [] } catch { rows = null }
-    if (rows !== null) dayRows.set(day, { at: Date.now(), rows })
-    return rows
-  }
-  // The calls Echo lists with `stamp` now: [{folder, started_at, memo}], or null.
-  const callsWithStamp = (stamp, fresh = false) => {
-    if (!datedStamp(stamp)) return null
-    const rows = rowsAround(stamp.slice(0, 10), fresh)
-    return rows === null ? null : rows.filter((c) => stampOf(c.id, c.stamp) === stamp).map((c) => ({ folder: callId(c.id), started_at: c.started_at ?? null, memo: !!c.memo }))
-  }
-  const recFile = (key) => `calls/${key}.json`
-  const readRec = (key) => { try { return readJson(recFile(key), null) } catch { return { folder: '\0unreadable' } } }
-  // The records of a stamp: its own, then the others' (`<stamp>~…`).
-  const recordsOf = (main) => {
-    const out = [{ key: main, rec: readRec(main) }]
-    let names = []
-    try { names = ctx.store.list('calls') || [] } catch { /* none */ }
-    for (const n of names) if (n.startsWith(`${main}~`) && n.endsWith('.json')) { const key = n.slice(0, -5); out.push({ key, rec: readRec(key) }) }
-    return out
-  }
-  // The key of a call's record (`write`: claimed — made, or its folder brought up to date — so another call of the same
-  // second can't take it). `meta`: {started_at, memo} as Echo gave them, when it did.
-  const claimKey = (call, stamp, meta = {}, write = false) => {
-    const st = stampOf(call, stamp)
-    const main = callKey(st, ctx.crypto.sha256)
-    if (st === call || !datedStamp(st)) return main
-    const factsOf = () => {
-      const m = { started_at: meta.started_at ?? null, memo: meta.memo == null ? null : !!meta.memo }
-      if (m.started_at == null || m.memo == null) { const row = (callsWithStamp(st) || []).find((x) => x.folder === call); if (row) { if (m.started_at == null) m.started_at = row.started_at; if (m.memo == null) m.memo = row.memo } }
-      return { started_at: m.started_at, memo: !!m.memo }
-    }
-    const claim = (key) => {
-      if (!write) return key
-      try {
-        updateJson(recFile(key), EMPTY_REC, (r) => {
-          if (r.folder === call && r.started_at != null) return
-          r.folder = call
-          const f = factsOf()
-          if (r.started_at == null && f.started_at != null) r.started_at = f.started_at
-          if (r.memo == null) r.memo = f.memo
-        })
-      } catch (e) { ctx.log(`record of ${call}: ${errText(e)}`) }
-      return key
-    }
-    const own = readRec(main)
-    if (!own) {
-      if (!write) return main
-      // Made only where none is (another process may claim it meanwhile: then read again below).
-      try { ctx.store.write(recFile(main), JSON.stringify({ ...EMPTY_REC, folder: call, ...factsOf() }, null, 2), { createNew: true }); return main } catch (e) { if (!/there already/.test(errText(e))) throw e }
-    }
-    const now = readRec(main)
-    if (now && (!now.folder || now.folder === call)) return claim(main)
-    const records = recordsOf(main)
-    if (records.some((x) => x.rec && x.rec.folder === call)) return claim(records.find((x) => x.rec && x.rec.folder === call).key)
-    const listed = callsWithStamp(st, true)
-    const key = recordOf(call, records, listed)
-    return claim(key || `${main}~${ctx.crypto.sha256(call).slice(0, 12)}`)
-  }
+  // A call's record, its id in a vault's ledger, its queue entry, Inbox key and lock are its stamp alone: Echo 0.10.0
+  // gives every call a stamp no other call has (a second call of the same second takes the next free one) and a
+  // retitle keeps it. The record remembers the folder it last saw. Data from before 0.10.0 may hold two folders of one
+  // stamp: a record whose folder isn't the call's is taken only when Echo, read by the stamp, names this call (a
+  // retitle); Echo names neither of two (`call:<stamp>`), and then nothing is written for the other — said, never guessed.
   const EMPTY_REC = { choice: null, saved: [], failed: [] }
-  const callRec = (call, stamp, meta) => ({ ...EMPTY_REC, ...(readJson(recFile(claimKey(call, stamp, meta)), null) || EMPTY_REC) })
-  const updateRec = (call, fn, stamp, meta) => { pastGen++; return updateJson(recFile(claimKey(call, stamp, meta, true)), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; return fn(r) }) }
-  const source = (call, opts) => ctx.echo.read('source', `call:${call}`, opts)
-  // A call's id in a vault's sources ledger: its record's key (`call:<stamp>`, `call:<stamp>~<sha>` for another call of
-  // the same second), claimed — so a retitled call is the same one, and two calls of one second never one.
-  const srcIdOf = (call, stamp, meta) => {
+  const recFile = (key) => `calls/${key}.json`
+  const UNREADABLE = 'this call\'s record in Knowledge can\'t be read'
+  const TWO_CALLS = 'Echo can\'t tell two calls of this second apart — open it and Save again'
+  const twoCalls = () => { const e = new Error(TWO_CALLS); e.twoCalls = true; return e }
+  const readRec = (key) => { try { return readJson(recFile(key), null) } catch { const e = new Error(UNREADABLE); e.unreadable = true; throw e } }
+  // Does Echo, read by the stamp, name this folder? (Of two calls of one second it names neither.)
+  const stampNames = (st, call) => { try { const s0 = ctx.echo.read('source', `call:${st}`, { transcript: false, chat: false }); return !!s0 && callId(s0.id) === call } catch { return false } }
+  // The key of a call's record — its stamp — and, with `write`, the record made or its folder brought up to date (only
+  // over the folder decided on: the app and a terminal never take it from each other). Throws for the second folder of
+  // an old stamp (`twoCalls`), and for a record it can't read (never taken over).
+  const claimKey = (call, stamp, write = false) => {
     const st = stampOf(call, stamp)
-    if (st === call || !datedStamp(st)) return `call:${call}`
-    const key = claimKey(call, stamp, meta, true)
-    return `call:${key === callKey(st, ctx.crypto.sha256) ? st : key}`
+    const key = callKey(st, ctx.crypto.sha256)
+    const r = readRec(key)
+    const saw = r ? r.folder || null : null
+    if (saw && saw !== call && !stampNames(st, call)) throw twoCalls()
+    if (!write || saw === call) return key
+    updateJson(recFile(key), EMPTY_REC, (x) => {
+      if (x.folder && x.folder !== call && x.folder !== saw) throw twoCalls()
+      x.folder = call
+    })
+    return key
   }
-  // The folder a ledger's call is now: its record's (kept up to date by every claim), else the one call Echo lists with
-  // its stamp, else the call that started when its record says. null when none is.
-  const folderOfId = (id, q = {}) => {
-    const key = String(id).replace(/^call:/, '')
-    const st = stampOf(key.split('~')[0])
-    if (!datedStamp(st)) return key
-    const rec = readRec(key.includes('~') ? key : callKey(st, ctx.crypto.sha256))
-    const listed = callsWithStamp(st, true) || []
-    const folder = (rec && rec.folder) || q.folder || null
-    if (folder && listed.some((x) => x.folder === folder)) return folder
-    const started = (rec && rec.started_at) ?? q.started_at ?? null
-    const same = listed.filter((x) => started != null && x.started_at === started && !!x.memo === !!((rec && rec.memo) ?? q.memo))
-    if (same.length === 1) return same[0].folder
-    if (!key.includes('~') && listed.length === 1) return listed[0].folder
-    return folder
+  // Read only (a page, a count): a record that isn't this call's, or can't be read, is none — with why (`problem`).
+  const callRec = (call, stamp) => {
+    try { return { ...EMPTY_REC, ...(readJson(recFile(claimKey(call, stamp)), null) || {}) } } catch (e) { if (e.twoCalls || e.unreadable) return { ...EMPTY_REC, problem: errText(e) }; throw e }
   }
+  const updateRec = (call, fn, stamp) => { pastGen++; return updateJson(recFile(claimKey(call, stamp, true)), EMPTY_REC, (r) => { r.saved = r.saved || []; r.failed = r.failed || []; if (!('choice' in r)) r.choice = null; return fn(r) }) }
+  const source = (call, opts) => ctx.echo.read('source', `call:${call}`, opts)
+  // A call's id in a vault's sources ledger: `call:<stamp>`.
+  const srcIdOf = (call, stamp) => `call:${stampOf(call, stamp)}`
 
   // ── where a call goes ──
   const openThreads = () => { try { return ctx.echo.read('threads') || [] } catch { return [] } }
@@ -5788,34 +5691,13 @@ export function apply(ctx) {
   // ── Ingest's sources: the ledger, the queue, the sources folder ──
   const ledgerPath = (id) => `vaults/${id}/ingest.json`
   const EMPTY_LEDGER = { baseline: null, sources: {}, queued: {}, calls: [], mails: [], runs: [] }
-  // A ledger of before Echo #772 names calls by folder: read by stamp at once, and kept so at its next write.
-  // A ledger of before Echo #772 names calls by folder: every folder of a stamp is `call:<stamp>` (a call retitled before
-  // had two), unless Echo lists two calls with that stamp now — then each listed one its own key. Echo asked once a day
-  // of them; a stamp it can't answer for leaves the ledger as it is (asked again at the next read).
-  const ledgerMap = (l) => {
-    if (!l || l.keys === 'stamp') return null
-    const to = new Map()
-    for (const [st, folders] of ledgerFolders(l)) {
-      const listed = callsWithStamp(st)
-      if (listed === null) return null
-      if (listed.length <= 1) { for (const f of folders) to.set(f, `call:${st}`); continue }
-      const names = new Set(listed.map((x) => x.folder))
-      for (const f of folders) if (names.has(f)) to.set(f, srcIdOf(f, st, listed.find((x) => x.folder === f)))
-    }
-    return to
-  }
-  const ledger = (v) => { const l = { ...EMPTY_LEDGER, ...readJson(ledgerPath(v.id), EMPTY_LEDGER) }; const to = ledgerMap(l); if (to) stampLedger(l, to); return l }
-  const updateLedger = (v, fn) => {
-    // Worked out before the write (it may claim records): the write itself only computes.
-    let to = null
-    try { to = ledgerMap(readJson(ledgerPath(v.id), null)) } catch { /* unreadable: the write says so */ }
-    return updateJson(ledgerPath(v.id), EMPTY_LEDGER, (l) => {
-      for (const k of Object.keys(EMPTY_LEDGER)) if (l[k] === undefined) l[k] = JSON.parse(JSON.stringify(EMPTY_LEDGER[k]))
-      if (l.keys !== 'stamp' && !ledgerFolders(l).size) l.keys = 'stamp'
-      else if (to) stampLedger(l, to)
-      return fn(l)
-    })
-  }
+  // A ledger of before Echo #772 names calls by folder: read by stamp at once (`stampLedger`), and kept so at its next write.
+  const ledger = (v) => { const l = { ...EMPTY_LEDGER, ...readJson(ledgerPath(v.id), EMPTY_LEDGER) }; stampLedger(l); return l }
+  const updateLedger = (v, fn) => updateJson(ledgerPath(v.id), EMPTY_LEDGER, (l) => {
+    for (const k of Object.keys(EMPTY_LEDGER)) if (l[k] === undefined) l[k] = JSON.parse(JSON.stringify(EMPTY_LEDGER[k]))
+    stampLedger(l)
+    return fn(l)
+  })
   const sourcesDirOf = (v) => vaultPath(v, 'sources') || (v.detected && v.detected.sources) || 'raw_inbox'
   const processedOf = (v) => { const l = logOf(v); return processedPaths(l ? readSafe(v, l, 4 << 20) : '') }
   // The files of the sources folder (its README, dot names and links left out), vault-relative.
@@ -5873,7 +5755,7 @@ export function apply(ctx) {
     if (n.once && n.from) {
       const had = Object.entries(l.sources).find(([, e]) => e.from === n.from)
       if (had) {
-        updateLedger(v, (x) => { delete x.queued[n.from] })
+        updateLedger(v, (x) => { delete x.queued[n.from]; if (n.queueId) delete x.queued[n.queueId] })
         return { path: had[0], committed: 'already', size: 0, paths: [], items: [], duplicate: true }
       }
     }
@@ -5920,6 +5802,7 @@ export function apply(ctx) {
       // A mail added by the user is known by its message's id too: the queue never takes it again.
       if (n.message && !x.mails.includes(`m365:${n.message}`)) x.mails.push(`m365:${n.message}`)
       if (n.from) delete x.queued[n.from]
+      if (n.queueId) delete x.queued[n.queueId]
     })
     const items = v.commit ? shaItems(v, [...written.map((w) => w.rel), ...parts].filter((p) => !dirty.paths.has(p))) : []
     let commit = v.commit ? 'pending' : 'off'
@@ -5983,18 +5866,19 @@ export function apply(ctx) {
   }
   // A call as a source: Echo's minutes (and the transcript and chat when asked), `echo/<date>-<slug>.md`.
   // `call`: its folder, or its stamp (a queued call's: Echo reads the call that has that stamp now, retitled or not).
-  const callSource = async (v, call0, { transcript = false, chat = false, anyway = false, noCommit = false, once = false } = {}) => {
+  // `queueId`: the queue entry it is prepared for — refused when the call read isn't that one, and that entry taken out.
+  const callSource = async (v, call0, { transcript = false, chat = false, anyway = false, noCommit = false, once = false, queueId = null } = {}) => {
     const src = source(call0, { transcript, chat })
     const call = src && src.id ? callId(src.id) : call0
+    if (queueId && srcIdOf(call, src.stamp) !== queueId) throw new Error(`Echo read another call (${call}) for ${queueId}: nothing written`)
     const across = !sameProfile(src.profile, v)
     if (across && !anyway) throw mismatch(src.profile, v)
-    const meta = { started_at: src.started_at ?? null, memo: !!(src.memo || src.kind === 'memo') }
-    const entry = callRec(call, src.stamp, meta).saved.find((e) => e.vault === v.id)
+    const entry = callRec(call, src.stamp).saved.find((e) => e.vault === v.id)
     const note = entry && statSafe(v, entry.path) ? entry.path : null
     const memo = src.memo || src.kind === 'memo'
     const date = src.date || today()
     const { title, text } = callSourceText({ title: src.title, date, memo, participants: src.participants || src.attendees, duration: src.duration_min, link: src.link || `echo://call/${call}`, note, text: src.text, transcript: transcript ? src.transcript : null, chat: chat ? chatPart(src.chat) : '' })
-    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: srcIdOf(call, src.stamp, meta), anyway: across, text, noCommit, once })
+    return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: srcIdOf(call, src.stamp), queueId, anyway: across, text, noCommit, once })
   }
   // A mail as a source: its own text read from Microsoft 365 now — for a queued one only when a batch is prepared (the
   // queue keeps Recall's facts, never a message's words). Its AI profile is Recall's (its threads'); a mail Recall
@@ -6024,8 +5908,15 @@ export function apply(ctx) {
   const onMinutes = async (p, { catchUp = false } = {}) => {
     const call = callId(p.call || p.id)
     // Claimed first: its record (made, or its folder brought up to date when it was retitled) before anything is saved.
-    const meta = { started_at: p.started_at ?? null, memo: p.memo == null ? null : !!p.memo }
-    const rec = { ...EMPTY_REC, ...(readJson(recFile(claimKey(call, p.stamp, meta, true)), null) || {}) }
+    // The second folder of an old stamp (data from before Echo 0.10.0) gets nothing, and the Inbox says why.
+    let key
+    try { key = claimKey(call, p.stamp, true) } catch (e) {
+      if (!e.twoCalls && !e.unreadable) throw e
+      if (ctx.inbox) { try { ctx.inbox.set(`minutes-of:${call}`.slice(0, 80), { title: `The minutes of “${oneLine(p.title || call)}” weren't saved to Knowledge`, why: errText(e), go: `call/${call}` }) } catch { /* an Echo without the Inbox */ } }
+      ctx.log(`minutes of ${call}: ${errText(e)}`)
+      return { saved: [], queued: [], refused: errText(e) }
+    }
+    const rec = { ...EMPTY_REC, ...(readJson(recFile(key), null) || {}) }
     const route = routeOf(p.threads || [])
     const out = { saved: [], queued: [] }
     for (const v of targetsOf(rec, route, p.profile)) {
@@ -6038,7 +5929,7 @@ export function apply(ctx) {
       for (const x of route.vaults) {
         const v = x.vault
         if (!v || v.ingest.calls === 'off' || !sameProfile(p.profile, v)) continue
-        try { if (queueInto(v, { id: srcIdOf(call, p.stamp, meta), kind: 'call', title: p.title || call, date: (p.started_at || '').slice(0, 10) || null, rule: v.ingest.calls, folder: call, started_at: meta.started_at, memo: !!meta.memo })) out.queued.push(v.id) } catch (err) { ctx.log(`queue of ${call} → ${v.id}: ${errText(err)}`) }
+        try { if (queueInto(v, { id: srcIdOf(call, p.stamp), kind: 'call', title: p.title || call, date: (p.started_at || '').slice(0, 10) || null, rule: v.ingest.calls, folder: call })) out.queued.push(v.id) } catch (err) { ctx.log(`queue of ${call} → ${v.id}: ${errText(err)}`) }
       }
     }
     return out
@@ -6254,6 +6145,7 @@ export function apply(ctx) {
   const pastTodo = (v, day) => (ctx.echo.read('calls', day ? { since: day, limit: 500 } : { limit: 500 }) || []).filter((c) => c.minutes).filter((c) => {
       const id = String(c.id || '').replace(/^call:/, '')
       const rec = callRec(id, c.stamp)
+      if (rec.problem) return false
       return rec.choice !== 'none' && (!rec.choice || rec.choice === v.id) && !rec.saved.some((e) => e.vault === v.id) && sameProfile(c.profile, v) &&
         (rec.choice === v.id || routeOf(c.threads || []).vaults.some((x) => x.id === v.id))
   })
@@ -6381,11 +6273,10 @@ export function apply(ctx) {
         for (const [id, q] of Object.entries(l.queued || {})) {
           if (q.state === 'skipped') continue
           try {
-            // A queued call by the folder its record names now (retitled or not; never the stamp alone when two calls share it).
-            const folder = q.kind === 'call' ? folderOfId(id, q) : null
-            if (q.kind === 'call' && !folder) throw new Error('Echo has no call with this stamp now')
+            // A queued call by its stamp (`call:<stamp>`: the call that has it now, retitled or not; of two calls of an old
+            // stamp Echo reads neither — its error kept on the entry, which stays queued).
             const a = q.kind === 'call'
-              ? await callSource(v, folder, { transcript: v.minutes.transcript, chat: v.minutes.chat, noCommit: true, once: true })
+              ? await callSource(v, id.replace(/^call:/, ''), { transcript: v.minutes.transcript, chat: v.minutes.chat, noCommit: true, once: true, queueId: id })
               : await mailSource(v, { ...q, id }, { noCommit: true, once: true })
             written.push({ id, path: a.path, ...(a.duplicate ? { already: true } : {}) })
             items.push(...(a.items || []))
@@ -6558,13 +6449,15 @@ export function apply(ctx) {
     return c ? own.minutes_preview({ call: String(c.id).replace(/^call:/, ''), vault: v.id }) : null
   })
   // The name the vault's twin skill was added under in the user's own Claude Code (from this window), or null.
+  const RESERVED = '~reserved'
   const globalTwinOf = (v) => { try { return readJson('global-skills.json', {})[v.id] || null } catch { return null } }
   // The other vault whose twin skill has the name `n` in the user's Claude Code, or null: one name, one vault (Echo
   // would replace or remove the plugin's skill of that name whichever vault asked).
   const globalHolderOf = (n, id) => {
     let m = {}
     try { m = readJson('global-skills.json', {}) } catch { /* none */ }
-    const other = Object.entries(m).find(([vid, name]) => name === n && vid !== id)
+    const r = m[RESERVED] || {}
+    const other = Object.entries(m).find(([vid, name]) => vid !== RESERVED && name === n && vid !== id) || (r[n] && r[n].vault !== id && Date.now() - (Number(r[n].at) || 0) <= 2 * 60 * 1000 ? [r[n].vault, n] : null)
     if (!other) return null
     return { id: other[0], name: (load().find((x) => x.id === other[0]) || {}).name || other[0] }
   }
@@ -6581,15 +6474,29 @@ export function apply(ctx) {
       record(v, { at: new Date().toISOString(), path: TWIN_SKILL, kind: 'new', by: 'starter', ref: TWIN, plus: textLines(text).length, minus: 0, commit: null })
       return { path: TWIN_SKILL }
     }
-    if (op === 'installed' || op === 'removed') {
+    // One name, one vault — decided here, under the store's lock, before Echo writes anything: `reserve` (the name kept
+    // for this vault two minutes, while the window installs it), `installed` (it is this vault's now), `release` (the
+    // install failed), `removed` (this vault's own name, or the one named, forgotten).
+    if (['reserve', 'installed', 'release', 'removed'].includes(op)) {
       const n = String(name || '')
-      if (op === 'installed' && !/^[a-z0-9-]{1,64}$/.test(n)) throw new Error('a skill\'s name is 1–64 of a-z, 0-9 and -')
-      const holder = op === 'installed' ? globalHolderOf(n, v.id) : null
-      if (holder) throw new Error(`/${n} is ${holder.name}'s twin skill already: choose another name`)
-      return updateJson('global-skills.json', {}, (m) => { if (op === 'installed') m[v.id] = n; else delete m[v.id]; return { vault: v.id, name: op === 'installed' ? n : null } })
+      if (op !== 'removed' && !/^[a-z0-9-]{1,64}$/.test(n)) throw new Error('a skill\'s name is 1–64 of a-z, 0-9 and -')
+      const nameOf = (vid) => (load().find((x) => x.id === vid) || {}).name || vid
+      return updateJson('global-skills.json', {}, (m) => {
+        const held = Object.entries(m).find(([vid, x]) => vid !== RESERVED && x === n && vid !== v.id)
+        const r = m[RESERVED] || {}
+        for (const [k, x] of Object.entries(r)) if (!x || Date.now() - (Number(x.at) || 0) > 2 * 60 * 1000) delete r[k]
+        const other = r[n] && r[n].vault !== v.id ? r[n].vault : null
+        if ((op === 'reserve' || op === 'installed') && (held || other)) throw new Error(`/${n} is ${nameOf(held ? held[0] : other)}'s twin skill already: choose another name`)
+        if (op === 'reserve') r[n] = { vault: v.id, at: Date.now() }
+        if ((op === 'installed' || op === 'release') && r[n] && r[n].vault === v.id) delete r[n]
+        if (op === 'installed') m[v.id] = n
+        if (op === 'removed' && (!n || m[v.id] === n)) delete m[v.id]
+        if (Object.keys(r).length) m[RESERVED] = r; else delete m[RESERVED]
+        return { vault: v.id, name: m[v.id] || null }
+      })
     }
     if (op === 'global' || op === 'global_remove') throw new Error('Your own Claude Code\'s skills are added and removed in the window, on your click')
-    throw new Error('op: add, installed or removed')
+    throw new Error('op: add, reserve, installed, release or removed')
   })
   // The vault's twin skill as `global` would write it: its own (else the starter's), named, its paths made absolute.
   ctx.command('twin_text', ({ id, name }) => {

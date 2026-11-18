@@ -3,7 +3,7 @@
 #   ECHO_REPO=<an Echo checkout, built with `cargo build`> [OBSIDIAN_FROM=0.8] tests/fixtures/obsidian/up.sh <dir> <port>
 #   tests/fixtures/obsidian/next.sh <dir>     # OBSIDIAN_FROM=0.8 only: this checkout's version offered as the update
 #   tests/fixtures/obsidian/down.sh <dir>
-# SAME_SECOND=1 adds a made-up memo sharing guest call 7's second (TC-056).
+# SAME_SECOND=1 adds a made-up memo started in guest call 7's second, with the next stamp as Echo 0.10.0 gives it (TC-056).
 # <dir> must not exist yet. It builds Echo's standard made-up data (Echo's tests/fixtures/make_data.py; its `claude` is
 # the test fake, which refuses every run: Claude's reading of a vault fails, and a case writes its description), makes
 # made-up vaults in <dir>/vaults (acme-wiki, home-notes; acme-twin, twin-shaped, and acme-history, both in git), installs this checkout's plugin from a local marketplace
@@ -115,11 +115,13 @@ cat > "$home/recall/taxonomy/current.json" <<'JSON'
 ], "aliases": {}, "history": []}
 JSON
 # SAME_SECOND=1 (TC-056 on an environment of its own): a made-up memo started in the same second as the standard data's
-# guest call 7 (a copy of its folder, retitled "Guest memo", kind memo) — two calls sharing one stamp, as Echo can have.
+# guest call 7, as Echo 0.10.0 makes it — the next free stamp (`…_143001`), its real start in its meta — a copy of the
+# call's folder, retitled "Guest memo", kind memo.
 if [ "${SAME_SECOND:-}" = 1 ]; then
   g="$(ls "$home/calls" | grep -- '-guest-call-7$' | head -1)"
   [ -n "$g" ] || { echo "no guest call 7 in the data: stopping" >&2; exit 1; }
-  m="$home/calls/${g%-guest-call-7}-guest-memo"
+  next="$(python3 -I -c 'import datetime,sys; print((datetime.datetime.strptime(sys.argv[1], "%Y-%m-%d_%H%M%S") + datetime.timedelta(seconds=1)).strftime("%Y-%m-%d_%H%M%S"))' "${g%-guest-call-7}")"
+  m="$home/calls/$next-guest-memo"
   cp -R "$home/calls/$g" "$m"
   python3 -I -c 'import json,sys; p=sys.argv[1]; m=json.load(open(p)); m["title"]="Guest memo"; m["kind"]="memo"; json.dump(m, open(p, "w"), indent=2)' "$m/meta.json"
 fi

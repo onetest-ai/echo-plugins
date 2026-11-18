@@ -82,5 +82,5 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
 - **Echo's dictionary** is `up.sh`'s made-up one (Concept, Client, Control Plane with their other names), written into the
   test data's Recall folder as Echo keeps it; a step reads it with `echoctl brain taxonomy show`.
 - A step may also rename a call with `echoctl title <call> <title>` (TC-056: Echo keeps its stamp).
-- TC-056 runs on an environment of its own (`SAME_SECOND=1 up.sh`: a made-up memo sharing guest call 7's second) and
+- TC-056 runs on an environment of its own (`SAME_SECOND=1 up.sh`: a made-up memo started in guest call 7's second, with the next stamp as Echo 0.10.0 gives it) and
   alone may write a vault's ledger as 1.0 before Echo #772 left it (`$S/vaults/<id>/ingest.json`, calls by folder).

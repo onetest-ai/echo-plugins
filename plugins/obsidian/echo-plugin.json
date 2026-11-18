@@ -2,7 +2,7 @@
   "id": "obsidian",
   "name": "Knowledge",
   "version": "1.0.0",
-  "echo": ">=0.9.15",
+  "echo": ">=0.10.0",
   "summary": "Your notes as Knowledge: connect the folders of notes you keep (an Obsidian vault, any folder of Markdown); Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "agent": {
     "summary": "The user's Knowledge vaults (Obsidian vaults and other folders of notes): which vault to look in, asking Echo's index of them, adding notes in each vault's own way",

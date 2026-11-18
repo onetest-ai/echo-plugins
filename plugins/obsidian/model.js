@@ -873,5 +873,34 @@ function knHomeRecord(minutes = {}, paths = {}) {
 }
 // end of the kn-home block
 
+// ── the twin skill in the user's own Claude Code (Echo #776 `ctx.claude.installSkill` / `removeSkill`), on the user's
+// click: the host keeps one name to one vault (reserved before Echo writes anything, released when the install fails);
+// a new name is installed before the old one is taken out, so a failed install loses nothing ──
+/** Echo's word for a skill it no longer has as this plugin's (removed with the plugin, or by the user). */
+const KN_SKILL_GONE = /isn't a skill .* added/
+/** Install `text` as `/name` for vault `vault` (`old`: the name it has now). `claude` the window half's ctx.claude,
+ *  `call(command, args)` the host's commands. → {name, old: {name, gone, error} | null}; throws when not installed. */
+async function knTwinInstall({ claude, call, vault, name, text, old = null }) {
+  await call('twin', { id: vault, op: 'reserve', name })
+  try { await claude.installSkill(name, text) } catch (e) {
+    try { await call('twin', { id: vault, op: 'release', name }) } catch { /* it lapses by itself */ }
+    throw e
+  }
+  await call('twin', { id: vault, op: 'installed', name })
+  if (!old || old === name) return { name, old: null }
+  try { await claude.removeSkill(old); return { name, old: { name: old, gone: false, error: null } } } catch (e) {
+    const m = String((e && e.message) || e)
+    return { name, old: { name: old, gone: KN_SKILL_GONE.test(m), error: KN_SKILL_GONE.test(m) ? null : m } }
+  }
+}
+/** Take `/name` out of the user's Claude Code and forget it for `vault`; one Echo no longer has as this plugin's is
+ *  forgotten too (`gone`). Throws on any other refusal. */
+async function knTwinRemove({ claude, call, vault, name }) {
+  let gone = false
+  try { await claude.removeSkill(name) } catch (e) { if (!KN_SKILL_GONE.test(String((e && e.message) || e))) throw e; gone = true }
+  await call('twin', { id: vault, op: 'removed', name })
+  return { gone }
+}
 
-export { KN_BASE, KN_TABS, knDecode, knParseRoute, knRouteOf, KN_CALLS_RULE, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knRepel, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knDraftKey, knKeepDraft, knRestoreDraft, knDropDraft, knEditText, knLineDiff, KN_FOLD, knToolRow, knFoldLabel, knToolRows, KN_HEALTH_GROUPS, knS, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, KN_INGEST_GROUPS, KN_CHANGE_KINDS, knUsd, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, KN_HOME_ROWS, KN_DAYS, KN_MONTHS, knWhen, knHomeCards, knHomeNews, knHomeRecord }
+
+export { KN_BASE, KN_TABS, knDecode, knParseRoute, knRouteOf, KN_CALLS_RULE, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knRepel, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knDraftKey, knKeepDraft, knRestoreDraft, knDropDraft, knEditText, knLineDiff, KN_FOLD, knToolRow, knFoldLabel, knToolRows, KN_HEALTH_GROUPS, knS, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, KN_INGEST_GROUPS, KN_CHANGE_KINDS, knUsd, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, KN_HOME_ROWS, KN_DAYS, KN_MONTHS, knWhen, knHomeCards, knHomeNews, knHomeRecord, KN_SKILL_GONE, knTwinInstall, knTwinRemove }

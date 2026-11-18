@@ -16,7 +16,7 @@ tags: [obsidian, knowledge, health, ingest, dictionary, tags]
 ## Preconditions
 - `. <dir>/env`, `obs() { echoctl plugin call obsidian "$@"; }`; acme-twin connected
   (`ECHOCTL_PICK_FOLDER="$VAULTS/acme-twin" obs add '{"wait":true}'`), its taxonomy `meeting, client, concept`
-- `up.sh`'s made-up dictionary (Recall → Dictionary): Concept (also "idea"), Client (also "customer"), Control Plane
+- `up.sh`'s made-up dictionary (Settings → Vocabulary): Concept (also "idea"), Client (also "customer"), Control Plane
   (also "CP", spelled "controlplane"); `echoctl brain taxonomy show | grep -c '"name"'` counts them
 - A page the user wrote with tags the taxonomy doesn't allow: `printf -- '---\ntitle: Plan\ntags: [idea, customer]\n---\n# Plan\n\nSee [[acme]].\n' > "$VAULTS/acme-twin/knowledge/topics/plan.md"`
 - For the Ingest run (`<dir>/fake-ingest.json`, the cases' fake Claude Code): `{"write": {"knowledge/topics/ship.md": "---\ntitle: Ship the rollout\ntags: [idea, customer]\n---\n# Ship the rollout\n\nThe #controlplane ships in May.\n"}, "changes": {"changes": [{"path": "knowledge/topics/ship.md", "why": "The page the rollout plan describes", "quotes": [{"source": "<a source of the vault>", "text": "…"}]}]}}`

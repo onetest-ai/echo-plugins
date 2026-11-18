@@ -105,7 +105,7 @@ test('a mail thread becomes a source: a section a message, attachments named', a
   assert.throws(() => mailSourceText({ messages: [] }), /no messages/)
 })
 
-test('mail from the event is queued with Recall\'s facts only; its text is read from Microsoft 365 only when the batch is prepared', async () => {
+test('mail from the event is queued with Intake\'s facts only; its text is read from Microsoft 365 only when the batch is prepared', async () => {
   const threads = [{ id: 'pilot', name: 'Acme pilot', client: 'acme' }]
   const w = world({ threads, clients: [{ id: 'acme', name: 'Acme' }], m365: { mailThread: async (id) => ({ ...THREAD, picked: id }) } })
   const v = await w.vault('Acme wiki', { minutes: 'off' })
@@ -128,7 +128,7 @@ test('mail from the event is queued with Recall\'s facts only; its text is read 
   const l = ledgerOf(w.ctx, v.id)
   assert.deepEqual(l.queued, {})
   assert.equal(l.sources[p.written[0].path].from, 'mail:mail/c1')
-  // Told again: not queued again; one gone from Recall leaves a queue it hadn't left.
+  // Told again: not queued again; one gone from Intake leaves a queue it hadn't left.
   await w.ctx.fire('sources_changed', { changed: ['mail:mail/c1'], removed: [], items: [item] })
   assert.deepEqual(ledgerOf(w.ctx, v.id).queued, {})
   await w.ctx.fire('sources_changed', { changed: ['mail:mail/c3'], removed: [], items: [{ ...item, id: 'mail:mail/c3' }] })

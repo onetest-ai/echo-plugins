@@ -57,7 +57,7 @@ test('routes: a vault, its tab, its page; Recall stays #brain', () => {
   assert.equal(knRouteOf({ vault: 'my-twin', tab: 'settings' }), 'obsidian:knowledge/my-twin/settings')
 })
 
-test('the switcher: vaults first, then Recall when on, then plugins\' tabs', () => {
+test('the switcher: vaults first, then Intake when on, then plugins\' tabs', () => {
   const vaults = [{ id: 'my-twin', name: 'My twin', pages: 186, minutes: { mode: 'auto' } }, { id: 'team', name: 'Team wiki', pages: 42, minutes: { mode: 'ask' } }]
   const e = knSwitcherEntries(vaults, true, [{ tab: 'obsidian:notes', label: 'Notes', plugin: 'obsidian' }])
   assert.deepEqual(e.map((x) => x.kind), ['head', 'vault', 'vault', 'connect', 'new', 'sep', 'head', 'recall', 'sep', 'head', 'plugin'])
@@ -887,7 +887,7 @@ test('I2 the page takes dropped files only while Ingest shows or the Add a sourc
   assert.equal(knTakesDrops(on), true)
   assert.equal(knTakesDrops({ ...on, tab: 'pages' }), false, 'another tab of the vault')
   assert.equal(knTakesDrops({ ...on, view: 'projects' }), false, 'the threads, whose logo tiles take dropped images')
-  assert.equal(knTakesDrops({ ...on, active: false }), false, 'Recall or a plugin\'s tab')
+  assert.equal(knTakesDrops({ ...on, active: false }), false, 'Echo\'s own page or a plugin\'s tab')
   assert.equal(knTakesDrops({ ...on, vault: false }), false)
   assert.equal(knTakesDrops({ ...on, view: 'calls', tab: 'pages', sheet: 'source' }), true, 'the sheet open, wherever')
   assert.equal(knTakesDrops({ ...on, tab: 'pages', sheet: 'newpage' }), false, 'another sheet')

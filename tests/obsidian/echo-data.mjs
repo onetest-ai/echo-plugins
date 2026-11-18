@@ -34,7 +34,7 @@ export function minutesParts(md, body = true) {
 
 /** Echo's data: `calls` [{folder, title, notes, profile, threads: [ids], app, started_at, ended_at, memo, transcript,
  *  chat, attendees: [{name, email}]}], `threads` [{id, name, client}], `clients` [{id, name}], `people` [{key, name,
- *  email}], `mail` (Recall's items), `me`. Its `read` kinds for fakeCtx's `echo`, `payload(folder)` (minutes_written). */
+ *  email}], `mail` (Intake's items), `me`. Its `read` kinds for fakeCtx's `echo`, `payload(folder)` (minutes_written). */
 export function echoData({ calls = [], threads = [], clients = [], people = [], mail = [], me = { name: null, email: null } } = {}) {
   const thread = (id) => { const t = threads.find((x) => x.id === id); if (!t) return null; const c = clients.find((x) => x.id === t.client); return { id: t.id, name: t.name, client: t.client || null, client_name: c ? c.name : null } }
   const clientOf = (refs) => { const ids = [...new Set(refs.map((t) => t.client).filter(Boolean))]; return ids.length === 1 ? { id: ids[0], name: (refs.find((t) => t.client === ids[0]) || {}).client_name } : null }

@@ -244,7 +244,7 @@
   },
   {
    "id": "F-OB-47",
-   "title": "An event only queues its source: minutes_written and sources_changed put a call or a mail (Recall's facts, no text) in the queue of each routed vault whose rule (ingest.calls / ingest.mail: add or prepare) asks, on its profile, each once; nothing written into the vault, no model run",
+   "title": "An event only queues its source: minutes_written and sources_changed put a call or a mail (Intake's facts, no text) in the queue of each routed vault whose rule (ingest.calls / ingest.mail: add or prepare) asks, on its profile, each once; nothing written into the vault, no model run",
    "priority": "high",
    "check": "agent"
   },
@@ -280,7 +280,7 @@
   },
   {
    "id": "F-OB-53",
-   "title": "The catch-up when Echo starts: the calls with minutes and Recall's mail since the last day seen go through the live events' routing (a call whose record has the vault isn't written again, a source the ledger has isn't queued again); the day moves only when both reads answered; the first start only notes it",
+   "title": "The catch-up when Echo starts: the calls with minutes and Intake's mail since the last day seen go through the live events' routing (a call whose record has the vault isn't written again, a source the ledger has isn't queued again); the day moves only when both reads answered; the first start only notes it",
    "priority": "high",
    "check": "agent"
   },

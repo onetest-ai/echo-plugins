@@ -2235,7 +2235,7 @@ export function webPictures(md, images, dir) {
   return { md: out, files, failed }
 }
 
-/** The Graph id of the message an Outlook link opens (`…?ItemID=<id>…`), or null: Recall keeps a mail's link, not the
+/** The Graph id of the message an Outlook link opens (`…?ItemID=<id>…`), or null: Intake keeps a mail's link, not the
  *  message's id (`ctx.m365.mailThread` takes the id). */
 export function messageIdOf(url) {
   const m = /[?&]ItemID=([^&#]+)/i.exec(String(url || ''))
@@ -5374,7 +5374,7 @@ export function apply(ctx) {
 
   // ── step 4: a call's minutes into its vaults, Ingest's sources, the twin preset (export.rs, sources.rs, starter.rs) ──
   // Echo's results are taken as they are (INDEX.md's rule): a call's facts, routing, people, AI profile and minutes come
-  // from `minutes_written` and `ctx.echo.read('source')`; a mail's from `sources_changed` (Recall's facts). Where a call
+  // from `minutes_written` and `ctx.echo.read('source')`; a mail's from `sources_changed` (Intake's facts). Where a call
   // goes is the plugin's: thread → client → the default vault (`routeCall`). What a vault does with it is its rule:
   // `minutes.mode` (auto writes the note on the event; ask only on the user's command; off) and `ingest.calls` /
   // `ingest.mail` (off / add / prepare: queued in the store, nothing written into the vault until a batch is prepared).
@@ -5971,9 +5971,9 @@ export function apply(ctx) {
     return writeSource(v, { sub: 'echo', name: datedName(date, title, memo ? 'memo' : 'call'), title, by: 'call', from: srcIdOf(call, src.stamp), anyway: across, text, noCommit, once })
   }
   // A mail as a source: its own text read from Microsoft 365 now — for a queued one only when a batch is prepared (the
-  // queue keeps Recall's facts, never a message's words). Its AI profile is Recall's (its threads'); a mail Recall
+  // queue keeps Intake's facts, never a message's words). Its AI profile is Intake's (its threads'); a mail Intake
   // hasn't routed counts as the default profile's. On another profile than the vault's: refused unless "anyway".
-  // Read by its message's id only: Recall's `m365_id`, else the one its Outlook link holds — never guessed by a search.
+  // Read by its message's id only: Intake's `m365_id`, else the one its Outlook link holds — never guessed by a search.
   const mailSource = async (v, q, { noCommit = false, anyway = false, once = false } = {}) => {
     if (!ctx.m365) throw new Error('Microsoft 365 mail isn\'t in this Echo')
     if (!anyway && !q.anyway && !sameProfile(q.profile ?? null, v)) throw mismatch(q.profile ?? null, v)
@@ -6026,7 +6026,7 @@ export function apply(ctx) {
     }
     return out
   }
-  // `sources_changed`: each changed mail (Recall's facts) into the queue of its routed vaults whose mail rule asks for it,
+  // `sources_changed`: each changed mail (Intake's facts) into the queue of its routed vaults whose mail rule asks for it,
   // on their own AI profile, each vault's ledger written once an event; one gone is taken out of a queue it hadn't left
   // yet. A channel's post isn't queued while there is no reader of its own words: said in the ledger, not dropped.
   const onSources = (p) => {
@@ -6074,7 +6074,7 @@ export function apply(ctx) {
     ctx.on('sources_changed', (p) => { try { onSources(p) } catch (e) { ctx.log(`sources_changed: ${errText(e)}`) } })
   }
   // On start (the app, never a terminal's one command): what came while the plugin wasn't running — the calls with
-  // minutes and Recall's mail and posts since the last look, through the same handlers as the live events (a call
+  // minutes and Intake's mail and posts since the last look, through the same handlers as the live events (a call
   // whose record has the vault isn't written again; what the ledger has isn't queued again). The day moves forward
   // only when both reads answered; the first start only notes it (past minutes are the user's command).
   const catchUp = async () => {
@@ -6328,8 +6328,8 @@ export function apply(ctx) {
       }
     }
     if (kind === 'mail' || kind === 'chat') {
-      // A mail or chat Recall hasn't routed carries no AI profile of its own: the default profile's (`profile` when the
-      // sheet knows Recall's).
+      // A mail or chat Intake hasn't routed carries no AI profile of its own: the default profile's (`profile` when the
+      // sheet knows Intake's).
       try {
         if (kind === 'mail') {
           if (!message) throw new Error('message: the mail\'s id (Microsoft 365 search gives it)')

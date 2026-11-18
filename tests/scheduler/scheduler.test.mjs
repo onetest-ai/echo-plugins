@@ -50,3 +50,17 @@ test('a run shows what it asked, from Echo\'s permissions.json; nothing when the
   assert.equal(askedOf('not json'), '')
   assert.equal(askedOf('{"used":"x"}'), '')
 })
+
+test('two runs of a routine in one second keep a folder each: the second is <stamp>-2, never written over', async () => {
+  // A run of this second (and of the next, should the clock tick) is there already.
+  const st = (d) => d.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+  const now = new Date()
+  const taken = [st(now), st(new Date(now.getTime() + 1000))]
+  const store = { 'routines/acme-digest.md': routine('auto') }
+  for (const t of taken) store[`runs/acme-digest/${t}/result.json`] = '{"made":"up"}'
+  const ctx = fakeCtx({ store, claude: async () => ({ answer: 'Made-up answer.', model: 'sonnet' }) })
+  apply(ctx)
+  const r = await ctx.run('run_wait', { id: 'acme-digest', deliver: false })
+  assert.ok(taken.map((t) => `${t}-2`).includes(r.run), r.run)
+  for (const t of taken) assert.equal(ctx.store.read(`runs/acme-digest/${t}/result.json`), '{"made":"up"}')
+})

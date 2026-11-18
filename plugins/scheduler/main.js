@@ -243,13 +243,22 @@ export function apply(ctx) {
     while (runs.length > KEEP_RUNS) ctx.store.remove(`runs/${id}/${runs.shift()}`)
   }
 
+  /** A run's folder name: its start to the second, `-2`, `-3`… when a run of the routine has that second already
+   *  (a scheduled run and Run now, or a test run and Run now, in one second never write into one folder). */
+  const freeStamp = (id, base) => {
+    let names = []
+    try { names = ctx.store.list(`runs/${id}`) || [] } catch { /* no runs yet */ }
+    let s = base
+    for (let k = 2; names.includes(s); k++) s = `${base}-${k}`
+    return s
+  }
   /** Run a routine now: Claude Code, then its deliveries. The run's record (also kept as its last). */
   const run = async (id, deliver = true, draft = null, given = null) => {
     const r = draft || get(id)
     if (running.has(id)) throw new Error(`“${r.name}” is running already`)
     running.add(id)
     const started = new Date()
-    const stamp = given || started.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    const stamp = given || freeStamp(id, started.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15))
     const sch = words(parseSchedule(r.schedule))
     const rec = { at: started.toISOString(), run: stamp, trial: !deliver }
     try {
@@ -391,7 +400,7 @@ export function apply(ctx) {
     if (!TOOLS.includes(r.tools)) throw new Error(`tools “${r.tools}”: auto or skip`)
     if (!String(r.prompt || '').trim()) throw new Error('write what Claude should do first')
     const draft = { ...r, id: '_draft', skip_empty: false }
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    const stamp = freeStamp('_draft', new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15))
     running.delete('_draft')
     run('_draft', false, draft, stamp).catch((e) => ctx.log('try', e.message || e))
     return { id: '_draft', run: stamp }

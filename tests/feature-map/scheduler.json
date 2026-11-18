@@ -28,7 +28,7 @@
   },
   {
    "id": "F-SCH-05",
-   "title": "Its install sheet says it shows Echo's background jobs and changes them only in its screens (`uses.echo.jobs`); it needs Echo 0.9.15 (the one routine contract; routines acting on their own, Auto or skipping every permission check)",
+   "title": "Its install sheet says it shows Echo's background jobs and changes them only in its screens (`uses.echo.jobs`), and its listing gives its summary",
    "priority": "high",
    "check": "agent"
   },
@@ -52,13 +52,13 @@
   },
   {
    "id": "F-SCH-09",
-   "title": "What Claude may do, in the routine's editor, is Echo's routines choices: Auto (picked for a new routine) or Skip all permission checks (with its warning), no Read only; saved as `tools: auto` or `skip`; the row, the panel and a run's line name it (\"Auto\", \"Skip all permission checks\"), and the run asks Claude Code for it (its log: \"asked: auto\" / \"asked: skip\")",
+   "title": "What Claude may do, in the routine's editor, is Echo's routines choices: Auto (picked for a new routine) or Skip all permission checks (with its warning), no Read only; saved as `tools: auto` or `skip`; the row and the panel name it (\"Auto\", \"Skip all permission checks\"), the run asks Claude Code for it (its log: \"asked: auto\" / \"asked: skip\"), and a run's page says what that run asked (Echo's `permissions.json`), not the routine's choice now",
    "priority": "critical",
    "check": "agent"
   },
   {
    "id": "F-SCH-10",
-   "title": "A routine of before with `tools: read` (or `folder`) keeps running, as Auto: its row and panel say Auto, its editor opens with Auto picked, its run asks for auto, and a save writes `tools: auto`",
+   "title": "A routine of before with `tools: read` or `folder` keeps running, as Auto: its row and panel say Auto, its editor opens with Auto picked, its run asks for auto; switching it on or off changes only its `enabled:` line, and a save writes `tools: auto`",
    "priority": "high",
    "check": "agent"
   }

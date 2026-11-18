@@ -1,6 +1,6 @@
 ---
 id: TC-009
-title: What Claude may do is Auto or Skip all permission checks, no Read only — a new routine on Auto, saved, shown and run as picked
+title: What Claude may do is Auto or Skip all permission checks, no Read only — a new routine on Auto, saved, shown and run as picked; a run's page says what it asked
 priority: critical
 type: functional
 requirements: [F-SCH-09]
@@ -14,7 +14,7 @@ tags: [scheduler, permissions]
 # TC-009: A routine runs Auto or skipping every check
 
 ## Preconditions
-- A fresh environment from `up.sh` (Echo 0.9.15, or a build with onetest-ai/echo#712); `{{base_url}}/#settings/scheduler:main` open
+- A fresh environment from `up.sh` of its own (Echo 0.9.15, or a build with onetest-ai/echo#712); `{{base_url}}/#settings/scheduler:main` open
 
 **Changes:** `$R/auto-digest.md`, `$RUNS/auto-digest/`
 
@@ -28,7 +28,9 @@ tags: [scheduler, permissions]
 | 4 | `echoctl plugin call scheduler run_wait '{"id":"auto-digest","deliver":false}'`; the run's `log.txt`, first line | The run fails (the fake `claude`); "… Echo runs “Auto digest” on <profile>… (asked: auto; runs with the folder session's: acts on its own (auto mode: Claude Code decides each action))" |
 | 5 | "Edit"; click "Skip all permission checks"; "Save"; `grep '^tools:' "$R/auto-digest.md"` | "Skip all permission checks" picked before the save (Auto no longer); the row reads "Weekdays at 08:30 · Skip all permission checks"; `tools: skip` |
 | 6 | `echoctl plugin call scheduler run_wait '{"id":"auto-digest","deliver":false}'`; the newest run's `log.txt`, first line | "… (asked: skip; runs with the folder session's: acts on its own (every permission check skipped))" — the Scheduler's sheet has `claude.skip`, so Echo honours it |
-| 7 | `echoctl plugin call scheduler save '{"name":"Ask me","schedule":"daily 09:00","prompt":"What is on today?","tools":"ask"}'`; `ls "$R"` | Refused: "tools “ask”: auto or skip"; no `ask-me.md` |
+| 7 | In the panel click "Run now"; wait 3 s; click the panel's newest run | The run page ("Failed": the fake `claude`); under its title "… · Skip all permission checks" — what this run asked (Echo's `permissions.json` in its folder: `"asked":"skip"`) |
+| 8 | Back; "Edit"; click "Auto"; "Save"; open that same run again | The row reads "Weekdays at 08:30 · Auto"; the run page still says "· Skip all permission checks": a run shows what it asked, not the routine's choice now |
+| 9 | `echoctl plugin call scheduler save '{"name":"Ask me","schedule":"daily 09:00","prompt":"What is on today?","tools":"ask"}'`; `ls "$R"` | Refused: "tools “ask”: auto or skip"; no `ask-me.md` |
 
 ## Expected Final State
-`auto-digest` saved with `tools: skip`; two failed runs in `$RUNS/auto-digest/`.
+`auto-digest` saved with `tools: auto`; three failed runs in `$RUNS/auto-digest/` (one listed in the panel).

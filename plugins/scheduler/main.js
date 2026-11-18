@@ -26,8 +26,10 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DELIVER_TO = ['teams', 'mail', 'telegram', 'today']
 const validKind = (k) => DELIVER_TO.includes(k)
 const NOTHING = 'NOTHING'
-// What Claude may do: as Echo's routines setting (Settings → AI & minutes → Claude's permissions) — Auto, or every
-// permission check skipped. The values of before (`read`, `folder`, nothing) are Auto, as Echo takes them.
+// What Claude may do, the routine's own choice: Auto, or every permission check skipped (the choices of Echo's routines
+// setting, Settings → AI & minutes → Claude's permissions). Echo takes `read` and `folder` (values of before) as auto,
+// and an empty value as the user's routines setting; the plugin reads all three as an explicit Auto, the safer choice
+// (the routines setting may be Skip), and always passes `auto` or `skip`.
 const TOOLS = ['auto', 'skip']
 export const toolsOf = (v) => {
   const t = String(v == null ? '' : v).trim()
@@ -170,6 +172,24 @@ export function steps(log) {
     .map(([, t, text]) => ({ t, text: text.trim().replace(/\S*\/scripts\/echoctl\b/g, 'echoctl') }))
     .filter((x) => /^(→|✗|Finished|Not allowed|Echo runs)/.test(x.text) || x.text.startsWith('stderr'))
     .slice(0, 60)
+}
+
+/** What a run asked Claude Code for, from the record Echo keeps in its folder (`permissions.json`: `{asked, used}`);
+ *  '' when there is none (a run before Echo kept it). */
+export function askedOf(json) {
+  try { const a = JSON.parse(json || 'null'); return a && typeof a.asked === 'string' ? a.asked : '' } catch { return '' }
+}
+
+/** A routine's file with only its `enabled:` line changed (added to the frontmatter when missing): switching a
+ *  routine on or off rewrites nothing else, so a routine of before keeps its values until the user saves it. */
+export function setEnabled(text, on) {
+  const t = String(text)
+  if (!t.startsWith('---\n')) throw new Error('a routine starts with its frontmatter')
+  const end = t.indexOf('\n---', 3)
+  if (end < 0) throw new Error('a routine’s frontmatter isn’t closed')
+  const head = t.slice(0, end), rest = t.slice(end)
+  const line = `enabled: ${on ? 'true' : 'false'}`
+  return (/^enabled:.*$/m.test(head) ? head.replace(/^enabled:.*$/m, line) : `${head}\n${line}`) + rest
 }
 
 export function renderRoutine(r) {
@@ -358,6 +378,7 @@ export function apply(ctx) {
       record: rec, running: !rec,
       answer, answer_html: answer ? ctx.markdown(answer) : '', words: answer.split(/\s+/).filter(Boolean).length,
       prompt: ctx.store.read(`${dir}/prompt.md`) || '', steps: steps(ctx.store.read(`${dir}/log.txt`)),
+      asked: askedOf(ctx.store.read(`${dir}/permissions.json`)),
       split: rec && rec.usage ? costSplit(rec.usage) : null,
     }
   })
@@ -385,7 +406,13 @@ export function apply(ctx) {
     ctx.inbox.clear(`routine-${id}`)
     return true
   })
-  ctx.command('enable', ({ id, on }) => save({ ...get(id), enabled: on !== false }))
+  ctx.command('enable', ({ id, on }) => {
+    get(id)
+    const text = setEnabled(ctx.store.read(`routines/${id}.md`), on !== false)
+    const r = parseRoutine(id, text)
+    ctx.store.write(`routines/${id}.md`, text)
+    return r
+  })
   // Started, not waited for (a run takes minutes); `run_wait` waits (the CLI).
   ctx.command('run', ({ id }) => { get(id); run(id).catch((e) => ctx.log('run', id, e.message || e)); return { started: true } })
   ctx.command('run_wait', ({ id, deliver }) => run(id, deliver !== false))

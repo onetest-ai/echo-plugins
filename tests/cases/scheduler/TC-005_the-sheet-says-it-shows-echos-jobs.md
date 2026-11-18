@@ -14,7 +14,7 @@ tags: [scheduler, jobs, permissions]
 # TC-005: The sheet names Echo's jobs
 
 ## Preconditions
-- A fresh environment from `up.sh` (Echo 0.9.15, or a build with onetest-ai/echo#712)
+- The environment from `up.sh` (fresh, or after TC-001–TC-004: it reads only the install)
 
 ## Steps
 

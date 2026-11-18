@@ -149,6 +149,9 @@ export function apply(ctx) {
   }
   const sends = (r) => (r.deliver || []).map((k) => `<span class="sch-ci">${k === 'mail' && r.mail_to && r.mail_to.length ? `Mail → ${r.mail_to.length === 1 ? esc(r.mail_to[0]) : `${r.mail_to.length} people`}` : esc(label(k))}</span>`).join('') || '<span class="sch-sub">Nowhere — kept in its runs</span>'
   const perm = (t) => (toolOf(t) === 'skip' ? 'Skip all permission checks' : 'Auto')
+  // What a run asked for, as Echo recorded it in the run's folder; a run without that record shows the routine's choice.
+  const ASKED = { auto: 'Auto', skip: 'Skip all permission checks', read: 'Read only', folder: 'Your folder session’s permissions', setting: 'As you set routines', none: 'No tools' }
+  const runPerm = (asked, r) => (asked ? ASKED[asked] || asked : r ? perm(r.tools) : '')
   const lastLine = (l) => !l ? ['', 'Not run yet']
     : l.state === 'failed' ? ['bad', l.message && l.message.startsWith('Not sent') ? 'Not sent' : 'Failed']
     : l.state === 'empty' ? ['', 'Nothing to send']
@@ -549,7 +552,7 @@ export function apply(ctx) {
     const steps = d.steps.length ? `<div class="sch-card"><h3 class="sch-h4">What it did</h3>${d.steps.map((s) => `<div class="sch-step"><span>${esc(s.t)}</span><span>${esc(s.text)}</span></div>`).join('')}</div>` : ''
     return `<div class="sch">${crumbs}
       <div class="sch-head"><div style="flex:1"><h2 style="display:flex;align-items:center;gap:8px"><span class="sch-dot ${cls}"></span>${esc(txt)} · ${esc(when(rec.at))}</h2>
-        <div class="sch-sub sch-num">${rec.trial ? 'A try, not sent · ' : ''}${secs(u && u.duration_ms)}${rec.model ? ` · ${esc(rec.model)}` : ''}${r ? ` · ${esc(perm(r.tools))}` : ''}</div></div>
+        <div class="sch-sub sch-num">${rec.trial ? 'A try, not sent · ' : ''}${secs(u && u.duration_ms)}${rec.model ? ` · ${esc(rec.model)}` : ''}${runPerm(d.asked, r) ? ` · ${esc(runPerm(d.asked, r))}` : ''}</div></div>
         <button class="btn" data-sch-prompt>${v.prompt ? 'Hide prompt' : 'Show prompt'}</button>${r ? `<button class="btn primary" data-sch-run="${esc(r.id)}">Run again</button>` : ''}</div>
       ${v.prompt ? `<div class="sch-card"><h3 class="sch-h4">The prompt Claude got</h3><pre style="white-space:pre-wrap;font:12px/1.5 var(--mono);margin:0;color:var(--text-2)">${esc(d.prompt)}</pre></div>` : ''}
       <div class="sch-grid">

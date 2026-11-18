@@ -2,7 +2,7 @@
   "id": "obsidian",
   "name": "Knowledge",
   "version": "1.0.0",
-  "echo": ">=0.9.15",
+  "echo": ">=0.10.0",
   "summary": "Your notes as Knowledge: connect the folders of notes you keep (an Obsidian vault, any folder of Markdown); Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "agent": {
     "summary": "The user's Knowledge vaults (Obsidian vaults and other folders of notes): which vault to look in, asking Echo's index of them, adding notes in each vault's own way",
@@ -22,9 +22,17 @@
         "sources",
         "calls",
         "me",
-        "recording"
+        "recording",
+        "dictionary"
       ]
     },
+    "network": {
+      "hosts_from": [
+        "web_sites"
+      ],
+      "ask": true
+    },
+    "skills": true,
     "sessions": {
       "skills": true,
       "read": true,
@@ -61,10 +69,16 @@
   "settings": [
     {
       "key": "skills",
-      "label": "Where the twin preset puts its skills",
+      "label": "Where the twin preset puts its twin skill",
       "type": "string",
       "default": "vault",
-      "help": "vault: the vault’s own .claude/skills; global: your ~/.claude/skills, for every Claude Code session"
+      "help": "vault: the new vault's own .claude/skills; global: your own Claude Code (~/.claude/skills), for every session — Knowledge shows it to you first and adds it only when you click Install"
+    },
+    {
+      "key": "web_sites",
+      "label": "Sites Knowledge reads pages from",
+      "type": "string",
+      "help": "Addresses of sites, comma-separated (https://wiki.acme.example): a page there is read as soon as you add it in Ingest. Any other page, Echo asks you for its address in its own box"
     }
   ],
   "main": "main.js",

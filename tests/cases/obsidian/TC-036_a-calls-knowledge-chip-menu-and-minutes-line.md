@@ -3,7 +3,7 @@ id: TC-036
 title: A call's page shows Knowledge in Echo's generic slots — its chip says where its minutes go and its menu chooses (call.header), the ⋯ menu's Save to Knowledge… opens the save sheet over the call (call.menu, ctx.ui.sheet) and saves, and the minutes' line while they come names the vault (call.minutes)
 priority: high
 type: functional
-requirements: [F-OB-39, F-OB-41, F-OB-43]
+requirements: [F-OB-39, F-OB-43]
 module: obsidian
 run: agent
 platform: any

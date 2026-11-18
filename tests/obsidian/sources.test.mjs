@@ -7,6 +7,7 @@ import * as nfs from 'node:fs'
 import * as npath from 'node:path'
 import { safeName, datedName, fitName, mdText, mailSourceText, processedPaths, sourceState, messageIdOf, fmSplit, fmParse, fmGet, propText, activityRecent, localTime } from '../../plugins/obsidian/main.js'
 import { world, call, read, write, exists, hasGit, gitOut, PKG, tmp } from './world.mjs'
+import { skillMdProblem } from '../helpers/echo-rules.mjs'
 import { CALL, MINUTES } from './echo-data.mjs'
 
 const ledgerOf = (ctx, id) => JSON.parse(ctx.files[`vaults/${id}/ingest.json`] || '{"queued":{},"sources":{}}')
@@ -289,7 +290,7 @@ test('a web page: Echo reads it (ctx.web) — without it, "not yet in this Echo"
   await assert.rejects(w.ctx.run('add_source', { vault: v.id, kind: 'web', url: 'https://acme.example/notes' }), /not yet in this Echo/)
   const w2 = world({ web: { read: async (url) => ({ url, title: 'Store [opening] notes', markdown: 'The new store opens on 4 December.' }) } })
   const v2 = await w2.vault('Twin', { minutes: 'off' })
-  await assert.rejects(w2.ctx.run('add_source', { vault: v2.id, kind: 'web', url: 'http://acme.example/notes' }), /https/)
+  await assert.rejects(w2.ctx.run('add_source', { vault: v2.id, kind: 'web', url: 'acme.example/notes' }), /http:\/\/ or https:\/\//)
   const a = await w2.ctx.run('add_source', { vault: v2.id, kind: 'web', url: 'https://acme.example/notes' })
   assert.ok(a.path.startsWith('raw_inbox/web/') && a.path.endsWith('-store-opening-notes.md'), a.path)
   const t = read(v2.root, a.path)
@@ -316,7 +317,6 @@ test('a call queued by the event is written only when the batch is prepared, in 
 
 /** #677's `starter::FILES`: the 23 files of the preset. */
 const FILES_677 = ['.claude/skills/process-inbox/SKILL.md', '.claude/skills/twin/SKILL.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', 'gitignore', 'knowledge/.obsidian/app.json', 'knowledge/.obsidian/templates.json', 'knowledge/CATALOG.md', 'knowledge/TAG_TAXONOMY.md', 'knowledge/TERMS_TAXONOMY.md', 'knowledge/action-items/README.md', 'knowledge/activities/README.md', 'knowledge/clients/README.md', 'knowledge/media/README.md', 'knowledge/notes/README.md', 'knowledge/profile/DIGITAL_PROFILE.md', 'knowledge/profile/README.md', 'knowledge/templates/meeting-note.md', 'knowledge/templates/page.md', 'knowledge/topics/README.md', 'log.md', 'raw_inbox/README.md']
-const HIDDEN = ['.claude/skills/process-inbox/SKILL.md', '.claude/skills/twin/SKILL.md', '.gitignore', 'knowledge/.obsidian/app.json', 'knowledge/.obsidian/templates.json']
 
 test('the shipped preset is #677\'s 23 files, read through ctx.package', async () => {
   assert.deepEqual(files(npath.join(PKG, 'starter/twin')), [...FILES_677].sort())
@@ -324,15 +324,17 @@ test('the shipped preset is #677\'s 23 files, read through ctx.package', async (
   assert.deepEqual((await w.ctx.run('starter_files')).slice().sort(), [...FILES_677].sort())
 })
 
-test('a new vault has the preset\'s files, filled in; Echo writes no hidden file for a plugin, so those are said as left out', async () => {
+test('a new vault has the preset\'s files, filled in, all 23: its skills and .gitignore (Echo #776), Obsidian\'s settings for knowledge/ (#781)', async () => {
   const w = world({ me: { name: 'Sam Rivera', email: 'sam@acme.example' } })
   const v = await w.vault('My twin', { minutes: 'auto' })
   const got = files(v.root)
-  assert.deepEqual(got, FILES_677.map((p) => (p === 'gitignore' ? '.gitignore' : p)).filter((p) => !HIDDEN.includes(p)).sort())
-  assert.equal(got.length, 18)
-  assert.deepEqual(v.left_out.map((x) => x.path).sort(), [...HIDDEN].sort())
-  assert.ok(v.left_out.every((x) => /hidden/.test(x.why)))
-  assert.deepEqual(v.skills, { where: 'vault', installed: false, why: 'Echo doesn\'t let a plugin write a vault\'s .claude folder' })
+  assert.deepEqual(got, FILES_677.map((p) => (p === 'gitignore' ? '.gitignore' : p)).sort())
+  assert.equal(got.length, 23)
+  assert.deepEqual(v.left_out, [])
+  assert.deepEqual(v.skills, { where: 'vault', in_vault: ['.claude/skills/process-inbox/SKILL.md', '.claude/skills/twin/SKILL.md'], offer: null, why: null })
+  assert.equal(read(v.root, '.claude/skills/twin/SKILL.md'), read(PKG, 'starter/twin/.claude/skills/twin/SKILL.md'), 'a skill as the package ships it')
+  assert.ok(read(v.root, '.gitignore').includes('.staging/'))
+  assert.equal(JSON.parse(read(v.root, 'knowledge/.obsidian/app.json')).useMarkdownLinks, true)
   for (const p of got) assert.ok(!read(v.root, p).includes('{{vault.'), p)
   assert.ok(read(v.root, 'knowledge/templates/page.md').includes('{{title}}'), 'Obsidian\'s placeholders stay')
   assert.ok(read(v.root, 'README.md').startsWith('# My twin\n'))
@@ -346,11 +348,19 @@ test('a new vault has the preset\'s files, filled in; Echo writes no hidden file
   assert.deepEqual([rec.detected.pages, rec.detected.index, rec.detected.notes, rec.detected.templates, rec.detected.log, rec.detected.sources], ['knowledge', 'knowledge/CATALOG.md', 'knowledge/notes', 'knowledge/templates', 'log.md', 'raw_inbox'])
 })
 
-test('the owner defaults to "me"; skills set to global are said as a gap, never written', async () => {
+test('the owner defaults to "me"; skills set to global: process-inbox in the vault, the twin offered for the user\'s own Claude Code, not written', async () => {
   const w = world({ settings: { skills: 'global' } })
   const v = await w.vault('Mine')
   assert.ok(read(v.root, 'knowledge/profile/DIGITAL_PROFILE.md').includes('**Name:** me'))
-  assert.deepEqual(v.skills, { where: 'global', installed: false, why: 'Echo doesn\'t let a plugin write your ~/.claude/skills' })
+  assert.deepEqual(v.skills, { where: 'global', in_vault: ['.claude/skills/process-inbox/SKILL.md'], offer: 'twin', why: null })
+  assert.ok(!exists(v.root, '.claude/skills/twin/SKILL.md'), 'the host half never writes the user\'s Claude Code; the window half installs it on a click')
+  const st = await w.ctx.run('vault_settings', { id: v.id })
+  assert.deepEqual([st.has_twin, st.twin_made, st.global_twin], [false, true, null])
+  assert.deepEqual(await w.ctx.run('twin', { id: v.id, op: 'installed', name: 'mine-twin' }), { vault: v.id, name: 'mine-twin' })
+  assert.equal((await w.ctx.run('vault_settings', { id: v.id })).global_twin, 'mine-twin', 'its name shown in Settings, Update and Remove offered')
+  await assert.rejects(w.ctx.run('twin', { id: v.id, op: 'installed', name: '../x' }), /1–64 of a-z/)
+  await w.ctx.run('twin', { id: v.id, op: 'removed' })
+  assert.equal((await w.ctx.run('vault_settings', { id: v.id })).global_twin, null)
 })
 
 test('a new vault in git is one clean commit on main, and commits on', { skip: !hasGit }, async () => {
@@ -400,7 +410,7 @@ test('ingest_queue: the sheet\'s queue in #17\'s shape — the sources with meta
   const q = await w.ctx.run('ingest_queue', { id: v.id })
   assert.deepEqual([q.folder, q.exists, q.runs, q.max_file, q.profile_name], ['raw_inbox', true, [], 50 << 20, 'Claude Code (as configured)'])
   const by = Object.fromEntries(q.sources.map((s) => [s.path, [s.kind, s.state, s.meta.markdown, s.meta.queued]]))
-  assert.deepEqual(by, { 'raw_inbox/notes.md': ['file', 'new', true, false], [`call:${CALL}`]: ['echo', 'new', false, true] })
+  assert.deepEqual(by, { 'raw_inbox/notes.md': ['file', 'new', true, false], 'call:2026-11-05_090012': ['echo', 'new', false, true] })
   assert.deepEqual(q.offer, { count: 1, folder: 'raw_inbox' })
 })
 
@@ -431,16 +441,20 @@ test('the Add a source sheet: files picked then handed back, calls with their pr
   assert.deepEqual(await w2.ctx.run('source_m365', { id: v2.id, q: 'x' }), { signed_in: false, results: [] })
 })
 
-test('the twin sheets: the skill\'s text for every session, its paths absolute; adding or installing it is refused, saying why (Echo writes no .claude for a plugin)', async () => {
+test('the twin sheets: the skill\'s text for every session, its paths absolute and a frontmatter Echo takes; added to a vault without one; the host half never installs it', async () => {
   const w = world()
   const v = await w.vault('My twin')
   const t = await w.ctx.run('twin_text', { id: v.id })
   assert.equal(t.name, 'my-twin')
-  assert.equal(t.own, false, 'the vault has none of its own: the starter\'s')
-  assert.ok(t.text.startsWith('---\nname: my-twin\n') && t.text.includes(`echo_vault: ${v.id}\n---\n`), t.text.slice(0, 200))
+  assert.equal(t.own, true, 'the vault\'s own: the preset wrote it (Echo #776)')
+  assert.ok(t.text.startsWith('---\nname: my-twin\n') && t.text.includes(`\n---\n\n<!-- Echo's copy of the twin skill of the vault “My twin” (${v.id}), added from Knowledge. -->\n`), t.text.slice(0, 300))
+  assert.equal(skillMdProblem(t.text), null, 'Echo\'s installSkill takes it')
   assert.ok(t.text.includes(`\`${v.root}/knowledge/CATALOG.md\``), 'paths are absolute')
-  await assert.rejects(w.ctx.run('twin', { id: v.id, op: 'add' }), /write a vault's \.claude folder/)
-  await assert.rejects(w.ctx.run('twin', { id: v.id, op: 'global', name: 'my-twin' }), /~\/\.claude\/skills/)
+  await assert.rejects(w.ctx.run('twin', { id: v.id, op: 'add' }), /already has a twin skill/)
+  nfs.rmSync(npath.join(v.root, '.claude/skills/twin'), { recursive: true })
+  assert.deepEqual(await w.ctx.run('twin', { id: v.id, op: 'add' }), { path: '.claude/skills/twin/SKILL.md' })
+  assert.equal(read(v.root, '.claude/skills/twin/SKILL.md'), read(PKG, 'starter/twin/.claude/skills/twin/SKILL.md'))
+  await assert.rejects(w.ctx.run('twin', { id: v.id, op: 'global', name: 'my-twin' }), /in the window, on your click/)
   // The New vault sheet sends the folder it picked as `pick`, and takes the vault back.
   const f = npath.join(w.base, 'fresh')
   nfs.mkdirSync(f)

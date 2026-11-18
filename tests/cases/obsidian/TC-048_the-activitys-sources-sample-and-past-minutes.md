@@ -1,6 +1,6 @@
 ---
 id: TC-048
-title: The Knowledge activity's step-4 sheets — Ingest's Add a source takes a call (and says a web page isn't in this Echo yet), the queue lists it; a vault's Settings preview how a call lands and offer the past minutes
+title: The Knowledge activity's step-4 sheets — Ingest's Add a source takes a call (a web page only by its address: TC-059 adds one), the queue lists it; a vault's Settings preview how a call lands and offer the past minutes
 priority: high
 type: functional
 requirements: [F-OB-52, F-OB-46, F-OB-51]
@@ -22,7 +22,7 @@ tags: [obsidian, knowledge, window, ingest, minutes]
 | # | Action | Expected Result |
 |---|--------|----------------|
 | 1 | `<base_url>/#obsidian:knowledge/my-twin/ingest` → *Add a source* → *A call or memo*; type "Acme weekly sync", pick the first; *Add* | The sheet lists calls with minutes (another profile's flagged); after *Add* the queue shows a source under `raw_inbox/echo/` |
-| 2 | *Add a source* → *A web page*, `https://acme.example/notes`, *Add* | "Adding a web page is not yet in this Echo" in the sheet; nothing added |
+| 2 | *Add a source* → *A web page*: empty, then `acme.example/notes` typed | Empty: the button reads *Type the address…* (Echo's own box asks); typed without a scheme: the button is off, "A web address starts with http:// or https://." under the field; nothing fetched (`curl -s $FAKE_WEB/_log` and `$FAKE_WEB_OTHER/_log` list nothing new) |
 | 3 | `<base_url>/#obsidian:knowledge/my-twin/settings` | Meeting minutes: *Save past minutes* with a count and *Save N…*; *Preview…* |
 | 4 | *Preview…* | "How a call lands here": the newest call on the vault's profile, its file under `knowledge/notes/`, its index row and the note's text (`title: "…"`); nothing written |
 | 5 | `obs past '{"id":"my-twin"}'` | `count` as the Settings row says; `first` its first calls |

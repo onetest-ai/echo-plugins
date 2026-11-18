@@ -822,8 +822,11 @@ test('K14-02 the Add a source sheet: what each kind can add, and what it sends â
   const chat = { tab: 'mail', hit: { kind: 'chats', id: 'm1', chat: '19:made-up@thread.v2' }, days: 7 }
   assert.deepEqual(knAddArgs(chat, '2026-11-07'), { kind: 'chat', chat: '19:made-up@thread.v2', since: '2026-11-01', until: '2026-11-07' }, 'the last 7 days')
   assert.deepEqual(knAddArgs({ ...chat, days: 30 }, '2026-03-01'), { kind: 'chat', chat: '19:made-up@thread.v2', since: '2026-01-31', until: '2026-03-01' })
-  assert.deepEqual(knAddState({ tab: 'web', url: 'http://example.com/a' }), { can: false, label: 'Add the page', count: 0, note: 'Only an https address: Echo fetches nothing else.' })
-  assert.deepEqual(knAddState({ tab: 'web', url: '' }), { can: false, label: 'Add the page', count: 0, note: '' })
+  // Echo #764: http too (a site the user listed may be one); no address: Echo's own box asks for it.
+  assert.deepEqual(knAddState({ tab: 'web', url: 'http://wiki.acme.example/a' }), { can: true, label: 'Add the page', count: 1, note: '' })
+  assert.deepEqual(knAddState({ tab: 'web', url: 'wiki.acme.example/a' }), { can: false, label: 'Add the page', count: 0, note: 'A web address starts with http:// or https://.' })
+  assert.deepEqual(knAddState({ tab: 'web', url: '' }), { can: true, label: 'Type the addressâ€¦', count: 1, note: '' })
+  assert.deepEqual(knAddArgs({ tab: 'web', url: ' ' }), { kind: 'web', url: '' }, 'none: the host asks in Echo\'s box')
   const web = { tab: 'web', url: '  https://www.example.com/reports/pricing  ' }
   assert.deepEqual([knAddState(web).can, knAddArgs(web)], [true, { kind: 'web', url: 'https://www.example.com/reports/pricing' }])
   for (const x of [files, call, other, mail, chat, web]) {

@@ -2,6 +2,7 @@ import * as nfs from 'node:fs'
 import * as npath from 'node:path'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import { hiddenOk, inSkills, skillMdProblem } from './echo-rules.mjs'
 
 // A fake of the `ctx` Echo gives a plugin's host half (Echo: crates/echoctl/src/jshost.rs, PRELUDE), for unit tests.
 // It fakes only names and shapes Echo has, and records what the plugin did:
@@ -174,7 +175,15 @@ export function fakeCtx({ id = 'test', terminal = false, settings = {}, store = 
   const handle = (path) => { const h = { file: `h${handlesMap.size + 1}`, name: npath.basename(path), size: nfs.statSync(path).size }; handlesMap.set(h.file, path); return h }
   if (pickFolder !== undefined || pickFiles !== undefined || disk) {
     ctx.system = {
-      pickFolder: async () => { const f = typeof pickFolder === 'function' ? pickFolder() : pickFolder; if (!f) return null; if (folders && !folders.includes(f)) folders.push(f); return nfs.realpathSync.native(f) },
+      pickFolder: async () => {
+        const f = typeof pickFolder === 'function' ? pickFolder() : pickFolder
+        if (!f) return null
+        // grants::grant (Echo #784): a hidden folder or one inside it is refused, in Echo's words.
+        const h = nfs.realpathSync.native(f).split(npath.sep).find((c) => c.startsWith('.') && c !== '.' && c !== '..')
+        if (h) throw new Error(`${nfs.realpathSync.native(f)} is a hidden folder or inside one (“${h}”), where other programs keep their settings: pick a folder that isn't hidden`)
+        if (folders && !folders.includes(f)) folders.push(f)
+        return nfs.realpathSync.native(f)
+      },
       pickFiles: async (prompt, o = {}) => { const list = (typeof pickFiles === 'function' ? pickFiles() : pickFiles) || []; return (o.multiple ? list : list.slice(0, 1)).map(handle) },
     }
     ctx.files = { read: (file, o = {}) => { const p = handlesMap.get(typeof file === 'object' ? file.file : file); if (!p) throw new Error('that file isn\'t there'); return nfs.readFileSync(p, 'utf8').slice(0, Math.min(o.max || 1 << 20, 4 << 20)) } }
@@ -335,13 +344,17 @@ function diskFs(folders, fsLog, handlePath = () => null) {
     return real
   }
   const resolve = (root, rel) => inside(rootOf(root), rel)
-  // grants::writable: and never hidden, never a link, its nearest folder there inside the root.
-  const writable = (root0, rel) => {
+  // grants::writable: never hidden but for `hidden_ok`'s few (Echo #776: `.gitignore`, `.obsidian/<name>.json`, a skill's
+  // Markdown in `.claude/skills/<name>/`), never a link, its nearest folder there inside the root.
+  const writable = (root0, rel, folder = false) => {
     const root = rootOf(root0)
+    // grants::writable_as (Echo #784): a folder at or inside a hidden one, granted by an older Echo, is never written.
+    const h = root.split(npath.sep).find((c) => c.startsWith('.') && c !== '.' && c !== '..')
+    if (h) throw new Error(`${root} is a hidden folder or inside one (“${h}”): nothing in it is changed`)
     inside(root, rel)
     const r = plain(root, rel)
     if (!r) throw new Error('not the folder itself')
-    if (r.split('/').some((c) => c.startsWith('.'))) throw new Error(`“${rel}” is hidden: a plugin changes notes, not other programs' files`)
+    if (!hiddenOk(r, folder)) throw new Error(`“${rel}” is hidden: a plugin changes notes, not other programs' files`)
     const full = npath.join(root, r)
     try { if (nfs.lstatSync(full).isSymbolicLink()) throw new Error(`“${rel}” is a link: a plugin changes files, not links`) } catch (e) { if (e.code !== 'ENOENT') throw e }
     let at = npath.dirname(full)
@@ -350,11 +363,23 @@ function diskFs(folders, fsLog, handlePath = () => null) {
     if (real !== root && !real.startsWith(root + npath.sep)) throw new Error(`“${rel}” leads outside ${root}`)
     return full
   }
-  const readText = (f, max) => {
+  // jshost/folders.rs `read_text`: lossy (U+FFFD), or `strict` (Echo #763): "not UTF-8: <path>" — a character `max`
+  // cuts at the end dropped, not refused.
+  const readText = (f, max, strict = false, rel = '') => {
     const fd = nfs.openSync(f, 'r')
-    try { const buf = Buffer.alloc(max); const n = nfs.readSync(fd, buf, 0, max, 0); return buf.subarray(0, n).toString('utf8') } finally { nfs.closeSync(fd) }
+    try {
+      const buf = Buffer.alloc(max); const n = nfs.readSync(fd, buf, 0, max, 0)
+      let b = buf.subarray(0, n)
+      if (!strict) return b.toString('utf8')
+      const whole = n < max || nfs.fstatSync(fd).size <= max
+      for (let cut = 0; cut < 4; cut++) {
+        try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(b) } catch { if (whole || cut === 3 || b.length === 0) break; b = b.subarray(0, b.length - 1) }
+      }
+      throw new Error(`not UTF-8: ${rel}`)
+    } finally { nfs.closeSync(fd) }
   }
   const capOf = (max) => Math.min(max > 0 ? max : 1 << 20, 4 << 20)
+  const optsOf = (o) => (o && typeof o === 'object' ? { max: capOf(o.max), strict: o.strict === true } : { max: capOf(o), strict: false })
   const walkFiles = (root, base, hidden, f) => {
     const stack = [base]
     while (stack.length) {
@@ -391,8 +416,8 @@ function diskFs(folders, fsLog, handlePath = () => null) {
     folders: () => granted(),
     forget: (root) => { fsLog.push(['forget', root]); return true },
     list: (root, rel) => nfs.readdirSync(resolve(root, rel || ''), { withFileTypes: true }).filter((e) => !e.isSymbolicLink()).map((e) => ({ name: e.name, dir: e.isDirectory() })),
-    read: (root, rel, max) => readText(resolve(root, rel), capOf(max)),
-    readMany: async (root, rels, max) => rels.slice(0, 5000).map((rel) => { try { return readText(resolve(root, rel), capOf(max)) } catch { return null } }),
+    read: (root, rel, o) => { const x = optsOf(o); return readText(resolve(root, rel), x.max, x.strict, rel) },
+    readMany: async (root, rels, o) => { const x = optsOf(o); return rels.slice(0, 5000).map((rel) => { try { return readText(resolve(root, rel), x.max, x.strict, rel) } catch { return null } }) },
     walk: async (root0, o = {}) => {
       const root = rootOf(root0)
       const max = Math.min(o.max > 0 ? o.max : 20000, 100000)
@@ -439,13 +464,14 @@ function diskFs(folders, fsLog, handlePath = () => null) {
     },
     write: (root, rel, text, opts = {}) => {
       const f = writable(root, rel)
+      if (inSkills(rel)) { const why = skillMdProblem(String(text)); if (why) throw new Error(why) }
       if (nfs.existsSync(f) && nfs.statSync(f).isDirectory()) throw new Error(`“${rel}” is a folder`)
       nfs.mkdirSync(npath.dirname(f), { recursive: true })
       put(f, rel, String(text), opts)
       fsLog.push(['write', rel])
     },
-    append: (root, rel, text) => { const f = writable(root, rel); nfs.mkdirSync(npath.dirname(f), { recursive: true }); nfs.appendFileSync(f, text.endsWith('\n') ? text : `${text}\n`); fsLog.push(['append', rel]) },
-    mkdir: (root, rel) => { nfs.mkdirSync(writable(root, rel), { recursive: true }); fsLog.push(['mkdir', rel]) },
+    append: (root, rel, text) => { if (inSkills(rel)) throw new Error('a skill is written whole: no append'); const f = writable(root, rel); nfs.mkdirSync(npath.dirname(f), { recursive: true }); nfs.appendFileSync(f, text.endsWith('\n') ? text : `${text}\n`); fsLog.push(['append', rel]) },
+    mkdir: (root, rel) => { nfs.mkdirSync(writable(root, rel, true), { recursive: true }); fsLog.push(['mkdir', rel]) },
     // jshost/files.rs `copy_in`: a handle's bytes as they are (50 MB at most), checked as `write`; never over a file
     // unless `createNew: false`.
     copyIn: async (file, root, rel, o = {}) => {
@@ -453,6 +479,7 @@ function diskFs(folders, fsLog, handlePath = () => null) {
       if (!src) throw new Error('that file isn\'t there (handed to another plugin, or over an hour ago)')
       const size = nfs.statSync(src).size
       if (size > 50 << 20) throw new Error(`${npath.basename(src)} is ${Math.round(size / (1 << 20))} MB — 50 MB at most`)
+      if (inSkills(rel)) throw new Error('a skill is written whole: no copyIn')
       const f = writable(root, rel)
       if (nfs.existsSync(f) && nfs.statSync(f).isDirectory()) throw new Error(`“${rel}” is a folder`)
       nfs.mkdirSync(npath.dirname(f), { recursive: true })
@@ -614,17 +641,25 @@ function markdownOf(pluginId) {
     return out
   }
   const TOKENS = /(`[^`]*`)|(!?)\[\[([^\]\n]+)\]\]|(!?)\[([^\]\n]*)\]\((<[^>\n]*>|[^)\s]*)\)/g
-  const links = (md) => {
+  // `{detail: true}` (Echo #757): also `entries` — each way a destination was written, once and in order.
+  const links = (md, o = {}) => {
     fits(md)
-    const ls = [], im = []
+    const ls = [], im = [], entries = [], seen = new Set()
     for (const l of prose(md)) {
       if (l === null) continue
       for (const m of l.matchAll(TOKENS)) {
         if (m[1]) continue
-        if (m[3] !== undefined) { const d = m[3].split('|')[0].replace(/\\$/, '').trim(); (m[2] ? im : ls).push(d) } else { const d = m[6]; (m[4] ? im : ls).push(d) }
+        const wiki = m[3] !== undefined
+        const embed = wiki ? !!m[2] : !!m[4]
+        const d = wiki ? m[3].split('|')[0].replace(/\\$/, '').trim() : m[6]
+        ;(embed ? im : ls).push(d)
+        const k = `${d}\0${wiki}\0${embed}`
+        if (!seen.has(k)) { seen.add(k); entries.push({ dest: d, kind: wiki ? 'wiki' : 'md', embed }) }
       }
     }
-    return { links: [...new Set(ls)], images: [...new Set(im)] }
+    const out = { links: [...new Set(ls)], images: [...new Set(im)] }
+    if (o && o.detail) out.entries = entries
+    return out
   }
   const inline = (l, o) => {
     let out = ''
@@ -663,5 +698,5 @@ function markdownOf(pluginId) {
     if (code !== null) out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`)
     return out.join('\n')
   }
-  return Object.assign((md, opts) => render(String(md), opts || {}), { links: (md) => links(String(md)) })
+  return Object.assign((md, opts) => render(String(md), opts || {}), { links: (md, o) => links(String(md), o || {}) })
 }

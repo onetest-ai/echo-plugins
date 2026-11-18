@@ -143,10 +143,10 @@ test('two prepares at once write each source once; a prepare another process hol
   assert.ok(!(`locks/prepare-${v.id}.json` in w.ctx.files), 'and let go')
   // A source the ledger has by the call it came from is never written again, even if queued again by hand.
   const l = JSON.parse(w.ctx.files[`vaults/${v.id}/ingest.json`])
-  l.queued[`call:${CALL}`] = { kind: 'call', title: 'x', added: new Date().toISOString(), state: 'queued' }
+  l.queued['call:2026-11-05_090012'] = { kind: 'call', title: 'x', added: new Date().toISOString(), state: 'queued' }
   w.ctx.files[`vaults/${v.id}/ingest.json`] = JSON.stringify(l)
   const p = await w.ctx.run('prepare_sources', { vault: v.id })
-  assert.deepEqual(p.written, [{ id: `call:${CALL}`, path: 'raw_inbox/echo/2026-11-05-weekly-delivery-sync.md', already: true }])
+  assert.deepEqual(p.written, [{ id: 'call:2026-11-05_090012', path: 'raw_inbox/echo/2026-11-05-weekly-delivery-sync.md', already: true }])
   assert.deepEqual(nfs.readdirSync(npath.join(v.root, 'raw_inbox/echo')), ['2026-11-05-weekly-delivery-sync.md'])
 })
 
@@ -182,7 +182,7 @@ test('the catch-up: a first start notes the day; the next saves only calls with 
   assert.ok(exists(v.root, 'knowledge/notes/2026-11-10-a.md'), 'A had no record: saved')
   assert.equal(read(v.root, 'knowledge/notes/2026-11-11-b.md'), before, 'B: its record has the vault')
   const l = ledgerOf(w.ctx, v.id)
-  assert.deepEqual(Object.keys(l.queued).sort(), ['call:2026-11-10_100000-a', 'call:2026-11-11_100000-b'], 'C, written and skipped, not queued again')
+  assert.deepEqual(Object.keys(l.queued).sort(), ['call:2026-11-10_100000', 'call:2026-11-11_100000'], 'C, written and skipped, not queued again')
   assert.notEqual(JSON.parse(w.ctx.files['seen.json']).since, '2026-11-09')
   // A read that fails keeps the day.
   w.ctx.files['seen.json'] = JSON.stringify({ since: '2026-11-09' })

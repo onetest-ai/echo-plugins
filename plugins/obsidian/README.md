@@ -68,19 +68,35 @@ with it and what to leave alone. You correct the description, and from then on C
   never into a vault read by another AI profile than the call's unless you say "anyway". Echo commits its notes once
   after two quiet minutes, only its own files. `past_minutes` saves the calls since a day in one commit.
 - **Sources for Ingest** — a vault's sources folder (`raw_inbox/`): files you hand over (copied as they are, never over
-  a file), a call's minutes, a mail thread from Microsoft 365, a web page (once Echo reads web pages). New calls and
+  a file), a call's minutes, a mail thread from Microsoft 365, a web page. A web page is read once, when you add it —
+  its main text as Markdown, its pictures saved beside it — never again by itself: a page on a site you list in the
+  plugin's settings (Settings → Plugins → Knowledge → Its settings: Sites Knowledge reads pages from) at once, any other after you type its address in Echo's own box.
+  A page that builds itself with JavaScript isn't read yet (nothing is added, and Echo says so). New calls and
   mail of a vault's threads are queued by its rule (`ingest.calls`, `ingest.mail`: off, add, prepare) with nothing
   written into the vault; preparing a batch (`prepare_sources`, and each Ingest run first) writes them, reading a
   mail's own text only then.
 - **A new vault from the twin preset** (`new_vault`): the structure of a personal knowledge twin — rules for agents, an
-  index with a table per section, tags and terms, a profile to fill, templates — in a new or empty folder, in git when
-  you like. Echo doesn't let a plugin write hidden files, so the preset's `.claude/skills`, `.gitignore` and Obsidian
-  settings are left out and said so.
+  index with a table per section, tags and terms, a profile to fill, templates, its `.gitignore` and its skills
+  (`/twin` to find, answer and remember; `/process-inbox` for Ingest) — in a new or empty folder, in git when you like.
+  Each skill is Markdown that runs nothing (Echo checks it); Obsidian's settings for `knowledge/` come too
+  (`knowledge/.obsidian/app.json`, `templates.json`: relative Markdown links, the templates folder). The plugin's setting
+  "Where the twin preset puts its twin skill": the vault (its own `.claude/skills`), or global — your own Claude Code
+  (`~/.claude/skills`), for every session: Knowledge shows you the skill first and adds it only when you click
+  Install; Update and Remove are in the vault's Settings → Skills, and Echo never touches a skill it didn't add.
+  A vault without `process-inbox` gets the starter's on your word (Ingest → Add the starter's process-inbox).
+- **Tags through Echo's dictionary** — a tag your Echo dictionary (Recall → Dictionary) knows by another name (`#akme` for Acme Corp) is
+  written as that name in what Echo proposes: an Ingest run's pages (said on the change), an AI check's fix, and
+  Health's fix of a tag the taxonomy doesn't allow (the dictionary's tag offered first). The vault's own tag taxonomy
+  wins: a tag is only ever turned into one it allows. Knowledge only reads the dictionary; it never adds to it.
+- **Calls are known by their stamp** — the day and time a call's folder starts with, which a retitle keeps: a call
+  you rename is the same call for its note, its record and the sources queue (Echo 0.10.0 gives every call a stamp of
+  its own). In data from before it, two calls may share a second: the second one's minutes aren't saved, and the Inbox
+  says "Echo can't tell two calls of this second apart — open it and Save again".
 - **From Obsidian vaults 0.8**: your vaults, their descriptions and Claude's entries stay; each vault takes a call's
   minutes only when you ask. Echo's own facts vault of 0.8 (the Knowledge switch, Knowledge → Notes) is gone.
 - Removing a vault from Echo takes all of this back; the folder stays as it is.
 
-Needs Echo 0.9.15 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
+Needs Echo 0.10.0 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
 entries; `client.js` wires the Knowledge activity (`view.js`, `model.js`, `knowledge.css`, through `seam.js` to the
 host half's commands) into Echo's slots; `rows.js` the "Knowledge vault" row of a thread's and a client's Profile; `starter/twin/` is the twin preset. Part of the
 [Echo plugins](../../README.md) marketplace.

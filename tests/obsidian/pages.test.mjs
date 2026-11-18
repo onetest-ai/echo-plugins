@@ -343,15 +343,15 @@ test('new page: properties stay valid YAML; a template with % never breaks', asy
   assert.equal(slugify('Ünïcode — names!'), 'ünïcode-names')
 })
 
-test('page: a page that isn\'t UTF-8 is read but not edited', async () => {
+test('page: a page that isn\'t UTF-8 is shown as Echo reads it (read only, the user\'s word for cp1251 notes) but not edited', async () => {
   const root = twin(tmp())
   nfs.mkdirSync(npath.join(root, 'knowledge/topics'), { recursive: true })
   nfs.writeFileSync(npath.join(root, 'knowledge/topics/latin.md'), Buffer.from([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]))
   const ctx = await vault(root)
   const p = await ctx.run('page', { id: 'twin', path: 'topics/latin.md' })
   assert.equal(p.editable, false, 'editing would change bytes it never showed')
-  assert.equal(p.html, null)
-  assert.equal(p.text, null)
+  assert.equal(p.html, '<h1>Caf\uFFFD</h1>', 'shown, U+FFFD where a byte isn\'t UTF-8')
+  assert.equal(p.text, null, 'never handed to the editor')
   await assert.rejects(ctx.run('save_page', { id: 'twin', path: 'topics/latin.md', text: '# Cafe\n', base: p.base }), /UTF-8/)
   assert.deepEqual([...nfs.readFileSync(npath.join(root, 'knowledge/topics/latin.md'))], [0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a])
 })
@@ -809,21 +809,20 @@ test('small things: a folder name of the vault goes into Claude\'s guide only as
   assert.equal(withLineEndings('a\nb\nc\nd\r\n', 'x\ny\n'), 'x\ny\n', 'mostly LF: as handed back')
 })
 
-test('restore: a version not UTF-8 is refused by Echo\'s strict read, or on an older Echo by its length; one holding U+FFFD too', { skip: !hasGit && 'git is not available' }, async () => {
-  for (const gitStrict of [true, false]) {
-    const root = twin(tmp())
-    nfs.writeFileSync(npath.join(root, 'knowledge/latin.md'), Buffer.from([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]))
-    write(root, 'knowledge/odd.md', '# Has a � in it\n')
-    repo(root)
-    write(root, 'knowledge/latin.md', '# Cafe\n')
-    write(root, 'knowledge/odd.md', '# Clean\n')
-    sh(root, 'commit', '-qam', 'Now')
-    const ctx = await vault(root, { git: true, gitStrict })
-    const oldest = async (p) => { const v = (await ctx.run('history', { id: 'twin', path: p })).versions; return v[v.length - 1].rev }
-    await assert.rejects(ctx.run('restore', { id: 'twin', path: 'latin.md', rev: await oldest('latin.md') }), /isn't UTF-8 text, so Echo doesn't restore it/, `strict ${gitStrict}`)
-    await assert.rejects(ctx.run('restore', { id: 'twin', path: 'odd.md', rev: await oldest('odd.md') }), /isn't UTF-8 text/, `U+FFFD, strict ${gitStrict}`)
-    assert.equal(read(root, 'knowledge/odd.md'), '# Clean\n')
-  }
+test('restore: a version not UTF-8 is refused by Echo\'s strict read (Echo #763); a UTF-8 one holding U+FFFD is restored as it is', { skip: !hasGit && 'git is not available' }, async () => {
+  const root = twin(tmp())
+  nfs.writeFileSync(npath.join(root, 'knowledge/latin.md'), Buffer.from([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a]))
+  write(root, 'knowledge/odd.md', '# Has a \uFFFD in it\n')
+  repo(root)
+  write(root, 'knowledge/latin.md', '# Cafe\n')
+  write(root, 'knowledge/odd.md', '# Clean\n')
+  sh(root, 'commit', '-qam', 'Now')
+  const ctx = await vault(root, { git: true })
+  const oldest = async (p) => { const v = (await ctx.run('history', { id: 'twin', path: p })).versions; return v[v.length - 1].rev }
+  await assert.rejects(ctx.run('restore', { id: 'twin', path: 'latin.md', rev: await oldest('latin.md') }), /isn't UTF-8 text, so Echo doesn't restore it/)
+  assert.equal(read(root, 'knowledge/latin.md'), '# Cafe\n')
+  await ctx.run('restore', { id: 'twin', path: 'odd.md', rev: await oldest('odd.md') })
+  assert.equal(read(root, 'knowledge/odd.md'), '# Has a \uFFFD in it\n', 'the character is the page\'s own: no double check guesses it away')
 })
 
 test('restore: a page Echo gives no sha for (over 64 MB) is refused, never written without one', { skip: !hasGit && 'git is not available' }, async () => {

@@ -3,6 +3,7 @@
 #   ECHO_REPO=<an Echo checkout, built with `cargo build`> [OBSIDIAN_FROM=0.8] tests/fixtures/obsidian/up.sh <dir> <port>
 #   tests/fixtures/obsidian/next.sh <dir>     # OBSIDIAN_FROM=0.8 only: this checkout's version offered as the update
 #   tests/fixtures/obsidian/down.sh <dir>
+# SAME_SECOND=1 adds a made-up memo started in guest call 7's second, with the next stamp as Echo 0.10.0 gives it (TC-056).
 # <dir> must not exist yet. It builds Echo's standard made-up data (Echo's tests/fixtures/make_data.py; its `claude` is
 # the test fake, which refuses every run: Claude's reading of a vault fails, and a case writes its description), makes
 # made-up vaults in <dir>/vaults (acme-wiki, home-notes; acme-twin, twin-shaped, and acme-history, both in git), installs this checkout's plugin from a local marketplace
@@ -94,6 +95,36 @@ cp "$here/fake_ingest.py" "$dir/bin/fake_ingest.py"
 chmod +x "$dir/bin/claude"
 
 printf 'export PATH="%s:$PATH"\nexport VAULTS="%s"\nexport MARKET="%s"\n' "$echo_repo/target/debug" "$v" "$dir/market" >> "$dir/env"
+# A made-up web site on this computer only (fake_web.py) for a web page as a source, on <port>+1 (listed as the user's
+# site in a case: `web_sites`) and <port>+2 (not listed: Echo's box gives its address — ECHOCTL_ASK_ADDRESS, a debug
+# build's answer to `ctx.http.askAddress`, never a dialog).
+web1=$((port + 1)); web2=$((port + 2))
+python3 -I "$here/fake_web.py" "$web1" "$web2" --log "$dir/web.log" > /dev/null 2>&1 &
+echo $! > "$dir/web.pid"
+printf 'export FAKE_WEB="http://127.0.0.1:%s"\nexport FAKE_WEB_OTHER="http://127.0.0.1:%s"\nexport ECHOCTL_ASK_ADDRESS="http://127.0.0.1:%s/rollout.html"\n' "$web1" "$web2" "$web2" >> "$dir/env"
+# A made-up dictionary (Recall → Dictionary) in the test data's Recall folder, as Echo keeps it: terms with other names
+# and spellings, for tags through Echo's dictionary (TC-061). The standard data has none.
+home="$(. "$dir/env" && printf '%s' "$ECHOCTL_HOME")"
+case "$home" in "$dir"/*) ;; *) echo "ECHOCTL_HOME isn't inside $dir: stopping" >&2; exit 1;; esac
+mkdir -p "$home/recall/taxonomy"
+cat > "$home/recall/taxonomy/current.json" <<'JSON'
+{"version": 1, "layers": {"shared": {"name": "Your practice"}}, "topics": [], "terms": [
+  {"name": "Concept", "kind": "term", "synonyms": ["idea"], "variants": []},
+  {"name": "Client", "kind": "term", "synonyms": ["customer"], "variants": []},
+  {"name": "Control Plane", "kind": "product", "synonyms": ["CP"], "variants": ["controlplane"]}
+], "aliases": {}, "history": []}
+JSON
+# SAME_SECOND=1 (TC-056 on an environment of its own): a made-up memo started in the same second as the standard data's
+# guest call 7, as Echo 0.10.0 makes it — the next free stamp (`…_143001`), its real start in its meta — a copy of the
+# call's folder, retitled "Guest memo", kind memo.
+if [ "${SAME_SECOND:-}" = 1 ]; then
+  g="$(ls "$home/calls" | grep -- '-guest-call-7$' | head -1)"
+  [ -n "$g" ] || { echo "no guest call 7 in the data: stopping" >&2; exit 1; }
+  next="$(python3 -I -c 'import datetime,sys; print((datetime.datetime.strptime(sys.argv[1], "%Y-%m-%d_%H%M%S") + datetime.timedelta(seconds=1)).strftime("%Y-%m-%d_%H%M%S"))' "${g%-guest-call-7}")"
+  m="$home/calls/$next-guest-memo"
+  cp -R "$home/calls/$g" "$m"
+  python3 -I -c 'import json,sys; p=sys.argv[1]; m=json.load(open(p)); m["title"]="Guest memo"; m["kind"]="memo"; json.dump(m, open(p, "w"), indent=2)' "$m/meta.json"
+fi
 from="${OBSIDIAN_FROM:-}"
 case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;; esac
 
@@ -137,4 +168,5 @@ case "$from" in ''|0.8) ;; *) echo "OBSIDIAN_FROM: 0.8 or nothing" >&2; exit 1;;
 for _ in $(seq 40); do curl -s -o /dev/null "http://127.0.0.1:$port/" && break; sleep 0.5; done
 # Its own window, not another one on that port: the process is still there.
 { curl -s -o /dev/null "http://127.0.0.1:$port/" && kill -0 "$(cat "$dir/pid")" 2> /dev/null; } || { echo "the window didn't start (is port $port taken?): see $dir/serve.log" >&2; exit 1; }
-echo "base_url=http://127.0.0.1:$port env=$dir/env vaults=$v"
+for _ in $(seq 20); do curl -s -o /dev/null "http://127.0.0.1:$web1/_log" && break; sleep 0.25; done
+echo "base_url=http://127.0.0.1:$port env=$dir/env vaults=$v web=http://127.0.0.1:$web1 web_other=http://127.0.0.1:$web2"

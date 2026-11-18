@@ -398,7 +398,7 @@ test('a run waits while a call is recorded or transcribed: recording comes first
   assert.deepEqual([(await ctx.run('ingest_run', { id: 'twin', run: s.run })).state, ctx.claudeLog.length], ['review', 1])
 })
 
-test('no skill: refused, the starter\'s process-inbox offered — and Echo writes no hidden file for a plugin, so it says how', async () => {
+test('no skill: refused, the starter\'s process-inbox offered and added into the vault on the user\'s word (Echo #776), found at once', async () => {
   const t = twin()
   write(t, SOURCE, SYNC)
   const ctx = await vault(t, { claude: northwind() })
@@ -406,8 +406,10 @@ test('no skill: refused, the starter\'s process-inbox offered — and Echo write
   assert.equal(q.skill, null)
   assert.match(q.starter_skill, /^---\nname: process-inbox/)
   await assert.rejects(ctx.run('ingest_go', { id: 'twin', sources: [SOURCE], wait: true }), /no ingest skill/)
-  await assert.rejects(ctx.run('ingest_skill', { id: 'twin' }), /Echo doesn't let a plugin write a vault's \.claude folder/)
-  assert.ok(!exists(t, '.claude/skills/process-inbox/SKILL.md'))
+  assert.deepEqual(await ctx.run('ingest_skill', { id: 'twin' }), { path: '.claude/skills/process-inbox/SKILL.md' })
+  assert.equal(read(t, '.claude/skills/process-inbox/SKILL.md'), q.starter_skill, 'the text it showed, whole')
+  assert.equal((await ctx.run('ingest_queue', { id: 'twin' })).skill.name, 'process-inbox', 'read again: Ingest has it now')
+  await assert.rejects(ctx.run('ingest_skill', { id: 'twin' }), /already has a process-inbox skill/)
 })
 
 test('the prompt names the sources and a meeting\'s note already in the vault; adds-only and mentions as review.rs reads them', () => {
@@ -543,7 +545,7 @@ test('finding 4: a queued item that can\'t be prepared is tried again only after
   assert.equal(JSON.parse(ctx.files['vaults/twin/ingest.json']).queued['call:gone'].tries, 1, 'not tried again within the hour')
   // A good call joins: the batch runs over it and leaves the failing one queued.
   const l2 = JSON.parse(ctx.files['vaults/twin/ingest.json'])
-  l2.queued['call:2026-11-05_090012-weekly-delivery-sync'] = { id: 'call:2026-11-05_090012-weekly-delivery-sync', kind: 'call', title: 'Weekly', rule: 'prepare', state: 'queued', added: new Date().toISOString() }
+  l2.queued['call:2026-11-05_090012'] = { id: 'call:2026-11-05_090012', kind: 'call', title: 'Weekly', rule: 'prepare', state: 'queued', added: new Date().toISOString() }
   ctx.files['vaults/twin/ingest.json'] = JSON.stringify(l2)
   const started = await ctx.run('prepare_rule', {})
   assert.equal(started.length, 1)
@@ -866,7 +868,7 @@ test('the rule\'s batch takes what is New of it: a queued item whose file a run 
   await ctx.run('add_source', { vault: 'twin', kind: 'call', call: '2026-11-05_090012-weekly-delivery-sync' })
   const first = (await ctx.run('ingest_go', { id: 'twin', wait: true })).run
   const l = JSON.parse(ctx.files['vaults/twin/ingest.json'])
-  for (const c of ['2026-11-05_090012-weekly-delivery-sync', '2026-11-06_100000-pricing']) l.queued[`call:${c}`] = { id: `call:${c}`, kind: 'call', title: c, rule: 'prepare', state: 'queued', added: new Date().toISOString() }
+  for (const c of ['2026-11-05_090012', '2026-11-06_100000']) l.queued[`call:${c}`] = { id: `call:${c}`, kind: 'call', title: c, rule: 'prepare', state: 'queued', added: new Date().toISOString() }
   l.calls = []
   ctx.files['vaults/twin/ingest.json'] = JSON.stringify(l)
   const started = await ctx.run('prepare_rule', {})

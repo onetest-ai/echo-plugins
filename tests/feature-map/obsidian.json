@@ -373,6 +373,24 @@
    "title": "Folders Echo refuses (Echo #784): a folder picked that is hidden or inside a hidden one is said in Echo's own words in the Connect sheet, nothing connected; a vault whose saved folder is inside a hidden one is read only, said once above its tabs — no Ingest run, save, commit or prepare tried",
    "priority": "medium",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-69",
+   "title": "The plugin turned off, on again, removed and installed again (#17's lifecycle): the vaults' files, the list of vaults, their settings and descriptions, the calls' records, a pending commit and an unsaved edit (kept in the window) stay; while off, Knowledge leaves the window (its activity, its routes, its panel tab) and an event reaches nothing; on again without a restart, it returns once — one handler, one note; after a removal Echo no longer gives it the vaults' folders: the vault says so and the folder picked again brings everything back (never another folder)",
+   "priority": "critical",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-70",
+   "title": "A list of vaults that can't be read (cut short, broken by hand, a 0.8 one included) is never written over: nothing is written while it is only read, the next change sets it aside byte for byte as vaults.json.bad-<ms>, says so in the plugin's log, and starts the list again",
+   "priority": "high",
+   "check": "agent"
+  },
+  {
+   "id": "F-OB-71",
+   "title": "In the native desktop with the person's own accounts (#17's TC-004): the system's folder and file pickers, a file dropped on Ingest, Open in Obsidian opening Obsidian, Ask the vault on a signed-in Claude Code, an Ingest run and AI checks on the profile chosen, mail and Teams from a connected Microsoft 365, the panel's session closed when the plugin is turned off; macOS and Windows",
+   "priority": "high",
+   "check": "person"
   }
  ]
 }

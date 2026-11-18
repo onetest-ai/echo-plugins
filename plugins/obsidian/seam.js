@@ -85,7 +85,7 @@ const ACTIONS = {
   kn_fix: ['fix'], kn_fix_all: ['fix_all'], kn_lint: ['lint'], kn_lint_stop: ['lint_stop'],
   kn_ingest_run: ['ingest_go'], kn_ingest_stop: ['ingest_stop'], kn_change: ['change'], kn_ingest_apply: ['ingest_apply'],
   kn_ingest_discard: ['ingest_discard'], kn_ingest_requeue: ['ingest_requeue'], kn_source_skip: ['source_skip'],
-  kn_baseline: ['baseline'], kn_ingest_skill: ['ingest_skill'], kn_pick_files: ['pick_files'], kn_source_add: ['source_add'],
+  kn_baseline: ['baseline', (a) => ({ vault: a.id, done: !!a.done })], kn_give_again: ['give_again'], kn_ingest_skill: ['ingest_skill'], kn_pick_files: ['pick_files'], kn_source_add: ['source_add'],
 }
 export function knActionOf(cmd, args = {}) {
   const a = ACTIONS[cmd]

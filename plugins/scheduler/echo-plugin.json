@@ -2,7 +2,7 @@
   "id": "scheduler",
   "name": "Scheduler",
   "version": "0.8.0",
-  "echo": ">=0.9.15",
+  "echo": ">=0.10.0",
   "summary": "Your own Claude prompts on a schedule — the answer in Telegram, Teams or mail — and Echo's own jobs as system routines: their runs, costs and settings",
   "agent": {
     "summary": "Echo's background jobs as the user tuned them, and the user's scheduled Claude prompts (routines): what runs when and where its answer goes, each run's answer, cost or failure",

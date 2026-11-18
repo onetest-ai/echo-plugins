@@ -45,3 +45,18 @@ Whatever it does on top of them is listed here with its reason; anything new nee
 | On the app's start, the calls with minutes and Recall's mail since the last day seen (`echo.read('calls' \| 'sources', {since})`) go through the same routing as the events | Echo's events aren't replayed: a call or mail that came while the plugin wasn't running would never reach its vault | no | once a start; only what came since the last day seen (moved on only when both reads answered), each only when its record or ledger doesn't have it already (a note never written again by a catch-up) |
 | A queued call's minutes written into the vault's sources folder as a file (`echo/<date>-<slug>.md`: Echo's properties, then Echo's minutes as they are; transcript and chat only when the vault asks) | The vault's ingest skill reads files of its sources folder; the text stays Echo's | no | only when a batch is prepared (`prepare_sources`), once per call (the ledger remembers it, also once its file is deleted); one commit for the batch |
 | Health's AI check | Contradictions and stale pages are about the vault's own text | yes | on the user's click only |
+
+## Done (2026-11-18)
+The port is complete in `knowledge-1.0` (tracking PR #22 → `main`); Knowledge 1.0.0 needs Echo 0.10.0.
+- #20 one registry, from Obsidian vaults 0.8 (vaults kept, minutes on Ask, the facts vault deleted)
+- #21 the engine's pure parts from #677 · #24 detect, index, search, pages, history, graph, checks, activity
+- #28 minutes routed thread → client → default, sources, the twin preset, the vault rows; events into a queue
+- #29 Health's fixes, AI checks, Ingest runs with review · #27 #17's UI as the plugin's own activity "Knowledge"
+- #25, #26 the rule above (reprocessing justified and batched; a mail's text read only when a batch is prepared)
+- #30 Scheduler 0.8.0 (Auto or skip every check; needs Echo 0.10.0)
+- #31 Echo core's new APIs adopted (stamps, vault and global skills, web pages, strict reads, hidden folders) and tags
+  through Echo's dictionary
+- #23 this reference
+- #32 step 9: #17's cases on this plugin's fixture (TC-063–TC-067; what 1.0 dropped is in
+  `tests/cases/obsidian/README.md`, *From #17*), the 0.8 list cut short (TC-068), the full Knowledge and Scheduler
+  suites as the release gate. #17 and onetest-ai/echo#677 close with it.

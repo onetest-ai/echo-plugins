@@ -27,7 +27,7 @@ export async function apply(ctx) {
   const v1 = new URL(import.meta.url).search
   await ctx.ui.stylesheet('knowledge.css')
   const { createKnowledge } = await import(`./view.js${v1}`)
-  const { knParseRoute, KN_BASE } = await import(`./model.js${v1}`)
+  const { knParseRoute, KN_BASE, knHoldsBox } = await import(`./model.js${v1}`)
   const { applyRows } = await import(`./rows.js${v1}`)
   applyRows(ctx)
 
@@ -157,7 +157,8 @@ export async function apply(ctx) {
       }
     },
     badge: () => { const n = view.badge(); return n > 0 ? n : '' },
-    editing: () => !force && (view.editing() || about.key !== null),
+    // A new address always draws (a tab clicked while a page is being edited); else Echo leaves a box being typed in alone.
+    editing: () => knHoldsBox({ force, hash: location.hash, lastHash, editing: view.editing() || about.key !== null }),
   })
   // Polled while Knowledge shows (2 s, as #677's window did): a change on disk shows within a tick.
   const tick = setInterval(() => { if (shown()) view.tick().catch(() => {}) }, 2000)

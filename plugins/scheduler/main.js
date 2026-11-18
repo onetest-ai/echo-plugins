@@ -243,13 +243,29 @@ export function apply(ctx) {
     while (runs.length > KEEP_RUNS) ctx.store.remove(`runs/${id}/${runs.shift()}`)
   }
 
+  /** A run's folder, taken before anything else waits: its start to the second, `-2`, `-3`… when a run of the routine
+   *  has that second already — the folder made with its `started.json` (never over one), so two runs of one second
+   *  (a scheduled run and Run now, the app and a terminal, a double click on Try) never share a folder. */
+  const takeStamp = (id, base) => {
+    let names = []
+    try { names = ctx.store.list(`runs/${id}`) || [] } catch { /* no runs yet */ }
+    for (let k = 1; k < 1000; k++) {
+      const s = k === 1 ? base : `${base}-${k}`
+      if (names.includes(s)) continue
+      try { ctx.store.write(`runs/${id}/${s}/started.json`, JSON.stringify({ at: new Date().toISOString() }), { createNew: true }); return s } catch (e) {
+        if (!/there already/.test(String((e && e.message) || e))) throw e
+      }
+    }
+    throw new Error(`no free run folder for ${base}`)
+  }
   /** Run a routine now: Claude Code, then its deliveries. The run's record (also kept as its last). */
   const run = async (id, deliver = true, draft = null, given = null) => {
     const r = draft || get(id)
     if (running.has(id)) throw new Error(`“${r.name}” is running already`)
     running.add(id)
     const started = new Date()
-    const stamp = given || started.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    let stamp
+    try { stamp = given || takeStamp(id, started.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)) } catch (e) { running.delete(id); throw e }
     const sch = words(parseSchedule(r.schedule))
     const rec = { at: started.toISOString(), run: stamp, trial: !deliver }
     try {
@@ -391,7 +407,7 @@ export function apply(ctx) {
     if (!TOOLS.includes(r.tools)) throw new Error(`tools “${r.tools}”: auto or skip`)
     if (!String(r.prompt || '').trim()) throw new Error('write what Claude should do first')
     const draft = { ...r, id: '_draft', skip_empty: false }
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    const stamp = takeStamp('_draft', new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15))
     running.delete('_draft')
     run('_draft', false, draft, stamp).catch((e) => ctx.log('try', e.message || e))
     return { id: '_draft', run: stamp }

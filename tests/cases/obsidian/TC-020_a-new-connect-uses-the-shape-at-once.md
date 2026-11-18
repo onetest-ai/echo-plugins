@@ -24,5 +24,5 @@ tags: [obsidian, knowledge, detect]
 |---|--------|----------------|
 | 1 | `ECHOCTL_PICK_FOLDER="$N" obs add '{"wait":true}'`; `obs view` | home-notes with `structure` "confirmed", `detected.sources` "Inbox", `detected.templates` "templates", `detected.pages` "" |
 | 2 | `obs tree '{"id":"home-notes"}'` | Only `Trips/Lisbon.md` — no Inbox/clip.md, no templates/note.md |
-| 3 | `obs page '{"id":"home-notes","path":"Inbox/clip.md"}'` | Fails "Inbox/clip.md isn't a page of this vault" |
+| 3 | `obs page '{"id":"home-notes","path":"Inbox/clip.md"}'`; `save_page` on it with its `base`; `obs page '{"id":"home-notes","path":"templates/note.md"}'` | The clipping is answered as a source, as it came (Ingest shows it so), never as a page: `source` true, `editable` false, `text` null, no links or backlinks; its save fails; the template fails "templates/note.md isn't a page of this vault" |
 | 4 | `obs remove '{"id":"home-notes"}'` | `true` |

@@ -4,9 +4,9 @@ Run in order, on one environment, by an agent with Bash (the CLI), as Echo's own
 `tests/app_profile.md`: made-up data, evidence for every PASS, clean up after):
 
 ```bash
-ECHO_REPO=<an Echo checkout from main (0.9.15's primitives), built: cargo build> \
+ECHO_REPO=<an Echo checkout from main (0.10.0's primitives), built: cargo build> \
   tests/fixtures/obsidian/up.sh "$(mktemp -d)/ob" 47970   # prints base_url, env, vaults
-# after 22:50 or before 06:00 the made-up day needs an earlier time: DATA_NOW=<YYYY-MM-DDTHH:MM> before up.sh
+# the cases name the standard data's calls as made on 2026-11-17: DATA_NOW=2026-11-17T20:00 before up.sh (always for TC-034 on)
 # TC-006 only, on an environment of its own: a user of Obsidian vaults 0.8.0, updated in the case
 OBSIDIAN_FROM=0.8 ECHO_REPO=… tests/fixtures/obsidian/up.sh "$(mktemp -d)/ob8" 47972
 . <dir>/env                                               # before every CLI step: echoctl = the debug build
@@ -35,7 +35,7 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   in `tests/reports/obsidian-knowledge-ui/`. "Ask the vault" opens the fake Claude in Echo's panel: never typed into.
 
 ### Minutes into vaults, sources and the twin preset (TC-038 on)
-- Run in order (TC-038 to TC-050, TC-036 and TC-047/048 in the window) on one environment of their own (`DATA_NOW=<today>T20:00` late in the day). The standard data's calls
+- Run in order (TC-038 to TC-050, TC-036 and TC-047/048 in the window) on one environment of their own (`DATA_NOW=2026-11-17T20:00`: the cases name the standard data's calls as made on that day). The standard data's calls
   with minutes are the calls; its threads (`acme-rollout`, `acme-renewal`, `globex-pilot`) and clients (`acme`) route
   them. Its default AI profile is `work`.
 - An event is told to the served window (the app: its plugins hear events there) with `echoctl plugin emit
@@ -52,7 +52,7 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   `<dir>/graph.log` (what Echo asked of it).
 
 ### Health's fixes, AI checks and Ingest runs (TC-034, TC-051 on)
-- Run in order on one environment of their own (`DATA_NOW=<today>T20:00` late in the day): TC-030's preconditions
+- Run in order on one environment of their own (`DATA_NOW=2026-11-17T20:00`: the cases name the standard data's calls as made on that day): TC-030's preconditions
   (acme-twin connected, commit on, the default vault), then TC-034, TC-051, TC-052, TC-053, TC-054.
 - Claude Code is never a real one. `up.sh` puts the cases' fake (`tests/fixtures/obsidian/fake-claude.sh`) first on
   PATH in front of the data's own test fake (`<dir>/bin/claude-echo`) and refuses to when the data's fake isn't the
@@ -81,6 +81,32 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   step that installs a skill; a step may write and remove a made-up skill of the user's own there (TC-057).
 - **Echo's dictionary** is `up.sh`'s made-up one (Concept, Client, Control Plane with their other names), written into the
   test data's Recall folder as Echo keeps it; a step reads it with `echoctl brain taxonomy show`.
-- A step may also rename a call with `echoctl title <call> <title>` (TC-056: Echo keeps its stamp).
+- A step may also rename a call with `echoctl title <call> <title>` (TC-036, TC-056: Echo keeps its stamp).
 - TC-056 runs on an environment of its own (`SAME_SECOND=1 up.sh`: a made-up memo started in guest call 7's second, with the next stamp as Echo 0.10.0 gives it) and
   alone may write a vault's ledger as 1.0 before Echo #772 left it (`$S/vaults/<id>/ingest.json`, calls by folder).
+
+### #17's journey and the 0.8 list cut short (TC-063 on)
+- TC-063, TC-064, TC-065 and TC-066 each run on a fresh environment of their own, in that order; TC-068 on an
+  `OBSIDIAN_FROM=0.8` environment of its own. TC-067 is a person's, on their own desktop and accounts, before a release.
+- TC-064 uses the cases' fake Claude as TC-051 and TC-052 do (`<dir>/fake-ingest.json`, `<dir>/fake-answers.tsv`).
+- TC-065 and TC-066 may turn the plugin off and on, remove it and install it again from `$MARKET`
+  (`echoctl plugin disable | enable | remove | install obsidian --from local --yes`); TC-066 alone serves the window
+  again with Echo's picker stand-ins (`ECHOCTL_PICK_FOLDER`, `ECHOCTL_PICK_FILES`, debug builds: no dialog opens) and
+  checks they are in its environment before pressing *Choose…*.
+- TC-068 alone writes the 0.8 plugin's `vaults.json` cut short before the update, as a crash would leave it.
+
+### From #17 (Knowledge 0.1.1): what 1.0 no longer does, and why
+onetest-ai/echo-plugins#17's four cases (`tests/cases/knowledge/TC-001`–`TC-004`) are TC-063–TC-067 here. What they
+checked that the user's decisions for 1.0 removed (`.ai-run/reference/knowledge/INDEX.md`):
+
+| #17 checked | Gone because |
+|---|---|
+| The Ask tab: a streamed reply with a personal or vault skill picked and a page attached; Ask can't write or run Bash; the default profile's reply, Stop and send again | No Ask tab: *Ask the vault* opens Claude Code in Echo's panel (`ctx.claude.session`), in the vault as its own project (TC-037, TC-064 step 3) |
+| Curate (allow or deny each edit in Echo's own permission cards, a conversation stopped and resumed) and Research | Part of the Ask tab: the panel's Claude Code asks for its own permissions |
+| A prompt handed to the vault's live terminal by vault key; raw terminal ids refused | The same: Echo's panel owns the session; the plugin only opens it |
+| UI-only routes (mail, calls, preview, jobs, terminal resume) refused to the agent's `read` command | No such agent command: Claude in Echo runs only the plugin's ten reading commands without asking (TC-001, TC-002) |
+| Echo's native Knowledge engine and service: Echo's own `#kn` routes and `echo://page` links, the service refused to an undeclared plugin, Echo's native jobs closed with the plugin | #677's engine is this plugin's JS on Echo's generic services; Knowledge's place is its own activity with its own routes (`#obsidian:knowledge/…`, TC-063 step 8) |
+| Ask's conversation in the native terminal closed with the plugin's jobs when it is turned off | Echo's panel owns the session: a running one is the user's and stays, its tab goes once it ends (TC-066, TC-067) |
+| Echo's own facts vault, its notes and pipeline | Deleted from 0.8 on (TC-006) |
+| Recording or minutes starting Knowledge's own routine | No routine: Echo's events (`minutes_written`, `sources_changed`) and a queue (TC-044, TC-053) |
+| The Obsidian plugin installed beside Knowledge, neither reading the other's store | One plugin: `obsidian` is Knowledge |

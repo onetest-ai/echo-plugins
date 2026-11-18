@@ -29,6 +29,6 @@ asks, a Friday wrap-up, meeting prep — and get the answer in Telegram, Teams o
 - Runs on your AI profiles through Echo; costs as Claude Code reports them. Missed runs (Echo off) run once when Echo
   is back.
 
-Needs Echo 0.9.15 or later. `main.js` is its host half (schedule, runs, delivery), `client.js` its client half (the Settings section).
+Needs Echo 0.10.0 or later. `main.js` is its host half (schedule, runs, delivery), `client.js` its client half (the Settings section).
 
 Part of the [Echo plugins](../../README.md) marketplace.

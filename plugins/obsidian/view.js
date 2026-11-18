@@ -7,7 +7,7 @@
 
 export async function createKnowledge(ctx, hooks = {}) {
   const v1 = new URL(import.meta.url).search
-  const { KN_BASE, knDecode, knParseRoute, knRouteOf, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knKeepDraft, knRestoreDraft, knDropDraft, knLineDiff, knToolRows, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, knWhen, knHomeCards, knHomeNews, knHomeRecord, knTwinInstall, knTwinRemove } = await import(`./model.js${v1}`)
+  const { KN_BASE, knDecode, knParseRoute, knRouteOf, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knKeepDraft, knRestoreDraft, knDropDraft, knLineDiff, knToolRows, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, knWhen, knHomeCards, knHomeNews, knHomeRecord, knTwinInstall, knTwinRemove, knSaveVault, knNewPageFolder, knPagesNow, knPageEditing } = await import(`./model.js${v1}`)
   const { knRead, knAct, knConnectArgs, knUnpickOf } = await import(`./seam.js${v1}`)
 
   const timing = {}
@@ -335,7 +335,7 @@ export async function createKnowledge(ctx, hooks = {}) {
 
   // ── the header: Knowledge, the switcher, the vault's place, actions ──
   function switcherMenu() {
-    const e = knSwitcherEntries(vaults(), recallOn(), [])
+    const e = knSwitcherEntries(vaults().map((x) => ({ ...x, pages: pagesNow(x) })), recallOn(), [])
     const s = st()
     const item = (x) => {
       switch (x.kind) {
@@ -357,12 +357,14 @@ export async function createKnowledge(ctx, hooks = {}) {
     const icon = IC.gem
     return `<h2 class="kn-h2">Knowledge</h2><span class="kn-switch-wrap"><button class="kn-switch" data-kn="switcher" aria-haspopup="menu" aria-expanded="${!!s.switcher}"><span class="kn-gem">${icon}</span><span class="kn-switch-name">${esc(label)}</span><span class="kn-car" aria-hidden="true">▾</span></button>${s.switcher ? switcherMenu() : ''}</span>`
   }
+  /** A vault's pages: the tree's when it is that vault's (a page added in Echo counts at once), else as the host said. */
+  const pagesNow = (v) => knPagesNow(st().tree, v)
   function head() {
     const s = st(), v = vault()
     if (!v) return `<header class="kn-head">${title()}<span class="grow"></span></header>`
     const g = v.git
-    const where = v.available === false ? '<span class="kn-meta warn">The folder isn\'t there</span>'
-      : `<span class="kn-meta"><code title="${esc(v.root)}">${esc(short(v.root))}</code>${g ? ` · ${IC.git} ${esc(g.branch || 'detached')}` : ''}${v.pages != null ? ` · ${nf(v.pages)} pages` : ''}</span>`
+    const where = v.available === false ? `<span class="kn-meta warn">${v.given === false ? 'Echo doesn\'t give this folder now' : 'The folder isn\'t there'}</span>`
+      : `<span class="kn-meta"><code title="${esc(v.root)}">${esc(short(v.root))}</code>${g ? ` · ${IC.git} ${esc(g.branch || 'detached')}` : ''}${pagesNow(v) != null ? ` · ${nf(pagesNow(v))} pages` : ''}</span>`
     const menu = s.menu === 'vault' ? `<div class="menu kn-head-menu" role="menu"><button class="menu-item" role="menuitem" data-kn="reveal" data-path="">${/Windows/.test(navigator.userAgent) ? 'Show in Explorer' : 'Show in Finder'}</button><a class="menu-item" role="menuitem" data-ext href="${esc(obsidianHref((s.tree || {}).index || toPage((v.paths || {}).index)))}" data-kn="obsidian">Open in Obsidian</a><button class="menu-item" role="menuitem" data-kn="reread">Read the folder again</button><div class="menu-sep" role="separator"></div><button class="menu-item" role="menuitem" data-kn="tab" data-kn-tab="settings">Vault settings</button></div>` : ''
     const acts = v.available === false ? '' : `<button class="btn sm" data-kn="ask" title="Claude Code in this vault, in Echo's panel">${IC.ask} Ask the vault</button><button class="btn sm" data-kn="ing-add">${IC.tray} Add a source</button><button class="btn sm" data-kn="newpage">${IC.plus} New page</button><span class="kn-rel"><button class="icon-btn" data-kn="menu" data-menu="vault" aria-haspopup="menu" aria-expanded="${s.menu === 'vault'}" aria-label="More">${IC.more}</button>${menu}</span>`
     return `<header class="kn-head">${title()}${where}<span class="grow"></span>${acts}</header>`
@@ -387,6 +389,7 @@ export async function createKnowledge(ctx, hooks = {}) {
       </div>${recall}</div>`
   }
   function missingView(v) {
+    if (v.given === false) return `<div class="kn-empty"><span class="kn-gem big warn">${GEM_BIG}</span><h2>Echo doesn't give Knowledge ${esc(v.name)}'s folder now</h2><p class="kn-empty-lead"><code>${esc(v.root)}</code> — Knowledge was removed and installed again, or the folder was given back. Its settings, description and records are kept: pick the folder again to go on. Nothing is saved into it until then.</p><div class="kn-acts"><button class="btn primary" data-kn="give-again">Pick the folder again…</button><button class="btn ghost" data-kn="remove-ask">Remove from Echo…</button></div></div>`
     return `<div class="kn-empty"><span class="kn-gem big warn">${GEM_BIG}</span><h2>${esc(v.name)}'s folder isn't there</h2><p class="kn-empty-lead"><code>${esc(v.root)}</code> can't be found — a disk that isn't connected, or a folder moved. Nothing is saved into it until it's back.</p><div class="kn-acts"><button class="btn primary" data-kn="reread">Look again</button><button class="btn ghost" data-kn="remove-ask">Remove from Echo…</button></div></div>`
   }
 
@@ -2280,8 +2283,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     const s = st(), v = vault()
     // From Home or Health the tree may not be loaded yet: the sheet lists its folders.
     if (!s.tree || s.tree.vault !== v.id) await loadTree()
-    const folder = s.path ? s.path.split('/').slice(0, -1).join('/') : (s.tree && s.tree.root) || ''
-    s.sheet = { kind: 'newpage', name: name || '', folder: name ? (s.tree && s.tree.root) || folder : folder, template: '', row: true, templates: await listTemplates(v) }
+    s.sheet = { kind: 'newpage', name: name || '', folder: knNewPageFolder(name, s.tree ? s.tree.root : undefined, s.path), template: '', row: true, templates: await listTemplates(v) }
     s.focus = 'kn-pname'
     render()
   }
@@ -2440,9 +2442,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   }
   async function openSave(callName, vaultId) {
     const s = st(), k = (S.call && S.call.knowledge) || {}
-    const saved = new Set(((k.record || {}).saved || []).map((e) => e.vault))
-    const vs = (k.vaults || []).filter((v) => v.available)
-    const first = vaultId || (vs.find((v) => !saved.has(v.id)) || vs[0] || {}).id
+    const first = knSaveVault(k, vaultId)
     if (!first) return say('No vault to save into — connect one in Knowledge first.')
     s.chip = null
     s.sheet = { kind: 'save', call: callName, vault: first, preview: null, transcript: false, chat: false }
@@ -2477,7 +2477,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   function settingsVaults() {
     const d = st().data
     if (!d) { load().then(render); return '' }
-    const rows = d.vaults.map((v) => `<div class="set-row"><div class="kn-vrow"><span class="kn-gem">${IC.gem}</span><div><b>${esc(v.name)}${v.minutes && v.minutes.mode === 'auto' ? ' <span class="tag acc">★ minutes</span>' : ''}${v.available === false ? ' <span class="tag warn">folder not found</span>' : ''}</b><div class="set-sub kn-path-line" title="${esc(v.root)}"><code><bdi>${esc(short(v.root))}</bdi></code></div><div class="set-sub">${[v.pages != null ? many(v.pages, 'page') : '', v.git || v.in_git ? 'git' : '', v.minutes.mode === 'ask' ? 'minutes when I ask' : v.minutes.mode === 'off' ? 'no minutes' : '', esc(profName(v.profile))].filter(Boolean).join(' · ')}</div></div></div><div class="set-ctl"><button class="btn sm" data-kn="settings-open" data-id="${esc(v.id)}">Open</button></div></div>`).join('')
+    const rows = d.vaults.map((v) => `<div class="set-row"><div class="kn-vrow"><span class="kn-gem">${IC.gem}</span><div><b>${esc(v.name)}${v.minutes && v.minutes.mode === 'auto' ? ' <span class="tag acc">★ minutes</span>' : ''}${v.available === false ? ` <span class="tag warn">${v.given === false ? 'pick its folder again' : 'folder not found'}</span>` : ''}</b><div class="set-sub kn-path-line" title="${esc(v.root)}"><code><bdi>${esc(short(v.root))}</bdi></code></div><div class="set-sub">${[v.pages != null ? many(v.pages, 'page') : '', v.git || v.in_git ? 'git' : '', v.minutes.mode === 'ask' ? 'minutes when I ask' : v.minutes.mode === 'off' ? 'no minutes' : '', esc(profName(v.profile))].filter(Boolean).join(' · ')}</div></div></div><div class="set-ctl"><button class="btn sm" data-kn="settings-open" data-id="${esc(v.id)}">Open</button></div></div>`).join('')
     const add = `<div class="set-row"><div><b>Add a vault</b><div class="set-sub">Connect a folder you already have, or start a new one from Echo's twin starter.</div></div><div class="set-ctl"><button class="btn sm" data-kn="connect">Connect a folder…</button><button class="btn sm" data-kn="new">Start a new vault…</button></div></div>`
     return `<div class="set-sec"><h3>Vaults</h3><div class="set-card">${rows}${add}</div><p class="set-foot">Each vault's structure, meeting minutes and skills are in Knowledge → the vault → Settings, and its checks in the vault's Health.</p></div>`
   }
@@ -2565,6 +2565,7 @@ export async function createKnowledge(ctx, hooks = {}) {
       case 'obsidian': s.menu = null; setTimeout(render); return
       case 'copy': s.menu = null; try { ctx.ui.copy(d.text) } catch (err) { return say(String(err.message || err)) } return done('Copied.')
       case 'confirm-structure': try { await run('kn_confirm_structure', { id: s.vault }, 'structure'); s.tree = null; s.page = null; s.path = ''; await refreshAll(); await loadSettings(); render(); done('The structure is confirmed: Echo reads the vault by it.') } catch (err) { say(String(err.message || err)) } return
+      case 'give-again': try { const r = await run('kn_give_again', { id: s.vault }, 'give'); if (r && r.cancelled) return; await refreshAll(); done(`${vault() ? vault().name : 'The vault'}'s folder is given again.`) } catch (err) { say(String(err.message || err)) } return
       case 'reread': try { await run('kn_reread', { id: s.vault }, 'reread'); await refreshAll(); done('Read again.') } catch (err) { say(String(err.message || err)) } return
       // Ask the vault: Claude Code in the vault, in Echo's panel; a page or a skill is said, a skill's command copied.
       case 'ask': return askVault()
@@ -2839,7 +2840,7 @@ export async function createKnowledge(ctx, hooks = {}) {
   return {
     view, after, tick, load, loadVault, route: routeTo, home, overlay, data: () => st().data, vault: () => vault(), callChip, callMenu, countdownLine,
     settingsVaults, paletteActions, dropped, askVault, sheetKind: () => (st().sheet ? st().sheet.kind : null),
-    closeSheet: () => dropSheet(), asking: () => !!st().asking, closeAsking: () => { st().asking = null }, editing: () => !!(S.kn && S.kn.edit),
+    closeSheet: () => dropSheet(), asking: () => !!st().asking, closeAsking: () => { st().asking = null }, editing: () => knPageEditing(S.kn),
     badge: () => {
       const s = st(), h = s.hl && s.hl.vault === s.vault && s.hl.data, gi = s.ing && s.ing.vault === s.vault && s.ing.data
       return (gi ? knIngestWaiting(gi.runs) : 0) + (h ? knHealthList(h.findings).needs : 0)

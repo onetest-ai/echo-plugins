@@ -93,8 +93,14 @@ with it and what to leave alone. You correct the description, and from then on C
   its own). In data from before it, two calls may share a second: the second one's minutes aren't saved, and the Inbox
   says "Echo can't tell two calls of this second apart — open it and Save again".
 - **From Obsidian vaults 0.8**: your vaults, their descriptions and Claude's entries stay; each vault takes a call's
-  minutes only when you ask. Echo's own facts vault of 0.8 (the Knowledge switch, Knowledge → Notes) is gone.
-- Removing a vault from Echo takes all of this back; the folder stays as it is.
+  minutes only when you ask. Echo's own facts vault of 0.8 (the Knowledge switch, Knowledge → Notes) is gone. A list of
+  vaults that can't be read (cut short, broken by hand) is never written over: the next change keeps it as
+  `vaults.json.bad-<time>` in the plugin's folder and starts the list again.
+- **Folders Echo refuses** — a hidden folder, or one inside a hidden folder, isn't connected (Echo says why); a vault
+  whose folder became one is read only, said once above its tabs.
+- Removing a vault from Echo takes all of this back; the folder stays as it is. Removing Knowledge itself keeps its
+  data (the vaults, their descriptions and records), but Echo takes back the folders it gave: installed again, each
+  vault asks for its folder once (*Pick the folder again…*) and goes on as it was.
 
 Needs Echo 0.10.0 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
 entries; `client.js` wires the Knowledge activity (`view.js`, `model.js`, `knowledge.css`, through `seam.js` to the

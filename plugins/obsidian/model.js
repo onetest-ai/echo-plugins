@@ -921,4 +921,37 @@ async function knTwinRemove({ claude, call, vault, name }) {
 }
 
 
-export { KN_BASE, KN_TABS, knDecode, knParseRoute, knRouteOf, KN_CALLS_RULE, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knRepel, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knDraftKey, knKeepDraft, knRestoreDraft, knDropDraft, knEditText, knLineDiff, KN_FOLD, knToolRow, knFoldLabel, knToolRows, KN_HEALTH_GROUPS, knS, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, KN_INGEST_GROUPS, KN_CHANGE_KINDS, knUsd, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, KN_HOME_ROWS, KN_DAYS, KN_MONTHS, knWhen, knHomeCards, knHomeNews, knHomeRecord, KN_SKILL_GONE, KN_CLICK_GONE, knTwinInstall, knTwinRemove }
+
+// ── kn-window-choices: small decisions of the window, kept here so they are tested without a DOM (`ui.test.mjs`) ──
+/** The vault the Save sheet opens on: the one asked for; else a vault the call's minutes go to by themselves
+ *  (`targets`), else one its thread, client or the default routes it to whatever its mode or profile (`routed`) — each
+ *  first where it isn't saved yet, then even where it is; only then any other vault not saved in, else the first. */
+function knSaveVault(k, vaultId) {
+  if (vaultId) return vaultId
+  const saved = new Set((((k || {}).record || {}).saved || []).map((e) => e.vault))
+  const vs = ((k || {}).vaults || []).filter((v) => v.available)
+  const there = (id) => vs.some((v) => v.id === id)
+  const own = [...((k || {}).targets || []).map((t) => t && t.id), ...((k || {}).routed || [])].filter((id) => id && there(id))
+  return own.find((id) => !saved.has(id)) || own[0] || (vs.find((v) => !saved.has(v.id)) || vs[0] || {}).id || null
+}
+/** The folder the New page sheet opens on: a missing link's page goes in the pages' top folder (`root`, '' when the
+ *  pages are the vault's own root); otherwise the folder of the page open, else the top folder. */
+function knNewPageFolder(name, root, path) {
+  if (name) return root ?? ''
+  return path ? path.split('/').slice(0, -1).join('/') : root || ''
+}
+/** A vault's page count: the tree's when it is that vault's (a page added in Echo counts at once), else the host's. */
+function knPagesNow(tree, v) {
+  return tree && v && tree.vault === v.id && Array.isArray(tree.pages) ? tree.pages.length : v ? v.pages : null
+}
+/** Whether a page is being edited now: only while Pages shows its editor (another tab draws as Echo asks). */
+function knPageEditing(kn) {
+  return !!(kn && kn.edit && kn.tab === 'pages')
+}
+/** Whether the activity asks Echo to leave its box alone: never on a new address (it must draw), nor when forced. */
+function knHoldsBox({ force, hash, lastHash, editing }) {
+  return !force && hash === lastHash && !!editing
+}
+// end of the kn-window-choices block
+
+export { KN_BASE, KN_TABS, knDecode, knParseRoute, knRouteOf, KN_CALLS_RULE, knCallsRule, knTabCounts, knTabLabel, knSwitcherEntries, knChipState, knBuildTree, knPagesEmpty, knFilterGraph, knGraphStart, knIsolatedCount, knRepel, knForceSim, knLabelPlan, knGraphHits, knShortLabel, knDraftKey, knKeepDraft, knRestoreDraft, knDropDraft, knEditText, knLineDiff, KN_FOLD, knToolRow, knFoldLabel, knToolRows, KN_HEALTH_GROUPS, knS, KN_HEALTH_KINDS, knHealthList, knHealthSelect, knHealthTrend, knTrendPath, knFixAll, knFixSummary, knHealthLoad, knLintNotice, knVersus, knLintState, knHealthState, KN_INGEST_GROUPS, KN_CHANGE_KINDS, knUsd, knSourceState, knSourceChip, knIngestQueue, knIngestWaiting, knRunLine, knRunView, knIngestReview, knWriteSummary, knAddState, knAddArgs, knFirstOpen, knTakesDrops, knDropNote, knRunOpen, knRunMayLoad, knRunTake, KN_HOME_ROWS, KN_DAYS, KN_MONTHS, knWhen, knHomeCards, knHomeNews, knHomeRecord, KN_SKILL_GONE, KN_CLICK_GONE, knTwinInstall, knTwinRemove, knSaveVault, knNewPageFolder, knPagesNow, knPageEditing, knHoldsBox }

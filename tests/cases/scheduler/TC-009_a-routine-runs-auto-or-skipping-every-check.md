@@ -14,7 +14,7 @@ tags: [scheduler, permissions]
 # TC-009: A routine runs Auto or skipping every check
 
 ## Preconditions
-- A fresh environment from `up.sh` of its own (Echo 0.9.15, or a build with onetest-ai/echo#712); `{{base_url}}/#settings/scheduler:main` open
+- A fresh environment from `up.sh` of its own (Echo 0.10.0, or a build from its main with onetest-ai/echo#712); `{{base_url}}/#settings/scheduler:main` open
 
 **Changes:** `$R/auto-digest.md`, `$RUNS/auto-digest/`
 

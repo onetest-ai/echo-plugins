@@ -46,7 +46,7 @@ dir="$(cd "$dir" && pwd)"
   echoctl plugin install scheduler --from local --yes >> "$dir/install.log"
   # A routine written before the model was picked from a list: its model is free text. Off, so it never runs by itself.
   mkdir -p "$R"
-  # A routine written when its permissions could be "your folder session's" (`tools: folder`, Auto since Echo 0.9.15). Off.
+  # A routine written when its permissions could be "your folder session's" (`tools: folder`, Auto since Echo 0.10.0). Off.
   printf -- '---\nname: Folder notes\nschedule: daily 18:00\nprofile:\nmodel:\ntools: folder\ndeliver:\nmail_to:\nskip_empty: true\nenabled: false\n---\nWhat did I change in my notes today?\n' > "$R/folder-notes.md"
   printf -- '---\nname: Gateway digest\nschedule: weekdays 08:30\nprofile:\nmodel: acme-gw/sonnet-large\ntools: read\ndeliver:\nmail_to:\nskip_empty: true\nenabled: false\n---\nWhat changed in the Acme thread since yesterday?\n' > "$R/gateway-digest.md"
   # Echo's jobs as if they had run (Echo's own records of them, made up, in its words and counts only): a month of

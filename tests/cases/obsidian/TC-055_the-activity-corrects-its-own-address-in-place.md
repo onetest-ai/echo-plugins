@@ -24,5 +24,5 @@ tags: [obsidian, knowledge, activity, window, routes]
 | 1 | Open `<base_url>/#calls` (Echo opens a call's page), note `history.length`; then set the address to `#obsidian:knowledge` | The address becomes `#obsidian:knowledge/<the last or first vault>/home`; `history.length` grew by one (the step the user took), not two |
 | 2 | Back | The call's page again — never the bare `#obsidian:knowledge`, which would only correct itself again |
 | 3 | Knowledge → *Pages*, then Back | Back returns to Home: a tab the user opens is a step of its own |
-| 4 | Ingest → a run waiting for review (TC-052's or TC-061's) → *Discard the run* → *Discard*; Back | The address is `…/ingest` in place of the run's; Back doesn't open the discarded run |
+| 4 | Ingest → a run waiting for review (TC-052's, or on the minutes environment TC-061's: this step then runs after TC-061 step 5) → *Discard the run* → *Discard*; Back | The address is `…/ingest` in place of the run's; Back doesn't open the discarded run |
 | 5 | A vault made for this step (`mkdir -p "$VAULTS/gone"`, `ECHOCTL_PICK_FOLDER="$VAULTS/gone" obs new_vault '{"name":"Gone"}'`), opened in Knowledge, Settings → *Remove from Echo…* → *Remove from Echo*; Back | The address `#obsidian:knowledge` corrected to the next vault in place; Back never opens the removed vault's Settings |

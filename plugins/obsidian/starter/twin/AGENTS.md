@@ -39,6 +39,8 @@ knowledge/
 ├── profile/              → DIGITAL_PROFILE.md: who the owner is, how they work and write
 ├── topics/               → domain knowledge, concepts, how things work
 ├── clients/              → one page per client or organisation
+├── people/               → one page per person; Echo keeps only its own properties (origin, echo, reports_to,
+│                           reports, threads) — add to a page freely, never change those
 ├── activities/           → projects and initiatives the owner runs
 ├── notes/                → meeting notes and observations: YYYY-MM-DD-{slug}.md
 ├── media/                → articles, talks, interviews, public positions

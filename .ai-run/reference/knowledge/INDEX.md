@@ -44,6 +44,7 @@ Whatever it does on top of them is listed here with its reason; anything new nee
 | A mail's own text (body, to/cc, attachment names) read through `ctx.m365.mailThread` | Intake keeps no message text by design (only facts with quotes); a vault's skill may need the mail itself | no | only when a batch is prepared, once per message in it — never on the event (the queue holds Intake's facts and routing) |
 | On the app's start, the calls with minutes and Intake's mail since the last day seen (`echo.read('calls' \| 'sources', {since})`) go through the same routing as the events | Echo's events aren't replayed: a call or mail that came while the plugin wasn't running would never reach its vault | no | once a start; only what came since the last day seen (moved on only when both reads answered), each only when its record or ledger doesn't have it already (a note never written again by a catch-up) |
 | A queued call's minutes written into the vault's sources folder as a file (`echo/<date>-<slug>.md`: Echo's properties, then Echo's minutes as they are; transcript and chat only when the vault asks) | The vault's ingest skill reads files of its sources folder; the text stays Echo's | no | only when a batch is prepared (`prepare_sources`), once per call (the ledger remembers it, also once its file is deleted); one commit for the batch |
+| Echo's people (`echo.read('people')`: places, `reports_to`, `reports`) become person pages, `<pages>/people/<Name>.md` (Echo's properties only — origin, echo, reports_to, reports, threads — merged into the user's page; a new page's index row; a `log.md` line a batch) | The vault keeps people as pages of its own, where the user and Ingest write about them; Echo doesn't know vaults, and has no people-changed event to follow | no | in batches only, never per event, a page written only when Echo's properties changed, one commit of Echo's files a batch: with a call's minutes note (its participants, in the note's batch and commit) when the vault's minutes are Automatic; the catch-up on start at most once a day (Automatic vaults); `people_sync` / Settings → People on the user's click (any mode; the only one that writes a deleted page again) |
 | Health's AI check | Contradictions and stale pages are about the vault's own text | yes | on the user's click only |
 
 ## Done (2026-11-18)
@@ -60,3 +61,24 @@ The port is complete in `knowledge-1.0` (tracking PR #22 → `main`); Knowledge 
 - #32 step 9: #17's cases on this plugin's fixture (TC-063–TC-067; what 1.0 dropped is in
   `tests/cases/obsidian/README.md`, *From #17*), the 0.8 list cut short (TC-068), the full Knowledge and Scheduler
   suites as the release gate. #17 and onetest-ai/echo#677 close with it.
+
+## Done (2026-11-18, after 1.0)
+- Knowledge 1.1.0 (`knowledge-people`): Echo's people as person pages in the vault, routed thread → client → default
+  as minutes are, batched by the rule's row above (needs Echo 0.10.1: onetest-ai/echo#813's places and reporting line).
+  Choices within the user's decision: a person's threads are their places, then the open threads they were seen in
+  (no role); a people folder is the pages folder's own `people` (any case), else `people/` in it — Echo's detection
+  names none; a link (`reports_to`, `reports`) is `[[<file stem>|<name>]]` to the page as it is named now, else the
+  name; manual `save_minutes` into an Ask vault writes no person pages (Ask and Off: only on Update); the twin preset
+  gets `knowledge/people/README.md` and a People table.
+- Its review (same branch): the page's heading is the name as text (`mdText`); the index cell is made as a note's row
+  is (`catalogCell`: one line, `|` as `/` — no more, as for the notes); a page of the user's with the person's file
+  name and no `echo:` is left alone by the automatic batches and adopted by `people_sync`; Echo's properties are
+  compared by value; a blank or comment line inside Echo's `threads:` block belongs to it; one index write, one activity
+  row and a breath of Echo's host every 25 pages a batch, rows a stopped run owed kept in the ledger (`unindexed`).
+- **The AI-profile gate on person pages.** A thread's place goes into a vault only when the thread's AI profile is the
+  vault's (`sameProfile`): Echo's own thread profile, the `profile` of its `echo.read('threads')` row (onetest-ai/echo#818:
+  the thread's pin, else the default profile's id). A row without it (an Echo before #818) goes into no vault. Echo's
+  threads and clients are read once a run (a save's batch, an Update, or the catch-up over every vault); no calls are
+  read for it. The minutes' own gate is unchanged: per call, by the call's profile (a call may run on its own pin).
+  `reports_to` / `reports` name only people with a place in the vault, so no one's name crosses to a vault on another
+  profile.

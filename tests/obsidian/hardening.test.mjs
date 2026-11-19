@@ -163,13 +163,16 @@ test('a call\'s note another process is writing isn\'t written here too (a marke
 
 // ── 5. the catch-up ──
 
+/** The catch-up's answer about calls and mail (its person pages are people.test.mjs's). */
+const callsCaughtUp = async (w) => { const { people, ...r } = await w.ctx.run('catch_up'); return r }
+
 test('the catch-up: a first start notes the day; the next saves only calls with no record and queues only what the ledger hasn\'t; a failed read keeps the day', async () => {
   const later = (folder, title, day) => call(folder, title, { started_at: `${day}T10:00:00+02:00`, ended_at: `${day}T10:30:00+02:00` })
   const w = world({ calls: [later('2026-11-10_100000-a', 'A', '2026-11-10'), later('2026-11-11_100000-b', 'B', '2026-11-11'), later('2026-11-12_100000-c', 'C', '2026-11-12')] })
   const v = await w.vault('Twin')
   await w.ctx.run('default', { id: v.id })
   await w.ctx.run('set', { id: v.id, key: 'ingest.calls', value: 'add' })
-  assert.deepEqual(await w.ctx.run('catch_up'), { first: true, ok: true })
+  assert.deepEqual(await callsCaughtUp(w), { first: true, ok: true })
   assert.ok(!exists(v.root, 'knowledge/notes/2026-11-10-a.md'), 'a first start saves nothing')
   // B saved before (by hand), C's source written and done: the catch-up leaves both.
   await w.ctx.run('save_minutes', { call: '2026-11-11_100000-b', vault: v.id })
@@ -178,7 +181,7 @@ test('the catch-up: a first start notes the day; the next saves only calls with 
   await w.ctx.run('skip_source', { vault: v.id, path: 'raw_inbox/echo/2026-11-12-c.md' })
   w.ctx.files['seen.json'] = JSON.stringify({ since: '2026-11-09' })
   const before = read(v.root, 'knowledge/notes/2026-11-11-b.md')
-  assert.deepEqual(await w.ctx.run('catch_up'), { first: false, ok: true })
+  assert.deepEqual(await callsCaughtUp(w), { first: false, ok: true })
   assert.ok(exists(v.root, 'knowledge/notes/2026-11-10-a.md'), 'A had no record: saved')
   assert.equal(read(v.root, 'knowledge/notes/2026-11-11-b.md'), before, 'B: its record has the vault')
   const l = ledgerOf(w.ctx, v.id)
@@ -188,7 +191,7 @@ test('the catch-up: a first start notes the day; the next saves only calls with 
   w.ctx.files['seen.json'] = JSON.stringify({ since: '2026-11-09' })
   const read0 = w.ctx.echo.read
   w.ctx.echo.read = (kind, ...a) => { if (kind === 'sources') throw new Error('Intake is busy'); return read0(kind, ...a) }
-  assert.deepEqual(await w.ctx.run('catch_up'), { first: false, ok: false })
+  assert.deepEqual(await callsCaughtUp(w), { first: false, ok: false })
   assert.equal(JSON.parse(w.ctx.files['seen.json']).since, '2026-11-09')
 })
 

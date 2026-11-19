@@ -1,6 +1,6 @@
 ---
 id: TC-035
-title: A vault's Settings tab — the structure a 0.8 vault confirms, 0.8's "What Claude knows" (its state, the When-line and the five parts changed in place, read again) and "For whom", then #17's Structure, Meeting minutes, Ingest, Ask, Schema, Skills and Git & AI; a setting kept; Remove asks first
+title: A vault's Settings tab — the structure a 0.8 vault confirms, 0.8's "What Claude knows" (its state, the When-line and the five parts changed in place, read again) and "For whom", then #17's Structure, Meeting minutes, People, Ingest, Ask, Schema, Skills and Git & AI; a setting kept; Remove asks first
 priority: critical
 type: functional
 requirements: [F-OB-37, F-OB-38]
@@ -26,11 +26,11 @@ tags: [obsidian, knowledge, window, settings, description]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `#obsidian:knowledge/acme-twin/settings` | The nav: What Claude knows, Structure, Meeting minutes, Ingest, Ask, Schema & vocabulary, Skills, Git & AI, Health →, Remove from Echo…; *What Claude knows* first: "It couldn't be read. … a fake here" with *Try again* (the fake Claude); *For whom* "Yours — no client or thread yet." with *Add a client or thread…*; *What Echo read* with *Read it again*; the When-line and the five parts, each with *Change* or *Write it* |
+| 1 | `#obsidian:knowledge/acme-twin/settings` | The nav: What Claude knows, Structure, Meeting minutes, People, Ingest, Ask, Schema & vocabulary, Skills, Git & AI, Health →, Remove from Echo…; *What Claude knows* first: "It couldn't be read. … a fake here" with *Try again* (the fake Claude); *For whom* "Yours — no client or thread yet." with *Add a client or thread…*; *What Echo read* with *Read it again*; the When-line and the five parts, each with *Change* or *Write it* |
 | 2 | *Write it* on *What it is*, type, wait 3 s, *Save* | The field keeps the text while Echo redraws; saved: the row shows it; `obs view` has it in the vault's `description.what`; Claude's entry is rebuilt (TC-002) |
 | 3 | *Add a client or thread…* → a client | A chip with its name and ×; `obs view`'s `belongs` has it; × takes it away |
 | 4 | `obs confirm '{"id":"acme-twin"}'` after a When-line; reload | The banner is gone (ready) |
-| 5 | The nav's sections in turn | Structure (Name, Pages live in knowledge, Index, Meeting notes, Sources, *Read again*); Meeting minutes (Automatically · Only when I ask · Never, As, Also include, Preview); Ingest (the skill, the new calls' rule); Ask (*Ask the vault*); Schema (AGENTS.md, TAG_TAXONOMY.md *Open*); Skills (ingest, *Run in Claude*, the twin starter row); Git & AI (main, *Commit what Echo writes*, AI profile, Echo's index) |
+| 5 | The nav's sections in turn | Structure (Name, Pages live in knowledge, Index, Meeting notes, Sources, *Read again*); Meeting minutes (Automatically · Only when I ask · Never, As, Also include, Preview); People (*Update person pages*, TC-069); Ingest (the skill, the new calls' rule); Ask (*Ask the vault*); Schema (AGENTS.md, TAG_TAXONOMY.md *Open*); Skills (ingest, *Run in Claude*, the twin starter row); Git & AI (main, *Commit what Echo writes*, AI profile, Echo's index) |
 | 6 | *Commit what Echo writes* off, then on | Each kept (`obs view`'s `commit`) |
 | 7 | *Remove from Echo…* → *Keep it* | The sheet "Remove acme-twin from Echo?" says the folder stays; *Keep it* keeps the vault |
 | 8 | On `OBSIDIAN_FROM=0.8`'s environment, updated (TC-006): acme-wiki's Settings | Above Structure: "Echo found this vault's shape and doesn't use it yet. … Echo reads the whole folder as pages, as Obsidian vaults 0.8 did." with *Confirm the structure*; *Pages live in* "(the folder itself)" |

@@ -69,6 +69,13 @@ without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `wher
   that vault's minutes are Auto); notes it wrote say `origin: echo` and `echo_call:`. Don't write minutes into a vault
   yourself: when the user asks, `echoctl plugin call obsidian save_minutes '{"call":"<call folder>"}'` (it writes, so
   it asks first); `route {"call"}` says where a call would go and why.
+- Echo keeps a page for each of the user's people (`people/<Name>.md` in the pages folder, `origin: echo` and
+  `echo: echo://person/…`): its properties `origin`, `echo`, `reports_to`, `reports` and `threads` are Echo's — never
+  change them; add what you know about the person to the rest of the page (other properties, the body), which is the
+  user's. Find a person's page by its `echo:` (`where {"vault","prop":"echo","value":"echo://person/<key>"}`), not by
+  its file name: the user may have renamed it. A page of the user's with a person's name and no `echo:` is theirs:
+  Echo adopts it only when the user clicks Update person pages. `people_sync '{"id":"<vault>"}'` brings them up to date (it writes, so
+  it asks first); don't create a person's page by hand where Echo keeps them.
 - A vault's sources folder (`raw_inbox/` and the like) holds what came in as it came: never edit or delete a source.
   A web page there (`raw_inbox/web/`, `kind: web`, its `url`) was read once when the user added it, its pictures in the
   folder of its name; never fetch it again to "refresh" it.

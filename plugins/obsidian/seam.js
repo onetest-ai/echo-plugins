@@ -81,7 +81,7 @@ const ACTIONS = {
   kn_remove: ['remove'], kn_reread: ['reread'], kn_confirm_structure: ['confirm_structure'], kn_set: ['set'], kn_ignore: ['ignore'], kn_call_choice: ['call_choice'],
   kn_new_page: ['new_page', (a) => ({ id: a.id, folder: a.folder || '', title: a.name, template: a.template || null, index_row: !!a.row })],
   kn_add: ['add', (a) => ({ root: a.pick, name: a.name, minutes: a.minutes, commit: !!a.commit, profile: a.profile || '', anyway: true })],
-  kn_new: ['new_vault'], kn_save_minutes: ['save_minutes'], kn_past: ['past'], kn_twin: ['twin'],
+  kn_new: ['new_vault'], kn_save_minutes: ['save_minutes'], kn_past: ['past'], kn_twin: ['twin'], kn_people_sync: ['people_sync'],
   kn_fix: ['fix'], kn_fix_all: ['fix_all'], kn_lint: ['lint'], kn_lint_stop: ['lint_stop'],
   kn_ingest_run: ['ingest_go'], kn_ingest_stop: ['ingest_stop'], kn_change: ['change'], kn_ingest_apply: ['ingest_apply'],
   kn_ingest_discard: ['ingest_discard'], kn_ingest_requeue: ['ingest_requeue'], kn_source_skip: ['source_skip'],

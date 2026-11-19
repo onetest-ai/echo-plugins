@@ -33,7 +33,8 @@ export function minutesParts(md, body = true) {
 }
 
 /** Echo's data: `calls` [{folder, title, notes, profile, threads: [ids], app, started_at, ended_at, memo, transcript,
- *  chat, attendees: [{name, email}]}], `threads` [{id, name, client}], `clients` [{id, name}], `people` [{key, name,
+ *  chat, attendees: [{name, email}]}], `threads` [{id, name, client, profile}] (`profile`: the thread's AI profile, as
+ *  Echo #818 gives it — the default `system` when not given; `null`: a row without it, as an Echo before #818), `clients` [{id, name}], `people` [{key, name,
  *  email}], `mail` (Intake's items), `me`. Its `read` kinds for fakeCtx's `echo`, `payload(folder)` (minutes_written). */
 export function echoData({ calls = [], threads = [], clients = [], people = [], mail = [], me = { name: null, email: null } } = {}) {
   const thread = (id) => { const t = threads.find((x) => x.id === id); if (!t) return null; const c = clients.find((x) => x.id === t.client); return { id: t.id, name: t.name, client: t.client || null, client_name: c ? c.name : null } }
@@ -67,7 +68,7 @@ export function echoData({ calls = [], threads = [], clients = [], people = [], 
     return out
   }
   const day = (c) => (c.started_at || '2026-11-05T09:00:12+02:00').slice(0, 10)
-  const callsRead = (o = {}) => calls.filter((c) => (!o.since || day(c) >= o.since) && (!o.until || day(c) <= o.until)).slice().reverse().slice(0, o.limit || 50).map((c) => {
+  const callsRead = (o = {}) => calls.filter((c) => (!o.since || day(c) >= o.since) && (!o.until || day(c) <= o.until) && (!o.thread || (c.threads || []).includes(o.thread))).slice().reverse().slice(0, o.limit || 50).map((c) => {
     const refs = refsOf(c)
     return { id: `call:${c.folder}`, stamp: stampOf(c.folder), date: day(c), ...facts(c), minutes: c.notes != null, transcript: c.transcript != null, chat: !!(c.chat && c.chat.length), people: attendees(c).map((a) => a.name), participants: participants(c), threads: refs, client: clientOf(refs), profile: c.profile === undefined ? 'system' : c.profile }
   })
@@ -85,7 +86,25 @@ export function echoData({ calls = [], threads = [], clients = [], people = [], 
     return { id: `call:${folder}`, link: `echo://call/${folder}`, call: folder, stamp: stampOf(folder), revision: minutes.revision, rewritten, client: clientOf(refs), threads: refs, profile: c.profile === undefined ? 'system' : c.profile, participants: participants(c), minutes, ...facts(c) }
   }
   return {
-    read: { clients, threads: threads.map((t) => ({ ...t, stage: 'active', group: 'delivery' })), people, me, source, calls: callsRead, sources },
+    read: { clients, threads: threads.map((t) => ({ ...t, stage: 'active', group: 'delivery', ...(t.profile === null ? {} : { profile: t.profile || 'system' }) })), people, me, source, calls: callsRead, sources },
     payload, calls, thread,
   }
 }
+
+/** People as `echo.read('people')` gives them (share.rs `people`, onetest-ai/echo#813), made up: their places in open
+ *  threads (role and stance null when unset), their reporting line (`reports_to` null when the boss isn't listed), no
+ *  facts or quotes. Of the default attendees (Dana Reyes, Alex Doe, Sam Rivera), Dana and Alex are listed; Sam isn't. */
+export const PEOPLE_THREADS = [{ id: 'pilot', name: 'Acme pilot', client: 'acme' }, { id: 'pricing', name: 'Pricing', client: 'acme' }, { id: 'globex-deal', name: 'Globex deal', client: 'globex' }]
+export const PEOPLE_CLIENTS = [{ id: 'acme', name: 'Acme' }, { id: 'globex', name: 'Globex' }]
+const who = (key, name) => ({ key, name })
+const person = (key, name, more = {}) => ({ key, name, aliases: [], email: key, also: [], organisation: null, client: null, title: null, threads: [], places: [], reports_to: null, reports: [], link: `echo://person/${key}`, ...more })
+export const PEOPLE = [
+  person('dana@acme.example', 'Dana Reyes', { organisation: 'Acme', client: 'acme', title: 'Delivery lead', threads: ['pilot'], places: [{ thread: 'pilot', role: 'sponsor', stance: 'supportive' }], reports_to: who('grace@acme.example', 'Grace Hopper'), reports: [who('alex@acme.example', 'Alex Doe')] }),
+  person('alex@acme.example', 'Alex Doe', { organisation: 'Acme', client: 'acme', threads: ['pilot'], places: [{ thread: 'pilot', role: null, stance: null }], reports_to: who('dana@acme.example', 'Dana Reyes') }),
+  person('grace@acme.example', 'Grace Hopper', { organisation: 'Acme', client: 'acme', title: 'CFO', threads: ['pricing'], places: [{ thread: 'pricing', role: 'budget owner', stance: 'sceptic' }], reports: [who('dana@acme.example', 'Dana Reyes')] }),
+  person('lee@globex.example', 'Lee Park', { organisation: 'Globex', client: 'globex', threads: ['globex-deal', 'pilot'], places: [{ thread: 'globex-deal', role: 'champion', stance: null }] }),
+  person('eve@acme.example', '../../Eve <x>/#1', { threads: ['pilot'], places: [{ thread: 'pilot', role: 'reviewer', stance: null }] }),
+  person('old@acme.example', 'Old Timer', { threads: ['closed-thread'], places: [] }),
+]
+/** A fresh copy of PEOPLE (a test changes a person's place). */
+export const people = () => JSON.parse(JSON.stringify(PEOPLE))

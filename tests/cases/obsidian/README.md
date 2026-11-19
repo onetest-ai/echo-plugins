@@ -51,6 +51,11 @@ tests/fixtures/obsidian/down.sh <dir>                     # after the last case
   >> <dir>/env`; then serve the window from that env. Stop it by its pid at the end. A step may read and empty
   `<dir>/graph.log` (what Echo asked of it).
 
+### Person pages (TC-069)
+- On an environment of its own (`DATA_NOW=2026-11-17T20:00`), on an Echo with onetest-ai/echo#813 (`echo.read('people')`
+  with places and the reporting line). Besides the above, a step may change Echo's made-up people as the user would in
+  People (`echoctl project person <thread> <name> --email … --role …`) and run `catch_up` (the app's start, as a command).
+
 ### Health's fixes, AI checks and Ingest runs (TC-034, TC-051 on)
 - Run in order on one environment of their own (`DATA_NOW=2026-11-17T20:00`: the cases name the standard data's calls as made on that day): TC-030's preconditions
   (acme-twin connected, commit on, the default vault), then TC-034, TC-051, TC-052, TC-053, TC-054.

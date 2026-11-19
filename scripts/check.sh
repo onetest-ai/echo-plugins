@@ -8,6 +8,8 @@
 # - unit: `node --test 'tests/**/*.test.mjs'`;
 # - map: `python3 -I tests/tools/feature-map.py check`.
 # The functional cases are not here: .ai-run/guides/testing/plugin-testing.md says which to run.
+# echoctl runs on empty scratch folders (ECHOCTL_HOME, ECHOCTL_CONFIG_DIR), never on the caller's Echo: `plugin check`
+# needs no data, and a development build under Claude Code refuses to run without them.
 set -uo pipefail
 # A relative $ECHOCTL is the caller's: made absolute before the cd below.
 case "${ECHOCTL:-}" in ""|/*) ;; *) ECHOCTL="$PWD/$ECHOCTL" ;; esac
@@ -29,9 +31,13 @@ else
   # and said so. An installed Echo is never stood in for.
   folders=(plugins/*)
   ahead="$(mktemp -d)"
+  scratch="$(mktemp -d)"
+  trap 'rm -rf "$ahead" "$scratch"' EXIT
+  mkdir "$scratch/home" "$scratch/config"
+  run_echoctl() { ECHOCTL_HOME="$scratch/home" ECHOCTL_CONFIG_DIR="$scratch/config" "$echoctl" "$@"; }
   case "$echoctl" in
     */target/debug/echoctl)
-      built="$("$echoctl" --version | awk '{print $2}')"
+      built="$(run_echoctl --version | awk '{print $2}')"
       repo="${echoctl%/target/debug/echoctl}"
       for i in "${!folders[@]}"; do
         f="${folders[$i]}"
@@ -46,7 +52,7 @@ else
         fi
       done ;;
   esac
-  out="$("$echoctl" plugin check --json "${folders[@]}")"
+  out="$(run_echoctl plugin check --json "${folders[@]}")"
   code=$?
   # Its JSON: {ok, problems: [{id, file, what}], plugins: [{id, folder, ok}]}; plus: every plugin has its part for
   # Claude — `agent.summary` and `agent/CLAUDE.md` (`agent` may hold only a prefix).
@@ -77,7 +83,7 @@ for x in others:
     print("  - %s %s: %s" % (x.get("id", ""), x.get("file", ""), x["what"]))
 sys.exit(1 if bad or others or not r.get("ok") else 0)
 ' && [ "$code" = 0 ] || fail package
-  rm -rf "$ahead"
+  rm -rf "$ahead" "$scratch"
 fi
 
 echo "== unit"

@@ -33,10 +33,10 @@ else
   ahead="$(mktemp -d)"
   scratch="$(mktemp -d)"
   mkdir "$scratch/home" "$scratch/config"
-  export ECHOCTL_HOME="$scratch/home" ECHOCTL_CONFIG_DIR="$scratch/config"
+  run_echoctl() { ECHOCTL_HOME="$scratch/home" ECHOCTL_CONFIG_DIR="$scratch/config" "$echoctl" "$@"; }
   case "$echoctl" in
     */target/debug/echoctl)
-      built="$("$echoctl" --version | awk '{print $2}')"
+      built="$(run_echoctl --version | awk '{print $2}')"
       repo="${echoctl%/target/debug/echoctl}"
       for i in "${!folders[@]}"; do
         f="${folders[$i]}"
@@ -51,7 +51,7 @@ else
         fi
       done ;;
   esac
-  out="$("$echoctl" plugin check --json "${folders[@]}")"
+  out="$(run_echoctl plugin check --json "${folders[@]}")"
   code=$?
   # Its JSON: {ok, problems: [{id, file, what}], plugins: [{id, folder, ok}]}; plus: every plugin has its part for
   # Claude — `agent.summary` and `agent/CLAUDE.md` (`agent` may hold only a prefix).
@@ -83,7 +83,6 @@ for x in others:
 sys.exit(1 if bad or others or not r.get("ok") else 0)
 ' && [ "$code" = 0 ] || fail package
   rm -rf "$ahead" "$scratch"
-  unset ECHOCTL_HOME ECHOCTL_CONFIG_DIR
 fi
 
 echo "== unit"

@@ -32,6 +32,7 @@ else
   folders=(plugins/*)
   ahead="$(mktemp -d)"
   scratch="$(mktemp -d)"
+  trap 'rm -rf "$ahead" "$scratch"' EXIT
   mkdir "$scratch/home" "$scratch/config"
   run_echoctl() { ECHOCTL_HOME="$scratch/home" ECHOCTL_CONFIG_DIR="$scratch/config" "$echoctl" "$@"; }
   case "$echoctl" in

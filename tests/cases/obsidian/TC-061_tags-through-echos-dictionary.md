@@ -17,7 +17,7 @@ tags: [obsidian, knowledge, health, ingest, dictionary, tags]
 - `. <dir>/env`, `obs() { echoctl plugin call obsidian "$@"; }`; acme-twin connected
   (`ECHOCTL_PICK_FOLDER="$VAULTS/acme-twin" obs add '{"wait":true}'`), its taxonomy `meeting, client, concept`
 - `up.sh`'s made-up dictionary (Settings → Vocabulary): Concept (also "idea"), Client (also "customer"), Control Plane
-  (also "CP", spelled "controlplane"); `echoctl brain taxonomy show | grep -c '"name"'` counts them
+  (also "CP", spelled "controlplane"); `echoctl intake taxonomy show | grep -c '"name"'` counts them
 - A page the user wrote with tags the taxonomy doesn't allow: `printf -- '---\ntitle: Plan\ntags: [idea, customer]\n---\n# Plan\n\nSee [[acme]].\n' > "$VAULTS/acme-twin/knowledge/topics/plan.md"`
 - For the Ingest run (`<dir>/fake-ingest.json`, the cases' fake Claude Code): `{"write": {"knowledge/topics/ship.md": "---\ntitle: Ship the rollout\ntags: [idea, customer]\n---\n# Ship the rollout\n\nThe #controlplane ships in May.\n"}, "changes": {"changes": [{"path": "knowledge/topics/ship.md", "why": "The page the rollout plan describes", "quotes": [{"source": "<a source of the vault>", "text": "…"}]}]}}`
 
@@ -30,5 +30,5 @@ tags: [obsidian, knowledge, health, ingest, dictionary, tags]
 | 3 | The finding in the window (Health → *A tag the taxonomy doesn't allow* → plan.md's #idea) | Its fix's choices list *Use #concept — Concept in Echo's dictionary* first; nothing is written until a choice is fixed |
 | 4 | `obs ingest_go '{"id":"acme-twin","sources":["<a source>"],"wait":true}'`; `obs ingest_changes '{"id":"acme-twin","run":"<run>"}'` → ship.md's `retagged`; `obs ingest_text … ship.md` | `retagged` `idea → concept` and `customer → client` (each with its term); the run's text `tags: [concept, client]` — `#controlplane` left (the taxonomy allows no tag for it: Health's to say) |
 | 5 | The run in the window (`#obsidian:knowledge/acme-twin/ingest/<run>`) | ship.md's change says "Tags as Echo's dictionary names them: #idea → #concept, #customer → #client." under its diff |
-| 6 | `echoctl brain taxonomy show \| grep -c '"name"'` | The same count as before: Knowledge only reads the dictionary |
+| 6 | `echoctl intake taxonomy show \| grep -c '"name"'` | The same count as before: Knowledge only reads the dictionary |
 | 7 | Remove plan.md (`rm "$VAULTS/acme-twin/knowledge/topics/plan.md"`) and `<dir>/fake-ingest.json`; discard the run | — |

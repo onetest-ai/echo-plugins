@@ -1,0 +1,14 @@
+# Windows only: Echo finds Claude Code as claude.exe or claude.cmd, and a .cmd goes through cmd.exe, which cuts a
+# command line at 8191 characters and breaks it at a newline — a retelling's prompt is both. This launcher, built by
+# up.sh into <dir>/bin/claude.exe, runs the fake (fake_claude.py beside it) with its arguments as they are.
+[package]
+name = "fake-claude-launcher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "claude"
+path = "src/main.rs"
+
+[workspace]

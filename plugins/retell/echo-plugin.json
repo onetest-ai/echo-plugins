@@ -1,0 +1,123 @@
+{
+  "id": "retell",
+  "name": "Retell",
+  "version": "0.26.1",
+  "echo": ">=0.10.3",
+  "summary": "Retells an article (a link, a PDF, a Word or PowerPoint file, or pasted text) so it can be listened to, and lets you practise speaking English on it: quizzes, spoken answers and live talks with a coach.",
+  "uses": {
+    "claude": {},
+    "schedule": {},
+    "network": {
+      "hosts_from": [
+        "tts"
+      ],
+      "web": true
+    },
+    "microphone": {},
+    "me": {}
+  },
+  "agent": {
+    "summary": "Articles the user listened to as retellings, and their English practice on them: quizzes, talks with a coach, saved phrases",
+    "prefix": "rt"
+  },
+  "main": "main.js",
+  "client": "client.js",
+  "settings": [
+    {
+      "key": "tts",
+      "label": "Speech server",
+      "type": "string",
+      "help": "An address that speaks the OpenAI API: https://api.openai.com, or a server in your network such as http://voice.local"
+    },
+    {
+      "key": "api_key",
+      "label": "API key",
+      "type": "secret",
+      "help": "The speech server's API key (for OpenAI: sk-…). Leave empty for a server in your network that needs none."
+    },
+    {
+      "key": "tts_model",
+      "label": "Voice model",
+      "type": "string",
+      "default": "gpt-4o-mini-tts",
+      "help": "The model that speaks, e.g. gpt-4o-mini-tts or tts-1; Settings → Retell voice lists what your server has"
+    },
+    {
+      "key": "voice",
+      "label": "Voice",
+      "type": "string",
+      "default": "coral",
+      "help": "alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar, or a voice your server has"
+    },
+    {
+      "key": "style",
+      "label": "Speaking style",
+      "type": "string",
+      "default": "warm, natural storytelling",
+      "help": "How the voice should speak, e.g. calm, warm, lively (English works best; tts-1 and tts-1-hd ignore it)"
+    },
+    {
+      "key": "stt_model",
+      "label": "Speech recognition model",
+      "type": "string",
+      "default": "gpt-4o-mini-transcribe",
+      "help": "The model that writes down what you say, e.g. gpt-4o-mini-transcribe, gpt-4o-transcribe or whisper-1"
+    },
+    {
+      "key": "factcheck",
+      "label": "Fact check",
+      "type": "string",
+      "default": "fix",
+      "help": "fix: check the retelling against the article and correct what is wrong; report: only report; off: skip. The report is under “Facts” in the article."
+    },
+    {
+      "key": "lang",
+      "label": "Retelling language",
+      "type": "string",
+      "default": "en",
+      "help": "en, ru, uk … the language the retelling is written (and voiced) in; each article can have its own (Add → Language)"
+    },
+    {
+      "key": "explain_lang",
+      "label": "Language of explanations",
+      "type": "string",
+      "default": "English",
+      "help": "The language feedback on your English, phrase cards and reading lists are explained in, e.g. English, Russian, Ukrainian, German (English examples stay English)"
+    },
+    {
+      "key": "notify",
+      "label": "Notify when ready",
+      "type": "string",
+      "default": "on",
+      "help": "on: Echo shows a notification when an article is ready to listen to (or needs attention); off: no notifications"
+    },
+    {
+      "key": "review_remind",
+      "label": "Remind to review phrases",
+      "type": "string",
+      "default": "on",
+      "help": "on: once a day (after 9:00) Echo reminds you when phrases from My phrases are due for review; off: no reminder"
+    },
+    {
+      "key": "pdf_pages",
+      "label": "PDF pages per part",
+      "type": "string",
+      "default": "20",
+      "help": "A PDF longer than this is split into parts of this many pages: each part is an article of its own, all in one topic"
+    },
+    {
+      "key": "keep_articles",
+      "label": "Keep articles",
+      "type": "string",
+      "default": "10",
+      "help": "How many articles to keep; older ones are deleted (those you pinned stay). 0 keeps all."
+    },
+    {
+      "key": "max_mb",
+      "label": "Storage limit, MB",
+      "type": "string",
+      "default": "500",
+      "help": "When the articles take more, the oldest unpinned ones are deleted. 0 means no limit."
+    }
+  ]
+}

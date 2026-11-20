@@ -1,8 +1,8 @@
 {
   "id": "retell",
   "name": "Retell",
-  "version": "0.26.1",
-  "echo": ">=0.10.3",
+  "version": "0.27.0",
+  "echo": ">=0.10.5",
   "summary": "Retells an article (a link, a PDF, a Word or PowerPoint file, or pasted text) so it can be listened to, and lets you practise speaking English on it: quizzes, spoken answers and live talks with a coach.",
   "uses": {
     "claude": {},
@@ -17,7 +17,7 @@
     "me": {}
   },
   "agent": {
-    "summary": "Articles the user listened to as retellings, and their English practice on them: quizzes, talks with a coach, saved phrases",
+    "summary": "Articles the user listened to as retellings, and their English practice on them: read the library, an article's retelling and memo, questions asked, quizzes and saved phrases; queue a link or a phrase",
     "prefix": "rt"
   },
   "main": "main.js",
@@ -27,7 +27,7 @@
       "key": "tts",
       "label": "Speech server",
       "type": "string",
-      "help": "An address that speaks the OpenAI API: https://api.openai.com, or a server in your network such as http://voice.local"
+      "help": "An address that speaks the OpenAI API: https://api.openai.com, or a server in your network such as http://voice.local (over http:// the API key travels unencrypted: use https:// where the server has it)"
     },
     {
       "key": "api_key",
@@ -87,16 +87,16 @@
     {
       "key": "notify",
       "label": "Notify when ready",
-      "type": "string",
-      "default": "on",
-      "help": "on: Echo shows a notification when an article is ready to listen to (or needs attention); off: no notifications"
+      "type": "bool",
+      "default": true,
+      "help": "Echo shows a notification when an article is ready to listen to (or needs attention)"
     },
     {
       "key": "review_remind",
       "label": "Remind to review phrases",
-      "type": "string",
-      "default": "on",
-      "help": "on: once a day (after 9:00) Echo reminds you when phrases from My phrases are due for review; off: no reminder"
+      "type": "bool",
+      "default": true,
+      "help": "Once a day (after 9:00) Echo reminds you when phrases from My phrases are due for review"
     },
     {
       "key": "pdf_pages",

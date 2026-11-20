@@ -22,3 +22,4 @@ tags: [retell, factcheck]
 |---|--------|----------------|
 | 1 | Add `https://docs.acme-test.example/posts/fact-trap.html`; wait until ready | `ready` |
 | 2 | Read `factcheck.json` and `script.json` | An issue (`unsupported`, `applied: true`) for "…ninety percent…"; no block says it any more |
+| 3 | `fake-claude.log`, this article's runs | One `check` run (it rewrote the block itself, `fixed.json`): no run per block |

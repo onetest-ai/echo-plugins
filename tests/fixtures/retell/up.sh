@@ -73,6 +73,10 @@ EOF
 
 (
   . "$dir/env"
+  # Never the user's own Echo: every echoctl call below goes to this environment's data, or none runs.
+  case "${ECHOCTL_HOME:-}" in "$dir"/*) ;; *) echo "ECHOCTL_HOME isn't inside $dir: stopping" >&2; exit 1;; esac
+  case "${ECHOCTL_CONFIG_DIR:-}" in "$dir"/*) ;; *) echo "ECHOCTL_CONFIG_DIR isn't inside $dir: stopping" >&2; exit 1;; esac
+  [ -n "$windows" ] || [ "$(command -v echoctl)" = "$bin" ] || { echo "echoctl isn't the debug build of $echo_repo: stopping" >&2; exit 1; }
   # Never a real Claude Code: the `claude` Echo finds first is the fake.
   [ "$(claude --version 2>/dev/null)" = "2.1.400 (Claude Code, test fake)" ] || { echo "the fake claude isn't first on PATH: stopping" >&2; exit 1; }
   nohup "$py" -I "$here/fake_retell.py" "$fport" > "$dir/fake-retell.log" 2>&1 &

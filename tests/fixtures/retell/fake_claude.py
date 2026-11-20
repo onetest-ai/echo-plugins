@@ -85,33 +85,52 @@ def words(t, n):
     return " ".join(w[:n])
 
 
+def file_lines(name):
+    try:
+        return open(name, encoding="utf-8").read().split("\n")
+    except OSError:
+        return []
+
+
+def write_json(name, obj):
+    with open(name, "w", encoding="utf-8") as f:
+        f.write(json.dumps(obj, ensure_ascii=False))
+
+
+def work(kind, p):
+    """A run on files (Echo's ctx.claude.run({store})): Claude Code starts in the plugin's work folder; it reads the files
+    there and writes its answers there, as Retell's prompt asks."""
+    if kind == "write":
+        els = ids_texts(file_lines("source.txt"))
+        text = [(i, t) for i, tag, t in els if not i.startswith("img")][:6]
+        pics = [(i, t) for i, tag, t in els if i.startswith("img")][:2]
+        lang = (re.search(r"Language of the retelling: (\w+)", p) or [None, "en"])[1]
+        blocks = [{"text": ("Пересказ: " if lang == "ru" else "Retold: ") + words(t, 12) + ".", "anchor": i} for i, t in text]
+        blocks += [{"text": "This picture shows the idea the article explains, step by step.", "anchor": i} for i, t in pics]
+        if any("trap-marker" in t for i, tag, t in els) and blocks:   # the fact check's case: a claim the article never makes
+            blocks[0]["text"] += " It cuts the cost by ninety percent FACT-TRAP."
+        write_json("retelling.json", {"title": "Retold: " + words(text[0][1], 6) if text else "Retold", "blocks": blocks})
+        heads = [(i, t) for i, tag, t in els if tag in ("h2", "h3")] or [(i, t) for i, tag, t in els[:1]]
+        write_json("memo.json", {"title": "Memo", "items": [{"title": words(t, 5), "points": ["What to remember about " + words(t, 4)], "anchor": i} for i, t in heads[:5]]})
+        first = text[0][1].split()[:2] if text else []
+        write_json("terms.json", {"terms": [{"en": " ".join(first), "ru": " ".join(first), "forms": [" ".join(first)]}] if first else []})
+        return "done"
+    if kind == "check":    # a claim with the made-up marker 'FACT-TRAP' in the retelling is reported, and fixed
+        blocks = ids_texts(file_lines("retelling.txt"))
+        bad = [(i, t) for i, tag, t in blocks if "FACT-TRAP" in t]
+        write_json("factcheck.json", {"checked": len(blocks), "issues": [{"where": i, "claim": t[:120], "type": "unsupported", "severity": "error",
+                                      "evidence": "not in source", "fix": t.replace("FACT-TRAP", "").strip()} for i, t in bad]})
+        if "fixed.json" in p:
+            write_json("fixed.json", {"blocks": [{"id": i, "text": t.replace(" It cuts the cost by ninety percent FACT-TRAP.", "").strip()} for i, t in bad]})
+        return "done"
+
+
 def answer(kind, p, pictures):
     if kind == "sort":   # CLEAN: drop what isn't the article
         els = ids_texts(section(p, "ELEMENTS (id (tag): text):"))
         drop = [i for i, tag, t in els if re.search(r"subscribe|related posts|cookie|newsletter|logo", t, re.I)]
         title = (re.search(r"^Page title: (.*)$", p, re.M) or [None, ""])[1]
         return {"title": title if title != "(none)" else "An article", "drop": drop}
-    if kind == "retell":   # SCRIPT
-        els = ids_texts(section(p, "SOURCE (id: text):"))
-        text = [(i, t) for i, tag, t in els if not i.startswith("img")][:6]
-        pics = [(i, t) for i, tag, t in els if i.startswith("img")][:2]
-        lang = (re.search(r"Language of the retelling: (\w+)", p) or [None, "en"])[1]
-        blocks = [{"text": ("Пересказ: " if lang == "ru" else "Retold: ") + words(t, 12) + ".", "anchor": i} for i, t in text]
-        blocks += [{"text": "This picture shows the idea the article explains, step by step.", "anchor": i} for i, t in pics]
-        if "trap-marker" in p and blocks:   # the fact check's case: a claim the article never makes
-            blocks[0]["text"] += " It cuts the cost by ninety percent FACT-TRAP."
-        return {"title": "Retold: " + words(text[0][1], 6) if text else "Retold", "blocks": blocks}
-    if kind == "memo":
-        els = ids_texts(section(p, "SOURCE (id (tag): text):"))
-        heads = [(i, t) for i, tag, t in els if tag in ("h2", "h3")] or [(i, t) for i, tag, t in els[:1]]
-        return {"title": "Memo", "items": [{"title": words(t, 5), "points": ["What to remember about " + words(t, 4)], "anchor": i} for i, t in heads[:5]]}
-    if kind == "check":    # the fact check: a claim with the made-up marker 'FACT-TRAP' in the retelling is reported
-        blocks = ids_texts(section(p, "RETELLING blocks:"))
-        issues = [{"where": i, "claim": t[:120], "type": "unsupported", "severity": "error", "evidence": "not in source",
-                   "fix": t.replace("FACT-TRAP", "").strip()} for i, tag, t in blocks if "FACT-TRAP" in t]
-        return {"checked": len(blocks), "issues": issues}
-    if kind == "fixblock":
-        return {"text": "A corrected sentence that says only what the article says."}
     if kind == "terms":
         return {"terms": []}
     if kind == "mark":
@@ -167,8 +186,8 @@ def answer(kind, p, pictures):
 
 
 KINDS = [
-    ("sort", "Keep only the main article."), ("retell", "You are a radio-style narrator."), ("memo", "Make a very brief CHEAT SHEET"),
-    ("check", "You are a strict fact-checker."), ("fixblock", "Rewrite this narration block so that it is faithful"), ("terms", "A listener hears a retelling in"),
+    ("write", "You are a radio-style narrator. In this folder"), ("check", "You are a strict fact-checker. In this folder"),
+    ("sort", "Keep only the main article."), ("terms", "A listener hears a retelling in"),
     ("mark", "Look at the picture that comes with this message"), ("doc", "Below is the text of a document"),
     ("candidates", "You help build a learning pack"), ("pick", "You build a learning pack"), ("qacheck", "Correct your answer from them."),
     ("ask", "You answer a listener's question about an article"), ("quiz", "You write a practice quiz"), ("checkq", "You coach an adult learner of English"),
@@ -187,7 +206,11 @@ def main():
     if not kind and session: kind = "talk"   # a talk's later turns carry only what was said
     with open(os.path.join(DIR, "fake-claude.log"), "a", encoding="utf-8") as f:
         f.write(json.dumps({"kind": kind, "resume": session, "pictures": pictures, "model": args[args.index("--model") + 1] if "--model" in args else "",
-                            "tools": args[args.index("--tools") + 1] if "--tools" in args else None, "first": p.strip().split("\n")[0][:160]}) + "\n")
+                            "tools": args[args.index("--tools") + 1] if "--tools" in args else None,
+                            "mode": args[args.index("--permission-mode") + 1] if "--permission-mode" in args else "",
+                            "skip": "--dangerously-skip-permissions" in args, "cwd": os.getcwd(),
+                            "files": sorted(os.listdir(".")) if kind in ("write", "check") else [],
+                            "first": p.strip().split("\n")[0][:160]}) + "\n")
     if not kind:
         echo_fake()
     if kind == "judge":
@@ -195,6 +218,8 @@ def main():
     elif kind == "talk":
         heard = p.strip().split("\n")[-1]
         text = "Good point about that. Can you give me an example from your own work?" if heard else "Tell me more."
+    elif kind in ("write", "check"):
+        text = work(kind, p)
     else:
         a = answer(kind, p, pictures)
         text = json.dumps(a, ensure_ascii=False)

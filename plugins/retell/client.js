@@ -139,12 +139,12 @@ export function apply(ctx) {
       .rt-mini .inf{flex:1;min-width:0;cursor:default}.rt-mini .inf b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
       .rt-pb{margin:0 -8px 8px;padding:6px 8px;border-radius:8px;cursor:default;line-height:1.6}
       .rt-orig{margin:0 -6px 10px;padding:2px 6px;border-radius:6px;transition:background .3s;line-height:1.6}
-      .rt-on{background:rgba(255,210,74,.45)!important}.rt-cur{background:var(--accent-soft)!important}
-      .rt-w.rt-now{background:#ffd24a;color:#1d2330;border-radius:4px}
-      .rt-term{background:color-mix(in srgb,#2b8fd6 20%,transparent);border-radius:3px;padding:0 2px;cursor:default}.rt-term.rt-flash{outline:2px solid var(--accent)}
+      .rt-on{background:color-mix(in srgb,var(--warn) 40%,transparent)!important}.rt-cur{background:var(--accent-soft)!important}
+      .rt-w.rt-now{background:var(--warn);color:var(--accent-ink,#fff);border-radius:4px}
+      .rt-term{background:color-mix(in srgb,var(--accent) 20%,transparent);border-radius:3px;padding:0 2px;cursor:default}.rt-term.rt-flash{outline:2px solid var(--accent)}
       .rt-tcard{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border:1px solid var(--line-strong);border-radius:var(--r-panel);cursor:default}.rt-tcard:hover{border-color:var(--accent)}
       .rt-ans{border:1px solid var(--line);border-radius:var(--r-panel);padding:8px 12px}
-      .rt-ov{position:absolute;border:2px solid #ff7a00;border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.5);pointer-events:none;z-index:2}.rt-ov span{position:absolute;left:0;top:100%;margin-top:6px;background:#ff7a00;color:#fff;font-size:13px;padding:2px 8px;border-radius:5px;white-space:nowrap}
+      .rt-ov{position:absolute;border:2px solid var(--warn);border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.5);pointer-events:none;z-index:2}.rt-ov span{position:absolute;left:0;top:100%;margin-top:6px;background:var(--warn);color:var(--accent-ink,#fff);font-size:13px;padding:2px 8px;border-radius:5px;white-space:nowrap}
       .rt-dlg{position:absolute;inset:0;background:rgba(10,8,25,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20;overflow:auto}
       .rt-box{background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--r-panel);box-shadow:var(--shadow);width:min(540px,100%);max-height:100%;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
       .rt-box textarea,.rt-box select,.rt-box input[type=text]{width:100%;padding:6px 10px!important;border-radius:var(--r-control);border:1px solid var(--line-strong);font:inherit;line-height:1.35;background:var(--surface);color:var(--text);box-sizing:border-box}
@@ -723,10 +723,9 @@ export function apply(ctx) {
   const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago' }
   const learnBar = () => {
     const prop = S.lt.filter((x) => x.status === 'proposed').length, making = S.lpacks.filter((g) => g.status === 'making').length, ready = S.lpacks.filter((g) => g.status === 'ready').length
-    return `<div class="rt-card rt-lbar"><div style="flex:1;min-width:220px"><b>📚 Reading lists</b><div class="set-sub">${making ? `${making} being made (Claude names pages, Echo opens and checks them; a few minutes)… ` : ''}${ready ? `${ready} draft${ready === 1 ? '' : 's'} to look at. ` : ''}New lists are made here and kept in Library and your vault.</div></div>
+    return `<div class="rt-card rt-lbar"><div style="flex:1;min-width:220px"><b>📚 Reading lists</b><div class="set-sub">${making ? `${making} being made (Claude names pages, Echo opens and checks them; a few minutes)… ` : ''}${ready ? `${ready} draft${ready === 1 ? '' : 's'} to look at. ` : ''}New lists are made here and kept in Library.</div></div>
       <button class="btn primary" data-rt="lopen" data-lt="new">New reading list</button><button class="btn" data-rt="lopen" data-lt="topics">Topics to learn${prop ? ` · ${prop} to decide` : ''}</button></div>`
   }
-  let vaultLine = () => ''
   const LST = { proposed: ['acc', 'to decide'], approved: ['ok', 'approved'], done: ['', 'done'], rejected: ['bad', 'rejected'] }
   const learnTopicsHtml = () => {
     const L_ = S.learn, sug = L_.sug || {}, row = (x) => {
@@ -772,12 +771,12 @@ export function apply(ctx) {
         <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="rt-lask" type="text" value="${esc(S.learn.ask || '')}" placeholder="Say what to change, e.g. replace item 3 with something on test data" style="flex:1;min-width:220px" ${busy ? 'disabled' : ''}><button class="btn" data-rt="lrefine" ${busy ? 'disabled' : ''}>Change it</button></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${quick.map((q) => `<button class="rt-chip" data-rt="lquick" data-q="${esc(q)}" style="cursor:default;border:0" ${busy ? 'disabled' : ''}>${esc(q)}</button>`).join('')}</div>
         ${g.asks.length ? `<div class="set-sub">Asked so far: ${g.asks.map((x) => '“' + esc(x) + '”').join(', ')}</div>` : ''}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-rt="lkeep" ${busy ? 'disabled' : ''}>Keep it: add to Library${S.learn.vault && S.learn.vault.root ? ' and the vault' : ''}</button><button class="btn" data-rt="lpdel" data-id="${esc(g.id)}" ${busy ? 'disabled' : ''}>Discard</button></div>`
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-rt="lkeep" ${busy ? 'disabled' : ''}>Keep it: add to Library</button><button class="btn" data-rt="lpdel" data-id="${esc(g.id)}" ${busy ? 'disabled' : ''}>Discard</button></div>`
   }
   const learnHtml = () => {
     const L_ = S.learn
     const body = L_.draft ? learnDraftHtml() : `<div class="rt-phead"><button class="btn" data-rt="lclose">${IC.back}Library</button><div class="rt-seg"><button data-rt="ltab" data-lt="new" aria-pressed="${L_.tab === 'new'}">New reading list</button><button data-rt="ltab" data-lt="topics" aria-pressed="${L_.tab === 'topics'}">Topics to learn</button></div></div>
-      ${L_.note ? `<div class="rt-card"><span class="rt-chip ok">Kept</span> ${esc(L_.note)}</div>` : ''}${vaultLine()}${L_.tab === 'topics' ? learnTopicsHtml() : learnNewHtml()}`
+      ${L_.note ? `<div class="rt-card"><span class="rt-chip ok">Kept</span> ${esc(L_.note)}</div>` : ''}${L_.tab === 'topics' ? learnTopicsHtml() : learnNewHtml()}`
     return `<div class="rt-sc" id="rt-sc"><div class="rt-wrap">${S.error ? `<p class="error" style="margin:0">${esc(S.error)}</p>` : ''}${body}</div></div>`
   }
   const libraryHtml = () => {
@@ -789,7 +788,7 @@ export function apply(ctx) {
       ${S.error ? `<p class="error" style="margin:0">${esc(S.error)}</p>` : ''}${learnBar()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input id="rt-q2" class="search" placeholder="Search titles, sites and what the articles say" value="${esc(S.q)}" style="flex:1;min-width:160px"><div class="rt-seg">${flt.map(([k, l]) => `<button data-rt="flt" data-f="${k}" aria-pressed="${S.filter === k}">${l}</button>`).join('')}</div><button class="btn" data-rt="topicdlg" data-new="1" data-parent="" style="display:inline-flex;gap:6px;align-items:center">${IC.folder}New topic</button></div>
       <div class="rt-tree" id="rt-lib">${libRows()}</div>
-      <div class="set-sub" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span>${L.articles.length} article${L.articles.length === 1 ? '' : 's'} · ${mb(L.total || 0)}${cap ? ' of ' + L.max_mb + ' MB' : ''}</span><button class="btn" data-rt="cleanup">Free space now</button><button class="btn" data-rt="clear" style="color:#c0392b">Delete all</button></div></div></div>`
+      <div class="set-sub" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span>${L.articles.length} article${L.articles.length === 1 ? '' : 's'} · ${mb(L.total || 0)}${cap ? ' of ' + L.max_mb + ' MB' : ''}</span><button class="btn" data-rt="cleanup">Free space now</button><button class="btn" data-rt="clear" style="color:var(--danger)">Delete all</button></div></div></div>`
   }
 
   const playerHtml = () => {
@@ -827,7 +826,9 @@ export function apply(ctx) {
 
   const linesOf = (v) => v.split(/\n+/).map((x) => x.trim()).filter(Boolean)
   const isUrl = (x) => /^https?:\/\/\S+$/.test(x)
-  const looksLikePath = (v) => linesOf(v).length <= 3 && linesOf(v).some((x) => /^"?([A-Za-z]:[\\/]|\\\\)/.test(x))
+  // A file's path as a system writes it (Windows C:\… or \\server\…, a Mac's or Linux's /Users/… or ~/…, a file:// link) —
+  // short, one or a few lines: Echo reads only a file chosen with the button, never one by its path.
+  const looksLikePath = (v) => linesOf(v).length <= 3 && linesOf(v).some((x) => /^["']?([A-Za-z]:[\\/]|\\\\|~\/|file:\/\/|\/(Users|home|Volumes|tmp|private|var|mnt|media|opt)\/)\S/i.test(x))
   // Every line a link: they go in one after another; anything else is a text to retell as it is. Files: chosen with the button.
   const itemsOf = (v) => { const l = linesOf(v); return l.length && l.every(isUrl) ? l.map((x) => ({ url: x })) : [] }
   const addFiles = () => S.addFiles || []
@@ -1096,7 +1097,7 @@ export function apply(ctx) {
     if (R.state === 'recording') return `<div class="rt-card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span style="width:10px;height:10px;border-radius:50%;background:var(--danger)"></span><b>Recording</b><span id="rt-rtime" class="set-sub" style="min-width:40px">0:00</span><div class="rt-bar" style="width:160px"><i id="rt-lev" style="width:0;transition:width .1s"></i></div><span class="rt-sp"></span><button class="btn primary" data-rt="recstop">Stop</button><button class="btn" data-rt="reccancel">Cancel</button></div>`
     if (R.state === 'transcribing') return '<div class="rt-card"><span class="rt-chip acc">Writing down what you said…</span></div>'
     if (R.state === 'error') return `<div class="rt-card"><p class="error" style="margin:0 0 8px">${esc(R.error)}</p><div style="display:flex;gap:8px;flex-wrap:wrap">${micBtn}</div></div>`
-    const m = R.metrics, toks = (m.tokens || []).map((t) => `${t.gap ? `<span class="set-sub" title="a pause">[${t.gap} s] </span>` : ''}${t.filler ? `<mark style="background:rgba(255,210,74,.55);border-radius:3px;padding:0 2px">${esc(t.w)}</mark>` : esc(t.w)}`).join(' ')
+    const m = R.metrics, toks = (m.tokens || []).map((t) => `${t.gap ? `<span class="set-sub" title="a pause">[${t.gap} s] </span>` : ''}${t.filler ? `<mark style="background:color-mix(in srgb,var(--warn) 50%,transparent);border-radius:3px;padding:0 2px">${esc(t.w)}</mark>` : esc(t.w)}`).join(' ')
     return `<div class="rt-card" style="display:flex;flex-direction:column;gap:8px"><div class="rt-h" style="margin:0">What you said</div><div style="line-height:1.7">${toks}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${spokenChips(m)}</div><div class="set-sub">Fix any word the computer misheard in the box below, then check. ${micBtn}</div></div>`
   }
   const fluencyHtml = (a, r) => (a.spoken ? `<div><div class="rt-h">How it sounded</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${spokenChips(a.spoken)}</div>${r.fluency && r.fluency.note ? `<div>${esc(r.fluency.note)}</div>` : ''}${r.fluency && (r.fluency.tips || []).length ? r.fluency.tips.map((x) => `<div style="display:flex;gap:6px"><b style="color:var(--accent-ink)">›</b><span>${esc(x)}</span></div>`).join('') : ''}</div>` : '')
@@ -1561,7 +1562,7 @@ export function apply(ctx) {
       }
       case 'popen': { try { S.pr.quiz = await ctx.call('quiz_get', { id: d.id }); const k = S.pr.quiz.questions.findIndex((x) => !S.pr.quiz.answers[x.id]); S.pr.qi = k < 0 ? S.pr.quiz.questions.length : k; S.pr.draft = ''; S.error = ''; prPoll() } catch (e) { S.error = e.message || String(e) } return ctx.render() }
       case 'pdel': try { await ctx.call('quiz_delete', { id: d.id }) } catch (e) { /* gone */ } await prRefresh(); return ctx.render()
-      case 'lopen': S.learn = { tab: d.lt || 'new', form: LF0(), draft: null, vault: null, sug: null, note: '' }; S.error = ''; await learnRefresh(); learnPoll(); return ctx.render()
+      case 'lopen': S.learn = { tab: d.lt || 'new', form: LF0(), draft: null, sug: null, note: '' }; S.error = ''; await learnRefresh(); learnPoll(); return ctx.render()
       case 'lclose': S.learn = null; S.error = ''; await refreshAll(); return ctx.render()
       case 'ltab': if (S.learn) { S.learn.tab = d.lt; S.learn.note = '' } return ctx.render()
       case 'lback': if (S.learn) { S.learn.draft = null; S.learn.tab = 'new' } await learnRefresh(); return ctx.render()
@@ -1589,7 +1590,7 @@ export function apply(ctx) {
       }
       case 'lkeep': {
         const g = S.learn && S.learn.draft; if (!g) return
-        try { const r = await ctx.call('lpack_keep', { id: g.id }); S.learn.draft = null; S.learn.tab = 'new'; S.learn.note = `“${g.pack.title}” is in Library now (a topic with ${g.pack.items.length} items: press 🎧 Retell on one to listen)${r.vault ? ` and in the vault: ${r.vault}` : ''}.`; S.error = ''; await learnRefresh(); await refreshAll() } catch (e) { S.error = e.message || String(e) }
+        try { await ctx.call('lpack_keep', { id: g.id }); S.learn.draft = null; S.learn.tab = 'new'; S.learn.note = `“${g.pack.title}” is in Library now (a topic with ${g.pack.items.length} items: press 🎧 Retell on one to listen).`; S.error = ''; await learnRefresh(); await refreshAll() } catch (e) { S.error = e.message || String(e) }
         return ctx.render()
       }
       case 'rvstart': {
@@ -1800,7 +1801,7 @@ export function apply(ctx) {
     }
   })
   ctx.settings.section({
-    id: 'voice',
+    id: 'main',
     label: 'Retell voice',
     icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 8v4M6.5 5v10M10 3v14M13.5 6v8M17 8.5v3"/></svg>',
     render: voicePage,

@@ -26,7 +26,7 @@ An Echo plugin is a package that brings **its own code** — the way dsh-desktop
 | [GitHub](plugins/github) | CI, pull requests and reviews on Today; GitHub's items in My work and in each thread's Work; a thread's repos |
 | [Retell](plugins/retell) | Articles retold for the ear in your language and voiced — links, PDFs, Word and PowerPoint files, pasted text — with spoken English practice on them: quizzes, answers said aloud, live talks with a coach, phrases to review |
 
-Each needs Echo 0.9.9 or later, which reads a plugin's part for Claude (`agent/`) — until then Echo lists them as "Needs a newer Echo"; Knowledge 1.1 needs Echo 0.10.1, Scheduler 0.8 Echo 0.10.0, Retell Echo 0.10.3. Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
+Each needs Echo 0.9.9 or later, which reads a plugin's part for Claude (`agent/`) — until then Echo lists them as "Needs a newer Echo"; Knowledge 1.1 needs Echo 0.10.1, Scheduler 0.8 Echo 0.10.0, Retell Echo 0.10.5. Your Telegram bot lives in the Telegram plugin (Settings → From plugins → Telegram); other plugins send to it through Echo.
 
 ## Make a marketplace of your own
 

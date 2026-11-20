@@ -26,4 +26,4 @@ tags: [retell, add, retell, voice]
 | 4 | Read `script.json` | Blocks b1…, each `anchor` an id of `source.json` |
 | 5 | Read `<dir>/fake-claude.log` | Runs of kinds sort, retell, memo, check, terms (and mark) — every one with `"tools": ""` |
 | 6 | `ls $S/articles/<id>/audio` | An MP3 per block |
-| 7 | Open it (Listen) | The player: the retelling ("Retold: …") with its words lit as it plays, the original "Evaluating agents" beside it |
+| 7 | Open it (Listen) | The player, Side by side: ORIGINAL ("What an evaluation is", the picture, "Figure 1: the loop.") beside RETELLING · CLICK A BLOCK TO PLAY FROM IT ("Retold: …" blocks); ▶ plays it, its words lit |

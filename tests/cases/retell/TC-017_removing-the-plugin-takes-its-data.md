@@ -20,4 +20,4 @@ tags: [retell, remove]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `echoctl plugin remove retell --data --yes` | Removed; `$S` is gone |
+| 1 | `echoctl plugin remove retell --delete-data` | Removed; `$S` is gone |

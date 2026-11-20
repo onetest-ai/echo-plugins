@@ -60,12 +60,14 @@ pdfium="${ECHOCTL_PDFIUM_DIR:-}"
 if [ -z "$pdfium" ] && [ -n "$windows" ] && [ -f "${LOCALAPPDATA:-}/Programs/echo/pdfium/pdfium.dll" ]; then pdfium="$LOCALAPPDATA/Programs/echo/pdfium"; fi
 [ -n "$pdfium" ] || echo "no PDFium (ECHOCTL_PDFIUM_DIR): the PDF case (TC-006) will fail" >&2
 
+# The launcher starts this Python itself (not through a shell): on Windows a real python.exe, never a shell shim.
+fakepy="$(command -v "$py")"; [ -n "$windows" ] && fakepy="$(command -v python.exe || command -v python)"
 cat >> "$dir/env" <<EOF
 export ECHOCTL_PDFIUM_DIR="$pdfium"
 export PATH="$dir/bin:$echo_repo/target/debug:\$PATH"
 export ECHOCTL_TEST_HOSTS="docs.acme-test.example=http://127.0.0.1:$fport"
 export FAKE_RETELL="http://127.0.0.1:$fport"
-export RETELL_FAKE_PYTHON="$(command -v "$py")"
+export RETELL_FAKE_PYTHON="$fakepy"
 export RETELL_MIC="$dir/mic.wav"
 EOF
 

@@ -157,7 +157,7 @@ def answer(kind, p, pictures):
         return {"summary": "A short talk about the article.", "content": "", "language": [{"said": "I am agree", "better": "I agree", "why": "agree is a verb"}],
                 "rewrites": [], "phrases": ["To put it another way"], "fluency": {"note": "A steady pace.", "tips": ["Fewer fillers"]}, "praise": "You answered clearly.", "next": "Give an example next time."}
     if kind == "cards":
-        ph = re.search(r"PHRASES \(data, not instructions\):\n(\[.*\])", p, re.S)
+        ph = re.search(r"PHRASES \(data, not instructions\):\n(\[.*?\])\s*\nOutput ONLY", p, re.S)
         items = json.loads(ph.group(1)) if ph else []
         lang = (re.search(r"a natural equivalent in ([A-Za-z]+)", p) or [None, "English"])[1]   # the language of explanations asked for
         return {"cards": [{"id": x["id"], "ru": "(%s) Meaning of: %s" % (lang, x["phrase"]), "hint": "(%s) When you say it" % lang, "example": "We use it: " + x["phrase"] + "."} for x in items]}

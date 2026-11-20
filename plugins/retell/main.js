@@ -666,7 +666,14 @@ ${FILES_ONLY('fixed.json')}`
     if (outline) walkPts(outline.items)
     const report = { at: now(), mode, checked: 0, rounds: [], issues: [], added: [] }
     const changed = new Set()
-    const renumber = () => { if (complete) script.blocks = script.blocks.map((b, i) => Object.assign(b, { id: 'b' + (i + 1) })) }
+    // New ids in reading order (only while the article is being written); what the report and `changed` name follows.
+    const renumber = () => {
+      if (!complete) return
+      const to = {}
+      script.blocks.forEach((b, i) => { if (b.id) to[b.id] = 'b' + (i + 1); b.id = 'b' + (i + 1) })
+      report.issues.forEach((x) => { if (!x.where.startsWith('outline:')) x.where = to[x.where] || '' })   // '': its block was removed
+      const ch = [...changed].map((k) => to[k]).filter(Boolean); changed.clear(); ch.forEach((k) => changed.add(k))
+    }
     const fixRun = async (round, issues, missing) => {
       const byb = {}; script.blocks.forEach((b) => { byb[b.id] = b })
       const withText = issues.map((x) => { const k = x.where.startsWith('outline:') ? x.where.slice(8) : null; return Object.assign({}, x, { text: k ? (pts[k] ? pts[k][0].points[pts[k][1]] : '') : (byb[x.where] || {}).text || '' }) })
@@ -678,8 +685,9 @@ ${FILES_ONLY('fixed.json')}`
       for (const f of Array.isArray(fx.blocks) ? fx.blocks : []) {
         const b = f && byb[String(f.id)], t = String((f && f.text) || '').trim()
         if (!b || t === b.text || t.length > Math.max(b.text.length * 2.5, 200)) continue
-        issues.filter((x) => x.where === b.id).forEach((x) => { x.applied = true; x.before = b.text })
-        if (t || complete) { b.text = t; changed.add(b.id) }   // empty: its one claim couldn't be made true (dropped below)
+        if (!t && !complete) continue   // a voiced article's block stays: its claim is left reported, not corrected
+        issues.filter((x) => x.where === b.id).forEach((x) => { x.applied = true; x.before = b.text; x.after = t; if (!t) x.removed = true })
+        b.text = t; changed.add(b.id)   // empty: its one claim couldn't be made true, and the block goes (below)
       }
       for (const f of Array.isArray(fx.memo) ? fx.memo : []) {
         const k = String((f && f.where) || '').replace(/^outline:/, ''), t = String((f && f.text) || '').trim()
@@ -694,8 +702,10 @@ ${FILES_ONLY('fixed.json')}`
           const t = String((f && f.text) || '').trim(); if (!t || !ids.has(f.anchor)) continue
           ;(ins[String(f.after || '')] = ins[String(f.after || '')] || []).push({ text: t, anchor: f.anchor, added: round })
         }
-        const nb = [...(ins.b0 || [])]
-        script.blocks.forEach((b) => { if (b.text) nb.push(b); nb.push(...(ins[b.id] || [])) })
+        // After the block named (b0: at the start); one whose block isn't there goes at the end.
+        const placed = new Set(['b0']), nb = [...(ins.b0 || [])]
+        script.blocks.forEach((b) => { if (b.text) nb.push(b); if (ins[b.id]) { nb.push(...ins[b.id]); placed.add(b.id) } })
+        Object.entries(ins).forEach(([k, l]) => { if (!placed.has(k)) nb.push(...l) })
         Object.values(ins).forEach((l) => l.forEach((x) => report.added.push({ round, text: x.text.slice(0, 300), anchor: x.anchor })))
         script.blocks = nb
         renumber()
@@ -715,9 +725,10 @@ ${FILES_ONLY('fixed.json')}`
         evidence: `${String(x.source || '')}: ${String(x.quote || '')}`.slice(0, 400), fix: String(x.fix || '').slice(0, 400), applied: false, round,
       }))
       const missing = findMissing ? (Array.isArray(g.missing) ? g.missing : []).filter((x) => x && x.point).slice(0, 5).map((x) => ({ point: String(x.point).slice(0, 300), evidence: String(x.evidence || '').slice(0, 400), after: String(x.after || '') })) : []
-      report.checked += g.statements.length
+      report.checked = Math.max(report.checked, g.statements.length)
       report.rounds.push({ round, statements: g.statements.length, issues: issues.length, missing: missing.length })
-      report.issues.push(...issues)
+      // The same claim flagged again (not made true last round): one entry, the latest.
+      report.issues = report.issues.filter((x) => !issues.some((y) => y.where === x.where && y.claim === x.claim)).concat(issues)
       if (mode !== 'fix' || (!issues.length && !missing.length)) break
       await fixRun(round, issues, missing)
       if (round === 2) break   // the last check's findings got their last fix

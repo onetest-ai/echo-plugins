@@ -576,10 +576,10 @@ export function apply(ctx) {
     const ix = {}; blocks().forEach((b, i) => { ix[b.id] = i })
     const fixed = fc.issues.filter((x) => x.applied).length
     const rows = fc.issues.map((x) => {
-      const isBlock = x.where in ix, label = isBlock ? `Block ${ix[x.where] + 1}` : `Memo ${x.where.replace('outline:', '')}`
+      const isBlock = x.where in ix, label = isBlock ? `Block ${ix[x.where] + 1}` : x.where.startsWith('outline:') ? `Memo ${x.where.slice(8).replace(/#(\d+)$/, ' · point $1')}` : 'A block removed'
       return `<div class="rt-ans"><div><b data-rt="${isBlock ? 'fjump' : 'dt'}" data-d="memo" data-i="${isBlock ? ix[x.where] : ''}" style="cursor:pointer">${esc(label)}</b> <span class="rt-chip ${x.severity === 'error' ? 'bad' : ''}">${esc(x.severity)}${x.type ? ' · ' + esc(x.type) : ''}</span> <span class="set-sub">${x.applied ? 'corrected' : 'not changed'}</span></div>
         <div style="margin-top:3px">“${esc(x.claim)}”</div><div class="set-sub" style="margin-top:3px">The article: ${esc(x.evidence)}</div>
-        ${x.fix ? `<div style="margin-top:3px"><span class="set-sub">${x.applied ? 'Now:' : 'Suggested:'}</span> ${esc(x.fix)}</div>` : ''}</div>`
+        ${x.removed ? '<div style="margin-top:3px"><span class="set-sub">Removed: it could not be made true to the article.</span></div>' : (x.after || x.fix) ? `<div style="margin-top:3px"><span class="set-sub">${x.applied ? 'Now:' : 'Suggested:'}</span> ${esc(x.applied && x.after ? x.after : x.fix)}</div>` : ''}</div>`
     }).join('')
     return `<div class="rt-card"><b>${fc.checked} claims checked · ${fc.issues.length} issue${fc.issues.length === 1 ? '' : 's'} · ${fixed} corrected</b><div class="set-sub">${esc(fc.mode === 'fix' ? 'Mode: correct automatically' : fc.mode === 'report' ? 'Mode: report only' : fc.mode)}</div></div>${rows || '<div class="set-sub">Every claim of the retelling and the memo is supported by the article.</div>'}<div><button class="btn" data-rt="recheck">Check again</button></div>`
   }

@@ -6,6 +6,7 @@
     { "id": "scheduler", "source": "./plugins/scheduler", "categories": ["automation"] },
     { "id": "telegram", "source": "./plugins/telegram", "categories": ["chat"] },
     { "id": "obsidian", "source": "./plugins/obsidian", "categories": ["knowledge"] },
-    { "id": "github", "source": "./plugins/github", "categories": ["developer"] }
+    { "id": "github", "source": "./plugins/github", "categories": ["developer"] },
+    { "id": "retell", "source": "./plugins/retell", "categories": ["knowledge"] }
   ]
 }

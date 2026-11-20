@@ -241,7 +241,7 @@ def main():
         a = answer(kind, p, pictures)
         text = json.dumps(a, ensure_ascii=False)
     sid = session or "11111111-2222-4333-8444-555555555555"
-    out(json.dumps({"type": "system", "subtype": "init", "claude_code_version": "2.1.400", "session_id": sid, "permissionMode": "default"}))
+    out(json.dumps({"type": "system", "subtype": "init", "claude_code_version": "2.1.400", "session_id": sid, "permissionMode": args[args.index("--permission-mode") + 1] if "--permission-mode" in args else "default"}))
     if "--include-partial-messages" in args:
         half = len(text) // 2
         for piece in (text[:half], text[half:]):

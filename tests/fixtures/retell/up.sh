@@ -21,7 +21,8 @@ bin="$echo_repo/target/debug/echoctl"; [ -n "$windows" ] && bin="$bin.exe"
 [ -x "$bin" ] || { echo "build Echo first: (cd $echo_repo && cargo build -p echoctl)" >&2; exit 1; }
 fport=$((port + 1))
 
-"$py" "$echo_repo/tests/fixtures/make_data.py" "$dir" --set standard > /dev/null
+# RETELL_DATA_NOW (e.g. 2026-11-20T20:00): the made-up data's clock, for a run late in the day (make_data refuses after 22:50).
+"$py" "$echo_repo/tests/fixtures/make_data.py" "$dir" --set standard ${RETELL_DATA_NOW:+--now "$RETELL_DATA_NOW"} > /dev/null
 dir="$(cd "$dir" && pwd)"
 
 # The fake Claude Code in place of Echo's own (kept beside it as claude-echo): Retell's runs answered with made-up

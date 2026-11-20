@@ -8,6 +8,7 @@ ECHO_REPO=<an Echo checkout, built: cargo build -p echoctl> \
   tests/fixtures/retell/up.sh "$(mktemp -d)/rt" 47960      # prints base_url, env, fakes, mic
 . <dir>/env                                               # before every CLI step: echoctl = the debug build
 tests/fixtures/retell/down.sh <dir>                       # after the last case
+# late in the day (Echo's made-up data is refused after 22:50): RETELL_DATA_NOW=<today>T20:00 before up.sh
 ```
 
 - The environment: Echo's standard data (Sam Rivera, Acme, Globex). Never the user's own Echo, Claude Code or speech

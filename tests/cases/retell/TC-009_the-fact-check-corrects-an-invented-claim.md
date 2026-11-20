@@ -21,6 +21,6 @@ tags: [retell, factcheck]
 | # | Action | Expected Result |
 |---|--------|----------------|
 | 1 | Add `https://docs.acme-test.example/posts/fact-trap.html`; wait until ready | `ready` |
-| 2 | Read `factcheck.json` and `script.json` | An issue (`unsupported`, `applied: true`) for "…ninety percent…"; no block says it any more |
+| 2 | Read `factcheck.json` and `script.json` | An issue (`invented`, `applied: true`) for "…ninety percent…"; no block says it any more |
 | 3 | `script.json`, `factcheck.json` | A block "Added: the page makes a second point." anchored to an element of the page; `added` lists it; `rounds` has two checks, the second with no issues |
 | 4 | `fake-claude.log`, this article's runs | check, fix, check — in that order; no run per block |

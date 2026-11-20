@@ -885,7 +885,10 @@ ${FILES_ONLY('fixed.json')}`
           if (blocks.length && blocks.every((b) => ids.has(b.anchor))) script = { title: String(r.title || ''), blocks }
           else prompt += `\n\nYour previous retelling.json was unusable (no blocks, or anchors not in source.txt). Valid ids: ${[...ids].join(', ')}`
         }
-      } finally { stage(id, 'Writing the memo…'); await memoRun.catch(() => null) }   // never left running behind an error
+      } finally {
+        put(id, 'source.json', source)   // the narrator ran in the article's folder: its original as Echo read it, whatever a page's words asked
+        stage(id, 'Writing the memo…'); await memoRun.catch(() => null)   // never left running behind an error
+      }
       if (!script) throw new Error('Claude did not produce a usable retelling')
       script.blocks = script.blocks.map((b, i) => ({ id: 'b' + (i + 1), text: String(b.text).trim(), anchor: b.anchor }))
       const outline = await memoRun

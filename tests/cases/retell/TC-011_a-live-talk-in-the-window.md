@@ -23,4 +23,4 @@ tags: [retell, practice, talk]
 | 1 | Practice → Start a talk | The live view: "Opening the microphone and the coach…", then the coach's greeting, voiced |
 | 2 | Wait while the microphone plays | "You" lines with the two transcripts; after each, the coach's answer ("Good point about that…") |
 | 3 | Read `fake-claude.log` | `talk` runs, the second one with `resume` (the same conversation), all with no tools |
-| 4 | Finish | The talk's review appears; `talks/<id>/meta.json` `status` done, `review` written; no `v/` folder left; her turns kept with their stretches of speech |
+| 4 | Finish | The talk's review appears; `talks/<id>/meta.json` `status` done, `review` written; no `v/` folder left; her turns kept with their stretches of speech; `ls $S/runs` holds no `talk-…` or `judge-…` folder |

@@ -60,7 +60,7 @@ test('documents: PDF addresses (arxiv abs → pdf), page ranges as Echo\'s file 
 test('a long article is cut into parts under PART_CHARS: at a heading once half full, else between paragraphs; never mid-paragraph; at most MAX_PARTS', () => {
   const para = (n, len) => ({ id: 'p' + n, tag: 'p', text: 'x'.repeat(len) })
   let n = 0, els = []
-  for (let s = 0; s < 4; s++) { els.push({ id: 'p' + (++n), tag: 'h2', text: 'Section ' + s }); for (let k = 0; k < 6; k++) els.push(para(++n, 1500)) }
+  for (let s = 0; s < 4; s++) { els.push({ id: 'p' + (++n), tag: 'h2', text: 'Section ' + s }); for (let k = 0; k < 6; k++) els.push(para(++n, Math.round(PART_CHARS / 10))) }
   els.splice(3, 0, { id: 'img1', tag: 'img', src: 'https://acme-test.example/a.png', alt: '' })
   const parts = cutParts(els)
   assert.ok(parts.length >= 2)
@@ -69,7 +69,7 @@ test('a long article is cut into parts under PART_CHARS: at a heading once half 
   assert.ok(parts.slice(1).every((p) => p[0].tag === 'h2'), 'each part after the first starts at a heading')
   const huge = cutParts([{ id: 'p1', tag: 'p', text: 'y'.repeat(PART_CHARS * 2) }])
   assert.equal(huge.length, 1); assert.equal(huge[0][0].text.length, PART_CHARS, 'one paragraph longer than a part is cut to it')
-  const many = []; for (let k = 0; k < (MAX_PARTS + 3) * 12; k++) many.push(para(k + 1, 1400))
+  const many = []; for (let k = 0; k < (MAX_PARTS + 3) * 12; k++) many.push(para(k + 1, Math.round(PART_CHARS / 10)))
   assert.ok(cutParts(many).length > MAX_PARTS, 'the cut itself has no cap: the plugin keeps MAX_PARTS and says the rest was left out')
 })
 

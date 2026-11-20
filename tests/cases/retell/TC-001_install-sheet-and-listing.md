@@ -1,6 +1,6 @@
 ---
 id: TC-001
-title: Its install sheet names only what it uses — no folder, no skipping permission checks — and its listing gives its summary
+title: Its install sheet names only what it uses — no folder, no run marked to skip permission checks — and its listing gives its summary
 priority: critical
 type: functional
 requirements: [F-RT-01]
@@ -11,7 +11,7 @@ data: standard
 tags: [retell, install]
 ---
 
-# TC-001: Its install sheet names only what it uses — no folder, no skipping permission checks — and its listing gives its summary
+# TC-001: Its install sheet names only what it uses — no folder, no run marked to skip permission checks — and its listing gives its summary
 
 ## Preconditions
 - The environment from `up.sh` (Retell installed from the local marketplace)

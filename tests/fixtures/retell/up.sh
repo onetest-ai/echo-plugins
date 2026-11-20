@@ -21,7 +21,8 @@ bin="$echo_repo/target/debug/echoctl"; [ -n "$windows" ] && bin="$bin.exe"
 [ -x "$bin" ] || { echo "build Echo first: (cd $echo_repo && cargo build -p echoctl)" >&2; exit 1; }
 fport=$((port + 1))
 
-"$py" "$echo_repo/tests/fixtures/make_data.py" "$dir" --set standard > /dev/null
+# RETELL_DATA_NOW (e.g. 2026-11-20T20:00): the made-up data's clock, for a run late in the day (make_data refuses after 22:50).
+"$py" "$echo_repo/tests/fixtures/make_data.py" "$dir" --set standard ${RETELL_DATA_NOW:+--now "$RETELL_DATA_NOW"} > /dev/null
 dir="$(cd "$dir" && pwd)"
 
 # The fake Claude Code in place of Echo's own (kept beside it as claude-echo): Retell's runs answered with made-up
@@ -73,6 +74,10 @@ EOF
 
 (
   . "$dir/env"
+  # Never the user's own Echo: every echoctl call below goes to this environment's data, or none runs.
+  case "${ECHOCTL_HOME:-}" in "$dir"/*) ;; *) echo "ECHOCTL_HOME isn't inside $dir: stopping" >&2; exit 1;; esac
+  case "${ECHOCTL_CONFIG_DIR:-}" in "$dir"/*) ;; *) echo "ECHOCTL_CONFIG_DIR isn't inside $dir: stopping" >&2; exit 1;; esac
+  [ -n "$windows" ] || [ "$(command -v echoctl)" = "$bin" ] || { echo "echoctl isn't the debug build of $echo_repo: stopping" >&2; exit 1; }
   # Never a real Claude Code: the `claude` Echo finds first is the fake.
   [ "$(claude --version 2>/dev/null)" = "2.1.400 (Claude Code, test fake)" ] || { echo "the fake claude isn't first on PATH: stopping" >&2; exit 1; }
   nohup "$py" -I "$here/fake_retell.py" "$fport" > "$dir/fake-retell.log" 2>&1 &

@@ -110,9 +110,15 @@ def work(kind, p):
         if any("trap-marker" in t for i, tag, t in els) and blocks:   # the fact check's case: a claim the article never makes
             blocks[0]["text"] += " It cuts the cost by ninety percent FACT-TRAP."
         write_json("retelling.json", {"title": "Retold: " + words(text[0][1], 6) if text else "Retold", "blocks": blocks})
+        return "done"
+    if kind == "memo":
+        els = ids_texts(file_lines("source.txt"))
         heads = [(i, t) for i, tag, t in els if tag in ("h2", "h3")] or [(i, t) for i, tag, t in els[:1]]
         write_json("memo.json", {"title": "Memo", "items": [{"title": words(t, 5), "points": ["What to remember about " + words(t, 4)], "anchor": i} for i, t in heads[:5]]})
-        first = text[0][1].split()[:2] if text else []
+        return "done"
+    if kind == "termsf":   # a term of the source the retelling says ("Retold: <its first words>")
+        els = ids_texts(file_lines("source.txt"))
+        first = els[0][2].split()[:2] if els else []
         write_json("terms.json", {"terms": [{"en": " ".join(first), "ru": " ".join(first), "forms": [" ".join(first)]}] if first else []})
         return "done"
     if kind == "check":    # a claim with the made-up marker 'FACT-TRAP' in the retelling is reported, and fixed
@@ -187,6 +193,7 @@ def answer(kind, p, pictures):
 
 KINDS = [
     ("write", "You are a radio-style narrator. In this folder"), ("check", "You are a strict fact-checker. In this folder"),
+    ("memo", "Make a very brief CHEAT SHEET of it"), ("termsf", "retelling.txt, the retelling"),
     ("sort", "Keep only the main article."), ("terms", "A listener hears a retelling in"),
     ("mark", "Look at the picture that comes with this message"), ("doc", "Below is the text of a document"),
     ("candidates", "You help build a learning pack"), ("pick", "You build a learning pack"), ("qacheck", "Correct your answer from them."),
@@ -209,7 +216,7 @@ def main():
                             "tools": args[args.index("--tools") + 1] if "--tools" in args else None,
                             "mode": args[args.index("--permission-mode") + 1] if "--permission-mode" in args else "",
                             "skip": "--dangerously-skip-permissions" in args, "cwd": os.getcwd(),
-                            "files": sorted(os.listdir(".")) if kind in ("write", "check") else [],
+                            "files": sorted(os.listdir(".")) if kind in ("write", "check", "memo", "termsf") else [],
                             "first": p.strip().split("\n")[0][:160]}) + "\n")
     if not kind:
         echo_fake()
@@ -218,7 +225,7 @@ def main():
     elif kind == "talk":
         heard = p.strip().split("\n")[-1]
         text = "Good point about that. Can you give me an example from your own work?" if heard else "Tell me more."
-    elif kind in ("write", "check"):
+    elif kind in ("write", "check", "memo", "termsf"):
         text = work(kind, p)
     else:
         a = answer(kind, p, pictures)

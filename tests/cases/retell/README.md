@@ -14,10 +14,10 @@ tests/fixtures/retell/down.sh <dir>                       # after the last case
   account:
   - **Claude Code** is `fake_claude.py` (on Windows behind `claude.exe`, a launcher up.sh builds): it tells Retell's runs
     apart by their prompt and answers with made-up JSON built from what the prompt holds; anything else is refused as
-    Echo's own fake refuses it. Each run is a line of `<dir>/fake-claude.log` — its `kind` (`sort`, `write`, `check`,
+    Echo's own fake refuses it. Each run is a line of `<dir>/fake-claude.log` — its `kind` (`sort`, `write`, `memo`, `termsf`, `check`,
     `terms`, `mark`, `doc`, `ask`, `qacheck`, `candidates`, `pick`, `quiz`, `checkq`, `talk`, `judge`,
-    `review`, `cards`, `suggest`), `tools` (`""`: no tools), `pictures`, `resume`. The two runs on files, `write` and
-    `check`, start in a folder of `$S/work/`: the fake reads the files there and writes its answers there, as Claude
+    `review`, `cards`, `suggest`), `tools` (`""`: no tools), `pictures`, `resume`. The runs on files, `write`, `memo`,
+    `termsf` and `check`, start in a folder of `$S/work/`: the fake reads the files there and writes its answers there, as Claude
     Code would; their lines add `mode` (the permission mode Echo gave), `skip`, `cwd` and `files` (what the folder held).
   - **The speech server** is `fake_retell.py` at `$FAKE_RETELL` (Retell's setting "tts" is set to it): the OpenAI API
     as Retell uses it — models, speech (an MP3 of silence about as long as the text), the Realtime transcription

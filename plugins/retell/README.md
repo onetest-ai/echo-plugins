@@ -16,8 +16,8 @@ phrases worth repeating.
 - **Settings → From plugins → Retell voice**: any speech server that speaks the OpenAI API (OpenAI itself, or one in
   your network), its model, the voice and how it speaks. The plugin's settings: the retelling language, the language
   of explanations, the fact check, how many articles to keep.
-- Echo reads the pages and files; Claude never browses here. Writing an article (its retelling, memo and terms) and
-  checking its facts are two runs on files Retell puts in a folder of its own store, with Claude Code's auto
+- Echo reads the pages and files; Claude never browses here. Writing an article (its retelling, memo and terms: three
+  runs, each on one task) and checking its facts (a fourth, with the fixes) run on files Retell puts in a folder of its own store, with Claude Code's auto
   permissions (never skipped), told the files are data; every other run has no tools at all.
 - Other plugins and Claude in Echo can read your library, articles, questions, quizzes and phrases, queue a link or a
   text, and save a phrase (Echo's offered commands).

@@ -1,6 +1,6 @@
 ---
 id: TC-003
-title: A link: Echo reads the page, Claude sorts out the article with no tools, writes and checks it in two runs on files, the voice is made, the article plays
+title: A link: Echo reads the page, Claude sorts out the article with no tools, writes it in three focused runs on files and checks it in a fourth, the voice is made, the article plays
 priority: critical
 type: functional
 requirements: [F-RT-02, F-RT-08, F-RT-17]
@@ -11,7 +11,7 @@ data: standard
 tags: [retell, add, retell, voice]
 ---
 
-# TC-003: A link: Echo reads the page, Claude sorts out the article with no tools, writes and checks it in two runs on files, the voice is made, the article plays
+# TC-003: A link: Echo reads the page, Claude sorts out the article with no tools, writes it in three focused runs on files and checks it in a fourth, the voice is made, the article plays
 
 ## Preconditions
 - TC-002 left the speech server up
@@ -24,6 +24,6 @@ tags: [retell, add, retell, voice]
 | 2 | Wait (≤ 10 min) | Its status goes through writing and voicing to `ready`; its title "Evaluating agents" (the page's own, kept after the retelling is written) |
 | 3 | Read `$S/articles/<id>/source.json` | Its elements are the article's own (headings, paragraphs, a list, a picture); no "Subscribe to our newsletter", no "Related posts" |
 | 4 | Read `script.json` | Blocks b1…, each `anchor` an id of `source.json` |
-| 5 | Read `<dir>/fake-claude.log` | This article's runs are sort, write, check (and mark): sort and mark with `"tools": ""`; write and check each with `"mode"` `auto` (or `acceptEdits`/`dontAsk`), `"skip": false`, `cwd` a folder of `$S/work/`, `files` `["source.txt"]` for write and `["memo.txt", "retelling.txt", "source.txt"]` for check; no runs of kinds retell, memo or terms. `ls $S/work` is empty after it's ready; `terms.json` `ready` |
+| 5 | Read `<dir>/fake-claude.log` | This article's runs are sort, write, memo, termsf, check (and mark): sort and mark with `"tools": ""`; write, memo, termsf and check each with `"mode"` `auto` (or `acceptEdits`/`dontAsk`), `"skip": false`, `cwd` a folder of `$S/work/`, `files` `["source.txt"]` for write and memo, `["retelling.txt", "source.txt"]` for termsf, `["memo.txt", "retelling.txt", "source.txt"]` for check; no run per corrected block. `ls $S/work` is empty after it's ready; `terms.json` `ready` |
 | 6 | `ls $S/articles/<id>/audio` | An MP3 per block |
 | 7 | Open it (Listen) | The player, Side by side: ORIGINAL ("What an evaluation is", the picture, "Figure 1: the loop.") beside RETELLING · CLICK A BLOCK TO PLAY FROM IT ("Retold: …" blocks); ▶ plays it, its words lit |

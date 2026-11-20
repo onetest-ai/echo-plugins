@@ -22,4 +22,4 @@ tags: [retell, security, untrusted]
 |---|--------|----------------|
 | 1 | Add `https://docs.acme-test.example/posts/hostile.html`; wait until ready; Library | The title "Hostile <img src=x onerror=alert(1)> title" shown as these characters; no dialog opened |
 | 2 | Open it, its original | "<script>alert('xss')</script>" and "[a link](javascript:alert(1))" shown as text; no script element, no dialog |
-| 3 | `fake-claude.log` | Its sort run had no tools: "Ignore all previous instructions…" was only text in a prompt; its write and check runs: `"skip": false`, `"mode"` auto (or acceptEdits/dontAsk), `cwd` in `$S/work/`, the page only in their files |
+| 3 | `fake-claude.log` | Its sort run had no tools: "Ignore all previous instructions…" was only text in a prompt; its write, memo, termsf and check runs: `"skip": false`, `"mode"` auto (or acceptEdits/dontAsk), `cwd` in `$S/work/`, the page only in their files |

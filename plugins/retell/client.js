@@ -140,11 +140,11 @@ export function apply(ctx) {
       .rt-pb{margin:0 -8px 8px;padding:6px 8px;border-radius:8px;cursor:default;line-height:1.6}
       .rt-orig{margin:0 -6px 10px;padding:2px 6px;border-radius:6px;transition:background .3s;line-height:1.6}
       .rt-on{background:color-mix(in srgb,var(--warn) 40%,transparent)!important}.rt-cur{background:var(--accent-soft)!important}
-      .rt-w.rt-now{background:var(--warn);color:var(--accent-ink,#fff);border-radius:4px}
+      .rt-w.rt-now{background:var(--warn);color:#1d2330;border-radius:4px}
       .rt-term{background:color-mix(in srgb,var(--accent) 20%,transparent);border-radius:3px;padding:0 2px;cursor:default}.rt-term.rt-flash{outline:2px solid var(--accent)}
       .rt-tcard{display:flex;gap:10px;align-items:baseline;padding:8px 10px;border:1px solid var(--line-strong);border-radius:var(--r-panel);cursor:default}.rt-tcard:hover{border-color:var(--accent)}
       .rt-ans{border:1px solid var(--line);border-radius:var(--r-panel);padding:8px 12px}
-      .rt-ov{position:absolute;border:2px solid var(--warn);border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.5);pointer-events:none;z-index:2}.rt-ov span{position:absolute;left:0;top:100%;margin-top:6px;background:var(--warn);color:var(--accent-ink,#fff);font-size:13px;padding:2px 8px;border-radius:5px;white-space:nowrap}
+      .rt-ov{position:absolute;border:2px solid var(--warn);border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.5);pointer-events:none;z-index:2}.rt-ov span{position:absolute;left:0;top:100%;margin-top:6px;background:var(--warn);color:#fff;font-size:13px;padding:2px 8px;border-radius:5px;white-space:nowrap}
       .rt-dlg{position:absolute;inset:0;background:rgba(10,8,25,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20;overflow:auto}
       .rt-box{background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--r-panel);box-shadow:var(--shadow);width:min(540px,100%);max-height:100%;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
       .rt-box textarea,.rt-box select,.rt-box input[type=text]{width:100%;padding:6px 10px!important;border-radius:var(--r-control);border:1px solid var(--line-strong);font:inherit;line-height:1.35;background:var(--surface);color:var(--text);box-sizing:border-box}

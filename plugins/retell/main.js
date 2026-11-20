@@ -212,7 +212,7 @@ export function apply(ctx) {
   const now = () => new Date().toISOString()
   // An id the window or a caller sends (an article's, a question's, a quiz's …) becomes part of a store path: only a
   // plain name, never empty, never one that climbs out (`..`) or names a folder below.
-  const validId = (s) => typeof s === 'string' && /^[A-Za-z0-9][\w.:-]{0,100}$/.test(s) && !s.includes('..')
+  const validId = (s) => typeof s === 'string' && /^[\p{L}\p{N}][\p{L}\p{N}_.:-]{0,100}$/u.test(s) && !s.includes('..')   // letters of any script: a reading list's topic is `d:<its slug>`
   const ID_ARGS = ['id', 'qid', 'rid', 'b']
   // Every command's id-like arguments are checked before it runs.
   const checked = (fn) => (a, given) => {
@@ -225,23 +225,26 @@ export function apply(ctx) {
 
   // ── the index ──
   // Changed only through ctx.store.update (editIndex): the window's Echo and a terminal's `echoctl plugin call` may
-  // write it at once. One that can't be read is kept aside (index.broken-<ms>.json) and, until Echo starts again, no
-  // article folder is swept for being unknown to it.
-  let indexBroken = false
+  // write it at once. One that can't be read (not JSON, not UTF-8) is never written over and never swept by — in any
+  // process, each reads it again: a copy is kept aside (index.broken-<ms>.json), Retell lists nothing and adds nothing
+  // until the user fixes or removes it, and every article folder stays.
+  const BROKEN = 'Retell\'s list of articles (index.json in its data) can\'t be read; a copy is kept as index.broken-….json. Fix it or remove it to go on (removing it forgets the list; the articles\' folders are then removed)'
+  let brokenKept = false
   const parseIndex = (t) => {
-    if (!t) return { articles: [] }
+    if (t == null || t === '') return { articles: [] }
     try { const v = JSON.parse(t); if (v && Array.isArray(v.articles)) return v } catch (e) { /* below */ }
-    if (!indexBroken) {
-      indexBroken = true
-      try { ctx.store.write(`index.broken-${Date.now()}.json`, t) } catch (e) { /* as it is */ }
-      ctx.log('index.json could not be read: a copy is kept as index.broken-….json; no article folder is removed until Echo starts again')
+    if (!brokenKept) {
+      brokenKept = true
+      try { ctx.store.write(`index.broken-${Date.now()}.json`, String(t)) } catch (e) { /* as it is */ }
+      ctx.log('index.json could not be read: a copy is kept as index.broken-….json; nothing is written over it or swept')
     }
-    return { articles: [] }
+    return null
   }
-  const readIndex = () => parseIndex(ctx.store.read('index.json'))
+  const readRaw = () => { try { return ctx.store.read('index.json') } catch (e) { return ctx.store.read('index.json', { lossy: true }) + '\u0000' } }   // not UTF-8: unreadable
+  const readIndex = () => parseIndex(readRaw()) || { articles: [], broken: true }
   // `fn` changes the index it is given and may run more than once (another process wrote meanwhile); `false` writes
-  // nothing. Gives what its last run returned.
-  const editIndex = (fn) => { let out; ctx.store.update('index.json', (t) => { const ix = parseIndex(t); out = fn(ix); return out === false ? undefined : JSON.stringify(ix) }); return out }
+  // nothing. Gives what its last run returned. An unreadable index: refused, nothing written.
+  const editIndex = (fn) => { let out; ctx.store.update('index.json', (t) => { const ix = parseIndex(t); if (!ix) throw new Error(BROKEN); out = fn(ix); return out === false ? undefined : JSON.stringify(ix) }); return out }
   const update = (id, patch) => editIndex((ix) => { const a = ix.articles.find((x) => x.id === id); if (!a) return false; Object.assign(a, patch); return a }) || undefined
   // Write an article's file and count its size.
   const put = (id, rel, obj) => {
@@ -264,6 +267,7 @@ export function apply(ctx) {
   }
   const sweepRuns = () => { sweepDir('runs'); sweepDir('work') }
   const sweepArticles = (protect) => {
+    if (readIndex().broken) return 0
     const disk = {}
     readIndex().articles.forEach((a) => { if (!inUse(a)) { const d = diskOf(a.id); if (d) disk[a.id] = d } })
     const keep = num('keep_articles', 10), cap = num('max_mb', 500) * MB
@@ -285,7 +289,7 @@ export function apply(ctx) {
       return true
     })
     doomed.forEach((id) => removeTree('articles/' + id))
-    if (!indexBroken) for (const n of ctx.store.list('articles') || []) if (validId(n) && !known.has(n)) removeTree('articles/' + n)
+    for (const n of ctx.store.list('articles') || []) if (validId(n) && !known.has(n)) removeTree('articles/' + n)
     return doomed.length
   }
 
@@ -612,12 +616,12 @@ Then write fixed.json here, ONLY JSON: {"blocks": [{"id": "b7", "text": "..."}]}
     if (!m || !Array.isArray(m.items) || !m.items.length) return null
     const ids = new Set(source.elements.map((e) => e.id))
     const walk = (items, prefix) => items.forEach((it, n) => {
-      it.num = `${prefix}${n + 1}`; it.title = String(it.title || ''); it.points = (Array.isArray(it.points) ? it.points : []).map(String)
+      it.num = `${prefix}${n + 1}`; it.title = String(it.title || ''); it.points = (Array.isArray(it.points) ? it.points : []).filter((q) => typeof q === 'string' || typeof q === 'number').map(String)
       if (!ids.has(it.anchor)) it.anchor = null
       it.children = Array.isArray(it.children) ? it.children.filter((c) => c && typeof c === 'object') : []
       walk(it.children, it.num + '.')
     })
-    m.items = m.items.filter((it) => it && typeof it === 'object')
+    m.items = m.items.filter((it) => it && typeof it === 'object'); m.title = String(m.title || '')
     walk(m.items, '')
     return m.items.length ? m : null
   }
@@ -703,7 +707,9 @@ Then write fixed.json here, ONLY JSON: {"blocks": [{"id": "b7", "text": "..."}]}
   const buildTerms = async (id, source, script, lang) => {
     try {
       const els = source.elements.filter((e) => e.tag !== 'img')
-      const r = asJson(await ask(id, 'Retell: list the terms', TERMS.replace('{lang}', () => (lang)).replace('{source}', () => (els.map((e) => `${e.id}: ${e.text}`).join('\n'))).replace('{blocks}', () => (script.blocks.map((b) => `${b.id}: ${b.text}`).join('\n'))), 'none', 10))
+      // An older article's terms, asked again (they come with the retelling now): its text cut to what a command line carries.
+      const cap = (t, n) => (t.length > n ? t.slice(0, n) + '\n…' : t)
+      const r = asJson(await ask(id, 'Retell: list the terms', TERMS.replace('{lang}', () => (lang)).replace('{source}', () => cap(els.map((e) => `${e.id}: ${e.text}`).join('\n'), 16000)).replace('{blocks}', () => cap(script.blocks.map((b) => `${b.id}: ${b.text}`).join('\n'), 9000)), 'none', 10))
       put(id, 'terms.json', { at: now(), status: 'ready', terms: termsFrom(r, source, script) })
       return true
     } catch (e) { ctx.log('terms: ' + msg(e)); put(id, 'terms.json', { at: now(), status: 'error', error: msg(e), terms: [] }); return false }
@@ -1112,12 +1118,13 @@ PAGES:
     const split = String((a && a.split) || '') === 'first' ? 'first' : 'all'
     const fname = h ? String(h.name || 'document') : ''
     const entry = ({ id, title: String((a && a.title) || '').trim().slice(0, 140) || fname || url || text.slice(0, 60), url, file: fname, lang: String((a && a.lang) || '').trim() || setting('lang') || 'en', length, split, status: h ? 'fetching' : 'queued', stage: h ? 'Taking the text out of the file…' : '', created: now(), opened: now(), bytes: 0, pinned: false, topic: String((a && a.topic) || '') })
+    if (!h) put(id, 'input.json', { url, text, pages })   // before its entry: the queue never finds it without its input
     editIndex((ix) => { ix.articles.push(entry); return true })
     // A terminal's call (`echoctl plugin call`, Claude's through Echo's plugins tool) or another plugin's only queues it:
     // the running Echo's queue takes it within 10 s, never a process about to end with its answer.
     const queueOnly = !!(a && a.wait) || !!ctx.terminal || !!(given && given.from)
     if (h) { const t = takeFileText(id, h, pages, split, queueOnly); if (queueOnly) await t }   // the window's call answers at once (it has 30 s), the text taken out after it
-    else { put(id, 'input.json', { url, text, pages }); if (!queueOnly) pump() }
+    else if (!queueOnly) pump()
     const waiting = readIndex().articles.filter((x) => x.status === 'queued').length
     return { id, waiting }
   })
@@ -1683,7 +1690,7 @@ before (the same thought, a second sentence), it is meant for the assistant: STO
   offer('phrase_add', (a) => {
     const text = String(a.text || '').trim().slice(0, 300); if (!text) throw new Error('Nothing to save')
     const d = phrasesRead(); if (!d.items.some((x) => x.text === text)) d.items.unshift({ id: 'f' + Date.now().toString(36), text, note: String(a.note || '').slice(0, 200), created: now() })
-    d.items = d.items.slice(0, 300); ctx.store.write('phrases.json', JSON.stringify(d)); makeCards(); return d.items
+    d.items = d.items.slice(0, 300); ctx.store.write('phrases.json', JSON.stringify(d)); if (!ctx.terminal) makeCards(); return d.items   // a terminal's: the app makes its card when Practice opens
   })
   command('phrase_delete', (a) => { const d = phrasesRead(); d.items = d.items.filter((x) => x.id !== String(a.id)); ctx.store.write('phrases.json', JSON.stringify(d)); return d.items })
   // ── phrase review: spaced repetition of "My phrases" ──
@@ -1995,6 +2002,8 @@ PAGES:
         if (outline) ctx.store.write(`articles/${id}/outline.json`, JSON.stringify(outline))
         if (changed.length) {
           ctx.store.write(`articles/${id}/script.json`, JSON.stringify(script))
+          const tt = J(`articles/${id}/terms.json`, null)   // a form the correction took out is no longer said
+          if (tt && tt.status === 'ready') ctx.store.write(`articles/${id}/terms.json`, JSON.stringify(Object.assign(tt, { terms: termsFrom(tt, source, script) })))
           const tm = J(`articles/${id}/timings.json`, {})
           changed.forEach((b) => { delete tm[b]; removeTree(`articles/${id}/audio/${b}.mp3`) })
           ctx.store.write(`articles/${id}/timings.json`, JSON.stringify(tm))
@@ -2066,16 +2075,21 @@ PAGES:
   command('ping', () => 'pong')
 
   // ── at start: whatever was being made when Echo stopped did not finish; tidy up ──
-  editIndex((ix0) => {
-  let changed = false
-  ix0.articles.forEach((a) => {
-    if (['fetching', 'writing', 'voicing'].includes(a.status)) { a.status = 'error'; a.error = a.has_script ? 'Interrupted: Echo was closed while the voice was being made (what is done is kept; press “Make the voice” to go on)' : 'Interrupted: Echo was closed while it was being prepared'; changed = true }
-    // "Ready" now means all of it is voiced (an older version said it once the retelling was written).
-    if (a.status === 'ready' && a.voice_status !== 'ready') { a.status = 'error'; a.has_script = true; a.error = 'The voice is not complete yet: press “Make the voice” to finish it'; changed = true }
-    if (a.voice_status === 'making') { a.voice_status = 'error'; a.voice_error = 'Interrupted: Echo was closed while the voice was being made (what is done is kept)'; changed = true }
-  })
-  return changed
-  })
+  // Only in the app: a terminal's load (`echoctl plugin call`, Claude's plugins tool, the dry run) never touches the
+  // articles the app is making, sweeps, or starts the queue in a process that ends with its answer.
+  if (ctx.terminal) return
+  try {
+    editIndex((ix0) => {
+      let changed = false
+      ix0.articles.forEach((a) => {
+        if (['fetching', 'writing', 'voicing'].includes(a.status)) { a.status = 'error'; a.error = a.has_script ? 'Interrupted: Echo was closed while the voice was being made (what is done is kept; press “Make the voice” to go on)' : 'Interrupted: Echo was closed while it was being prepared'; changed = true }
+        // "Ready" now means all of it is voiced (an older version said it once the retelling was written).
+        if (a.status === 'ready' && a.voice_status !== 'ready') { a.status = 'error'; a.has_script = true; a.error = 'The voice is not complete yet: press “Make the voice” to finish it'; changed = true }
+        if (a.voice_status === 'making') { a.voice_status = 'error'; a.voice_error = 'Interrupted: Echo was closed while the voice was being made (what is done is kept)'; changed = true }
+      })
+      return changed
+    })
+  } catch (e) { ctx.log('start: ' + msg(e)) }
   sweepRuns(); sweepArticles([]); sweepQuizzes(); sweepTalks()
   for (const tid of talkIds()) { const m = talkMeta(tid); if (m && ['open', 'starting'].includes(m.status)) talkEnd(tid, 'Echo was closed during the talk').catch((e) => ctx.log('talk end: ' + msg(e))) }
   pump()

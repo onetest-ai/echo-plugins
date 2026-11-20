@@ -32,3 +32,4 @@ tags: [retell, offers, claude]
 | 8 | The same without `--read`; wait (≤ 2 min) | An `{id}`; within 10 s `index.json` has it `fetching`, then `ready` — the window's Echo took it from the queue |
 | 9 | `"name":"phrase_add","args":{"text":"to put it in a nutshell"}` | `phrases.json` holds it |
 | 10 | `"name":"article","args":{"id":"../index"}` `--read` | `isError` true, "Not a valid id"; nothing read |
+| 11 | Add `https://docs.acme-test.example/posts/long-guide.html` in the window; while it is `writing`, `mcp` `list` `--read` | It is still `writing` (not "Interrupted"), no other article turned `fetching` by that call; it goes on to `ready` |

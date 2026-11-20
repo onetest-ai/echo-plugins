@@ -61,6 +61,12 @@
    "title": "A routine of before with `tools: read` or `folder` keeps running, as Auto: its row and panel say Auto, its editor opens with Auto picked, its run asks for auto; switching it on or off changes only its `enabled:` line, and a save writes `tools: auto`",
    "priority": "high",
    "check": "agent"
+  },
+  {
+   "id": "F-SCH-11",
+   "title": "On an Echo that has plugins' offered commands (ctx.expose), Scheduler offers other plugins and Claude in Echo `routines` (id, name, schedule, on) and `runs` (reading) and `run` (run now); on an older Echo they stay its own commands",
+   "priority": "medium",
+   "check": "agent"
   }
  ]
 }

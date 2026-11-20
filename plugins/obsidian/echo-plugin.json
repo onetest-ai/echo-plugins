@@ -1,7 +1,7 @@
 {
   "id": "obsidian",
   "name": "Knowledge",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "echo": ">=0.10.1",
   "summary": "Your notes as Knowledge: connect the folders of notes you keep (an Obsidian vault, any folder of Markdown); Echo describes each one for Claude, you correct it, and Claude in Echo knows where to look",
   "agent": {

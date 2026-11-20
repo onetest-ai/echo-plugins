@@ -403,6 +403,12 @@
    "title": "Person pages are written in batches — never per event, no model — only when Echo's properties changed, one commit of Echo's own files, one index write, one log.md line and one activity row a batch (rows a stopped run owed come with the next): with a call's minutes note (its participants, in the note's commit) when the vault's minutes are Automatic; the catch-up on start, at most once a day (Automatic vaults); people_sync and the vault's Settings → People → Update person pages, in any mode; a page the user deleted is written again only by people_sync",
    "priority": "critical",
    "check": "agent"
+  },
+  {
+   "id": "F-OB-74",
+   "title": "On an Echo that has plugins' offered commands (ctx.expose), the plugin offers its nine index reading commands (search, info, links, backlinks, resolve, tags, where, tasks, unresolved), each marked reads, with their arguments; on an older Echo they stay its own commands",
+   "priority": "medium",
+   "check": "agent"
   }
  ]
 }

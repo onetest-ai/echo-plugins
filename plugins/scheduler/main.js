@@ -198,6 +198,10 @@ export function renderRoutine(r) {
 }
 
 export function apply(ctx) {
+  // What it offers other plugins and Claude in Echo (`ctx.expose`, an Echo that has it): its routines, their runs and
+  // running one now; on an older Echo these are its own commands, as before.
+  const api = ctx.expose ? ctx.expose('Your scheduled Claude prompts (routines): which there are, their runs, and running one now') : null
+  const offer = (name, fn, opts) => (api ? api.command(name, fn, opts) : ctx.command(name, fn))
   const running = new Set()
 
   const readState = () => JSON.parse(ctx.store.read('state.json') || '{}')
@@ -384,7 +388,9 @@ export function apply(ctx) {
   }).filter(Boolean).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
   ctx.command('templates', () => templates())
 
-  ctx.command('runs', ({ id }) => runsOf(id))
+  offer('routines', () => all().map((r) => (r.error ? { id: r.id, error: r.error } : { id: r.id, name: r.name, schedule: r.schedule, enabled: r.enabled })),
+    { description: 'The routines: id, name, schedule and whether each is on', reads: true })
+  offer('runs', ({ id }) => runsOf(id), { description: "A routine's runs, newest first: when, its state, what it sent, its cost", args: { id: 'the routine (routines gives the ids)' }, reads: true })
   ctx.command('run_detail', ({ id, run: stamp }) => {
     if (!(id === '_draft' || validId(id)) || !/^[0-9-]+$/.test(String(stamp))) throw new Error('no such run')
     const dir = `runs/${id}/${stamp}`
@@ -430,6 +436,7 @@ export function apply(ctx) {
     return r
   })
   // Started, not waited for (a run takes minutes); `run_wait` waits (the CLI).
-  ctx.command('run', ({ id }) => { get(id); run(id).catch((e) => ctx.log('run', id, e.message || e)); return { started: true } })
+  offer('run', ({ id }) => { get(id); run(id).catch((e) => ctx.log('run', id, e.message || e)); return { started: true } },
+    { description: 'Run a routine now; its answer goes where the routine sends it', args: { id: 'the routine (routines gives the ids)' } })
   ctx.command('run_wait', ({ id, deliver }) => run(id, deliver !== false))
 }

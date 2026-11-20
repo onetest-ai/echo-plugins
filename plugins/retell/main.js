@@ -235,7 +235,8 @@ export function apply(ctx) {
     try { const v = JSON.parse(t); if (v && Array.isArray(v.articles)) return v } catch (e) { /* below */ }
     if (!brokenKept) {
       brokenKept = true
-      try { ctx.store.write(`index.broken-${Date.now()}.json`, String(t)) } catch (e) { /* as it is */ }
+      let kept = false; try { kept = (ctx.store.list('') || []).some((n) => n.startsWith('index.broken-') && ctx.store.read(n, { lossy: true }) === String(t)) } catch (e) { /* none */ }
+      if (!kept) { try { ctx.store.write(`index.broken-${Date.now()}.json`, String(t)) } catch (e) { /* as it is */ } }   // one copy of the same text, whatever process saw it first
       ctx.log('index.json could not be read: a copy is kept as index.broken-….json; nothing is written over it or swept')
     }
     return null
@@ -1145,6 +1146,7 @@ PAGES:
     const split = String((a && a.split) || '') === 'first' ? 'first' : 'all'
     const fname = h ? String(h.name || 'document') : ''
     const entry = ({ id, title: String((a && a.title) || '').trim().slice(0, 140) || fname || url || text.slice(0, 60), url, file: fname, lang: String((a && a.lang) || '').trim() || setting('lang') || 'en', length, split, status: h ? 'fetching' : 'queued', stage: h ? 'Taking the text out of the file…' : '', created: now(), opened: now(), bytes: 0, pinned: false, topic: String((a && a.topic) || '') })
+    if (readIndex().broken) throw new Error(BROKEN)
     if (!h) put(id, 'input.json', { url, text, pages })   // before its entry: the queue never finds it without its input
     editIndex((ix) => { ix.articles.push(entry); return true })
     // A terminal's call (`echoctl plugin call`, Claude's through Echo's plugins tool) or another plugin's only queues it:

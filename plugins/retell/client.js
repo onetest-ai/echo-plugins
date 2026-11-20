@@ -1242,7 +1242,8 @@ export function apply(ctx) {
   const tkPaintSoon = () => { if (S.view !== 'practice' || !S.tk) return; clearTimeout(S.tk.paintT); S.tk.paintT = setTimeout(() => { if (S.tk) { ctx.render(); const l = $('rt-tklog'); if (l) l.scrollTop = l.scrollHeight } }, 60) }
   const tkLog = (T, what) => { T.ev.push(`${T.t0 ? ((Date.now() - T.t0) / 1000).toFixed(1) : '-'} ${what}`); if (T.ev.length > 200) T.ev.shift() }
   const tkLine = (T, who, text, extra) => { T.lines.push(Object.assign({ who, text }, extra || {})); tkPaintSoon() }
-  const tkTurn = (T, turn) => ctx.call('talk_turn', { id: T.id, turn }).catch(() => {})
+  // One after another, in the order said: the review is written from the record.
+  const tkTurn = (T, turn) => { T.turnChain = (T.turnChain || Promise.resolve()).then(() => ctx.call('talk_turn', { id: T.id, turn })).catch(() => {}); return T.turnChain }
   // the coach's own voice heard back through the speakers: most of its words are in what it said just now
   const tkEcho = (T, text) => {
     const w = tkWords(text); if (w.length < 2) return false

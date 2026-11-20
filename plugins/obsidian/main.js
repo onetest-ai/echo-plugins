@@ -3417,6 +3417,23 @@ export function ingestMessage(sources, firstTitle) {
 }
 
 export function apply(ctx) {
+  // What it offers other plugins and Claude in Echo (`ctx.expose`, an Echo that has it): the index's reading commands,
+  // each defined further down where it always was (`offer`); on an older Echo they are its own commands, as before.
+  const offered = {}
+  const api = ctx.expose ? ctx.expose("Your Obsidian vaults through Echo's index: notes by title, tag or property, their links, backlinks and tasks") : null
+  const v = { vault: "a vault's name or folder" }, n = { ...v, note: 'its path in the pages folder, or its name as a [[link]] says it' }
+  for (const [name, description, args] of [
+    ['search', 'Find notes by title, alias, heading, tag or property, best first: when you need the note about something', { ...v, q: 'the words to find', tag: 'only notes with this tag', folder: 'only notes in this folder', limit: 'how many' }],
+    ['info', "A note's properties, aliases, tags, headings, its links, links that lead nowhere, backlinks and tasks counted", n],
+    ['links', "A note's links and the note each leads to", n],
+    ['backlinks', 'The notes that link to a note, each with the line', { ...n, limit: 'how many' }],
+    ['resolve', 'Which note a [[link]] means, and whether its #heading or ^block is there', { ...v, link: 'the [[link]]', from: 'the note it is written in' }],
+    ['tags', "The vault's tags and how many notes have each", { ...v, prefix: 'only tags starting so' }],
+    ['where', 'Notes by tag, property (a [[link]] value matches the note it leads to) or folder', { ...v, tag: 'a tag', prop: 'a property', value: 'its value', folder: 'a folder', limit: 'how many' }],
+    ['tasks', 'Tasks in the vault, open, done or all, by note, folder or tag', { ...v, status: 'open, done or all', note: 'one note', folder: 'a folder', tag: 'a tag', limit: 'how many' }],
+    ['unresolved', 'Links to notes not written yet', { ...v, limit: 'how many' }],
+  ]) if (api) api.command(name, (a, how) => offered[name](a, how), { description, args, reads: true })
+  const offer = (name, fn) => { if (api) offered[name] = fn; else ctx.command(name, fn) }
   const running = new Set() // vaults being read now (one analysis per vault at a time)
   const parseList = (text) => { try { const j = JSON.parse(text || '[]'); return Array.isArray(j) ? j : [] } catch { return [] } }
   const load = () => migrateVaults(parseList(ctx.store.read('vaults.json'))).vaults
@@ -3458,7 +3475,7 @@ export function apply(ctx) {
     const step = (what, fn) => { try { fn(); changed = true } catch (e) { ctx.log(`from 0.8 — ${what}: ${(e && e.message) || e}`) } }
     const text = ctx.store.read('vaults.json')
     if (text != null && migrateVaults(parseList(text)).changed) step('vaults', () => change(() => {}))
-    const top = (() => { try { return ctx.store.list('') } catch { return [] } })()
+    const top = (() => { try { return ctx.store.list('') || [] } catch { return [] } })()
     for (const old of ['vault', 'knowledge']) if (top.includes(old)) step(old, () => ctx.store.remove(old))
     // A vault of the user's own with the id `echo` (Obsidian before 0.5 gave it) keeps its description: only the facts
     // vault's index goes from its folder then.
@@ -5418,7 +5435,7 @@ export function apply(ctx) {
   // ── Claude's tools: `echoctl plugin call obsidian <command> '<json>'` (agent/CLAUDE.md lists them) ──
   // Each takes `vault` (a name, folder or id) and answers from the index — Obsidian need not be open.
   const brief = (n) => ({ path: n.p, title: n.t })
-  ctx.command('search', async ({ vault, q, tag, folder, limit }) => {
+  offer('search', async ({ vault, q, tag, folder, limit }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const words = lc(q).split(/\s+/).filter(Boolean)
@@ -5446,7 +5463,7 @@ export function apply(ctx) {
     hits.sort((a, b) => b.score - a.score || a.n.p.localeCompare(b.n.p))
     return { vault: v.name, ...pg(v), total: hits.length, notes: hits.slice(0, Math.min(200, limit || 20)).map((h) => ({ ...brief(h.n), aliases: h.n.al, tags: h.n.tg, matched: h.why })) }
   })
-  ctx.command('info', async ({ vault, note }) => {
+  offer('info', async ({ vault, note }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const p = noteArg(ix, note, v), n = ix.notes.get(p), out = outOf(ix, p)
@@ -5458,13 +5475,13 @@ export function apply(ctx) {
       tasks: { open: n.tk.filter((t) => t[1] === ' ').length, done: n.tk.filter((t) => t[1] !== ' ').length },
     }
   })
-  ctx.command('links', async ({ vault, note }) => {
+  offer('links', async ({ vault, note }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const p = noteArg(ix, note, v), n = ix.notes.get(p), out = outOf(ix, p)
     return n.ln.map((l, i) => ({ line: l[1], target: l[0], subpath: l[3] || undefined, text: l[4] || undefined, to: out[i], embed: !!(l[2] & EMBED) || undefined, markdown: !!(l[2] & MDLINK) || undefined, property: !!(l[2] & INPROPS) || undefined }))
   })
-  ctx.command('backlinks', async ({ vault, note, limit }) => {
+  offer('backlinks', async ({ vault, note, limit }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const p = noteArg(ix, note, v)
@@ -5478,7 +5495,7 @@ export function apply(ctx) {
       links: [...wanted].map(([from, ls]) => ({ ...brief(ix.notes.get(from)), lines: [...new Set(ls)].map((l) => ({ line: l, text: (lines.get(`${from}:${l}`) || '').trim().slice(0, 300) })) })),
     }
   })
-  ctx.command('resolve', async ({ vault, link, from }) => {
+  offer('resolve', async ({ vault, link, from }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const s = String(link || '').trim()
@@ -5490,7 +5507,7 @@ export function apply(ctx) {
     const sub = w.h && n ? (w.h.startsWith('^') ? n.bk.find((b) => b[0] === w.h.slice(1)) : n.hd.find((h) => lc(h[1]) === lc(w.h.split('#').pop()))) : null
     return { to, ...pg(v), exists: !!to, subpath: w.h || undefined, subpath_line: sub ? sub[sub.length - 1] : undefined, same_name: (ix.byName.get(lc(baseOf(w.t)).replace(/\.md$/, '')) || []).filter((x) => x !== to) }
   })
-  ctx.command('tags', async ({ vault, prefix }) => {
+  offer('tags', async ({ vault, prefix }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const own = {}, all = {}
@@ -5508,7 +5525,7 @@ export function apply(ctx) {
   })
   // Notes by tag, property and folder: `prop` alone — they have it; with `value` — it equals that (a list: holds it;
   // [[links]] compared by the note they lead to).
-  ctx.command('where', async ({ vault, tag, prop, value, folder, limit }) => {
+  offer('where', async ({ vault, tag, prop, value, folder, limit }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const want = value == null ? null : lc(String(value).replace(/^\[\[|\]\]$/g, ''))
@@ -5535,7 +5552,7 @@ export function apply(ctx) {
     out.sort((a, b) => a.path.localeCompare(b.path))
     return { ...pg(v), total: out.length, notes: out.slice(0, Math.min(1000, limit || 200)) }
   })
-  ctx.command('tasks', async ({ vault, status, note, folder, tag, limit }) => {
+  offer('tasks', async ({ vault, status, note, folder, tag, limit }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const only = note ? noteArg(ix, note, v) : null
@@ -5549,7 +5566,7 @@ export function apply(ctx) {
     }
     return { ...pg(v), total: out.length, tasks: out.slice(0, Math.min(1000, limit || 200)) }
   })
-  ctx.command('unresolved', async ({ vault, limit }) => {
+  offer('unresolved', async ({ vault, limit }) => {
     const v = vaultArg(vault)
     const ix = await index(v)
     const miss = new Map()

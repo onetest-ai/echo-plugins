@@ -36,7 +36,8 @@ headings, tasks), whether or not Obsidian is open. Ask it instead of searching f
 "note": its path in the vault's pages folder, or its name as a [[link]] would say it. Where a vault keeps its pages in
 a folder of its own (`knowledge/`), the answers name it as "pages" and every note path is relative to it. Echo lets its sessions run these commands
 without asking: `search`, `info`, `backlinks`, `links`, `resolve`, `tags`, `where`, `tasks`, `unresolved`,
-`rename_plan` — they only read the index.
+`rename_plan` — they only read the index. Where Echo offers plugins' commands (its `echo_plugins` tools), the same
+reading commands but `rename_plan` are there too, also in a run that only reads.
 
 - `search {"vault","q","tag"?,"folder"?}` — notes by title, alias, heading, tag and property, best first. For words
   inside notes, Grep the folder.

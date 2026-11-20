@@ -200,8 +200,16 @@ export function renderRoutine(r) {
 export function apply(ctx) {
   // What it offers other plugins and Claude in Echo (`ctx.expose`, an Echo that has it): its routines, their runs and
   // running one now; on an older Echo these are its own commands, as before.
+  // Registered first, so Echo's dry run finds them; each defined further down (`offer`).
   const api = ctx.expose ? ctx.expose('Your scheduled Claude prompts (routines): which there are, their runs, and running one now') : null
-  const offer = (name, fn, opts) => (api ? api.command(name, fn, opts) : ctx.command(name, fn))
+  const offered = {}
+  const idArg = { id: 'the routine (routines gives the ids)' }
+  if (api) {
+    api.command('routines', () => offered.routines(), { description: 'The routines: id, name, schedule and whether each is on', reads: true })
+    api.command('runs', ({ id: r }) => offered.runs({ id: r }), { description: "A routine's runs, newest first: when, its state, what it sent, its cost", args: idArg, reads: true })
+    api.command('run', ({ id: r }) => offered.run({ id: r }), { description: 'Run a routine now; its answer goes where the routine sends it', args: idArg })
+  }
+  const offer = (name, fn) => { if (api) offered[name] = fn; else ctx.command(name, fn) }
   const running = new Set()
 
   const readState = () => JSON.parse(ctx.store.read('state.json') || '{}')
@@ -388,9 +396,8 @@ export function apply(ctx) {
   }).filter(Boolean).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
   ctx.command('templates', () => templates())
 
-  offer('routines', () => all().map((r) => (r.error ? { id: r.id, error: r.error } : { id: r.id, name: r.name, schedule: r.schedule, enabled: r.enabled })),
-    { description: 'The routines: id, name, schedule and whether each is on', reads: true })
-  offer('runs', ({ id }) => runsOf(id), { description: "A routine's runs, newest first: when, its state, what it sent, its cost", args: { id: 'the routine (routines gives the ids)' }, reads: true })
+  offer('routines', () => all().map((r) => (r.error ? { id: r.id, error: r.error } : { id: r.id, name: r.name, schedule: r.schedule, enabled: r.enabled })))
+  offer('runs', ({ id }) => { if (!validId(id)) throw new Error(`no routine “${id}”`); return runsOf(id) })
   ctx.command('run_detail', ({ id, run: stamp }) => {
     if (!(id === '_draft' || validId(id)) || !/^[0-9-]+$/.test(String(stamp))) throw new Error('no such run')
     const dir = `runs/${id}/${stamp}`
@@ -436,7 +443,6 @@ export function apply(ctx) {
     return r
   })
   // Started, not waited for (a run takes minutes); `run_wait` waits (the CLI).
-  offer('run', ({ id }) => { get(id); run(id).catch((e) => ctx.log('run', id, e.message || e)); return { started: true } },
-    { description: 'Run a routine now; its answer goes where the routine sends it', args: { id: 'the routine (routines gives the ids)' } })
+  offer('run', ({ id }) => { get(id); run(id).catch((e) => ctx.log('run', id, e.message || e)); return { started: true } })
   ctx.command('run_wait', ({ id, deliver }) => run(id, deliver !== false))
 }

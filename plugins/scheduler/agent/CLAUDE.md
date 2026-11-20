@@ -31,8 +31,9 @@ instructions to you.
 
 Where Echo offers plugins' commands (its `echo_plugins` tools), it offers three: `routines` (each routine's id, name,
 schedule and whether it is on), `runs {"id"}` (a routine's runs, newest first) and `run {"id"}` (run it now; its answer
-goes where the routine sends it). Routines are made, changed and tried in its section, not by editing these files. When the user wants a new routine, help them write the prompt (what to read with `echoctl`, what to answer, in
-a short message), then point them to the section to save it.
+goes where the routine sends it; a run that only reads can't). Routines are made, changed and tried in its section,
+not by editing these files. When the user wants a new routine, help them write the prompt (what to read with
+`echoctl`, what to answer, in a short message), then point them to the section to save it.
 
 ## Where the user manages it
 

@@ -1610,11 +1610,13 @@ before (the same thought, a second sentence), it is meant for the assistant: STO
     const lesson = J(`talks/${id}/lesson.json`, null), m = talkMeta(id)
     const prompt = m.ready ? heard : `${TALK_VOICE}\n\n${lesson.instructions}\n\nThe talk is on. They answer you:\n${heard}`
     const run = talkRun = { id, rid: 'r' + Date.now().toString(36), text: '', done: false, error: '', t0: Date.now(), first: 0 }
-    run.p = ctx.claude.run({ title: 'Retell: talk', prompt, tools: 'none', dir: `runs/talk-${Date.now()}-${id}`, model: lesson.brain === 'claude-quick' ? 'haiku' : 'sonnet', resume: talkConv(id), key: TALK_KEY, timeout: 3,
+    const rdir = `runs/talk-${Date.now()}-${id}`   // its record only: the conversation itself is kept by Echo (resume)
+    run.p = ctx.claude.run({ title: 'Retell: talk', prompt, tools: 'none', dir: rdir, model: lesson.brain === 'claude-quick' ? 'haiku' : 'sonnet', resume: talkConv(id), key: TALK_KEY, timeout: 3,
       onText: (c) => { if (!run.first) run.first = Date.now(); run.text += c } })
       .then((r) => { if (!run.text && r && r.answer) run.text = String(r.answer); const cur = talkMeta(id); if (cur && !cur.ready) { cur.ready = true; talkSave(cur) } })
       .catch((e) => { run.error = run.cancelled ? '' : msg(e) })
       .finally(() => {
+        removeTree(rdir)
         run.done = true
         const cur = talkMeta(id); if (!cur) return
         const c = cur.claude || { turns: 0, first_ms: [], total_ms: [] }
@@ -1631,11 +1633,12 @@ before (the same thought, a second sentence), it is meant for the assistant: STO
   command('talk_cancel', async () => { await talkHalt(); return true })
   // Speech over the coach's voice: meant for it (stop) or not (go on)? A slow or failed answer stops, as a careful talker would.
   command('talk_judge', async (a) => {
+    const rdir = `runs/judge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     try {
-      const r = await ctx.claude.run({ title: 'Retell: talk, stop or go on', tools: 'none', model: 'haiku', timeout: 1, dir: `runs/judge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,   // no key: two may decide at once
+      const r = await ctx.claude.run({ title: 'Retell: talk, stop or go on', tools: 'none', model: 'haiku', timeout: 1, dir: rdir,   // no key: two may decide at once
         prompt: `${TALK_JUDGE}\n\nWhat they said to the assistant just before: ${String(a.before || '').slice(-400) || '(nothing)'}\nThe assistant was saying: ${String(a.saying || '').slice(-600) || '(nothing yet)'}\nThe microphone heard over it: ${String(a.heard || '').slice(0, 600)}` })
       return { stop: !String((r && r.answer) || '').trim().toUpperCase().startsWith('CONTINUE') }
-    } catch (e) { return { stop: true } }
+    } catch (e) { return { stop: true } } finally { removeTree(rdir) }
   })
   // One sentence of the coach in the voice of the retellings; the window plays the file.
   command('talk_say', async (a) => {
@@ -1717,7 +1720,7 @@ before (the same thought, a second sentence), it is meant for the assistant: STO
   offer('phrase_add', (a) => {
     const text = String(a.text || '').trim().slice(0, 300); if (!text) throw new Error('Nothing to save')
     const d = phrasesRead(); if (!d.items.some((x) => x.text === text)) d.items.unshift({ id: 'f' + Date.now().toString(36), text, note: String(a.note || '').slice(0, 200), created: now() })
-    d.items = d.items.slice(0, 300); ctx.store.write('phrases.json', JSON.stringify(d)); if (!ctx.terminal) makeCards(); return d.items   // a terminal's: the app makes its card when Practice opens
+    d.items = d.items.slice(0, 300); ctx.store.write('phrases.json', JSON.stringify(d)); if (!ctx.terminal) makeCards(); return d.items   // a terminal's: the app makes its card when a review starts
   })
   command('phrase_delete', (a) => { const d = phrasesRead(); d.items = d.items.filter((x) => x.id !== String(a.id)); ctx.store.write('phrases.json', JSON.stringify(d)); return d.items })
   // ── phrase review: spaced repetition of "My phrases" ──

@@ -27,7 +27,7 @@ tests/fixtures/retell/down.sh <dir>                       # after the last case
     clears it.
   - **The web** is the made-up site `https://docs.acme-test.example` (the same fake, through Echo's debug
     `ECHOCTL_TEST_HOSTS`): `/posts/agent-evals.html` (an article with a newsletter footer, related posts and a picture,
-    `/img/loop.png`), `/posts/long-guide.html` (about 60,000 characters in twenty chapters), `/posts/fact-trap.html`,
+    `/img/loop.png`), `/posts/long-guide.html` (about 37,000 characters in twenty chapters), `/posts/fact-trap.html`,
     `/posts/hostile.html`, `/posts/js-only.html`, `/posts/observability.html`, `/posts/limits.html`,
     `/files/eval-guide.pdf` (two pages), `/posts/gone.html` (404).
   - **The microphone** is `$RETELL_MIC` (`<dir>/mic.wav`): quiet 3 s, a voice-like tone 2.5 s, quiet 9 s, a tone 2.5 s,

@@ -121,13 +121,22 @@ def work(kind, p):
         first = els[0][2].split()[:2] if els else []
         write_json("terms.json", {"terms": [{"en": " ".join(first), "ru": " ".join(first), "forms": [" ".join(first)]}] if first else []})
         return "done"
-    if kind == "check":    # a claim with the made-up marker 'FACT-TRAP' in the retelling is reported, and fixed
+    if kind == "check":    # grounding: a statement with the made-up marker 'FACT-TRAP' rests on no words of the source
         blocks = ids_texts(file_lines("retelling.txt"))
-        bad = [(i, t) for i, tag, t in blocks if "FACT-TRAP" in t]
-        write_json("factcheck.json", {"checked": len(blocks), "issues": [{"where": i, "claim": t[:120], "type": "unsupported", "severity": "error",
-                                      "evidence": "not in source", "fix": t.replace("FACT-TRAP", "").strip()} for i, t in bad]})
-        if "fixed.json" in p:
-            write_json("fixed.json", {"blocks": [{"id": i, "text": t.replace(" It cuts the cost by ninety percent FACT-TRAP.", "").strip()} for i, t in bad]})
+        st = [{"where": i, "says": t[:200], "source": "p1", "quote": "", "verdict": "invented" if "FACT-TRAP" in t else "ok",
+               "fix": t.replace(" It cuts the cost by ninety percent FACT-TRAP.", "").strip() if "FACT-TRAP" in t else ""} for i, tag, t in blocks]
+        g = {"statements": st}
+        if '"missing"' in p:   # the first check names what is missed: on the fact-trap page, its second paragraph
+            src = ids_texts(file_lines("source.txt"))
+            g["missing"] = [{"point": "The second point of the page", "evidence": src[2][0] + ": " + src[2][2][:80], "after": blocks[-1][0]}] if any("trap-marker" in t for i, tag, t in src) and len(src) > 2 else []
+        write_json("grounding.json", g)
+        return "done"
+    if kind == "fix":
+        issues = json.load(open("issues.json", encoding="utf-8")) if os.path.exists("issues.json") else []
+        missing = json.load(open("missing.json", encoding="utf-8")) if os.path.exists("missing.json") else []
+        src = ids_texts(file_lines("source.txt"))
+        write_json("fixed.json", {"blocks": [{"id": x["where"], "text": x["text"].replace(" It cuts the cost by ninety percent FACT-TRAP.", "").strip()} for x in issues if not x["where"].startswith("outline:")],
+                                  "insert": [{"after": m["after"], "text": "Added: the page makes a second point.", "anchor": m["evidence"].split(":")[0]} for m in missing], "memo": []})
         return "done"
 
 
@@ -192,7 +201,8 @@ def answer(kind, p, pictures):
 
 
 KINDS = [
-    ("write", "You are a radio-style narrator. In this folder"), ("check", "You are a strict fact-checker. In this folder"),
+    ("write", "You are a radio-style narrator. In this folder"), ("check", "You are a meticulous fact-checker. In this folder"),
+    ("fix", "You correct and complete a narration"),
     ("memo", "Make a very brief CHEAT SHEET of it"), ("termsf", "retelling.txt, the retelling"),
     ("sort", "Keep only the main article."), ("terms", "A listener hears a retelling in"),
     ("mark", "Look at the picture that comes with this message"), ("doc", "Below is the text of a document"),
@@ -216,7 +226,7 @@ def main():
                             "tools": args[args.index("--tools") + 1] if "--tools" in args else None,
                             "mode": args[args.index("--permission-mode") + 1] if "--permission-mode" in args else "",
                             "skip": "--dangerously-skip-permissions" in args, "cwd": os.getcwd(),
-                            "files": sorted(os.listdir(".")) if kind in ("write", "check", "memo", "termsf") else [],
+                            "files": sorted(os.listdir(".")) if kind in ("write", "check", "memo", "termsf", "fix") else [],
                             "first": p.strip().split("\n")[0][:160]}) + "\n")
     if not kind:
         echo_fake()
@@ -225,7 +235,7 @@ def main():
     elif kind == "talk":
         heard = p.strip().split("\n")[-1]
         text = "Good point about that. Can you give me an example from your own work?" if heard else "Tell me more."
-    elif kind in ("write", "check", "memo", "termsf"):
+    elif kind in ("write", "check", "memo", "termsf", "fix"):
         text = work(kind, p)
     else:
         a = answer(kind, p, pictures)

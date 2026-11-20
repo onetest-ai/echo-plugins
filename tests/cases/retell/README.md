@@ -14,11 +14,14 @@ tests/fixtures/retell/down.sh <dir>                       # after the last case
   account:
   - **Claude Code** is `fake_claude.py` (on Windows behind `claude.exe`, a launcher up.sh builds): it tells Retell's runs
     apart by their prompt and answers with made-up JSON built from what the prompt holds; anything else is refused as
-    Echo's own fake refuses it. Each run is a line of `<dir>/fake-claude.log` — its `kind` (`sort`, `write`, `memo`, `termsf`, `check`,
+    Echo's own fake refuses it. Each run is a line of `<dir>/fake-claude.log` — its `kind` (`sort`, `write`, `memo`, `check`, `fix`, `termsf`,
     `terms`, `mark`, `doc`, `ask`, `qacheck`, `candidates`, `pick`, `quiz`, `checkq`, `talk`, `judge`,
     `review`, `cards`, `suggest`), `tools` (`""`: no tools), `pictures`, `resume`. The runs on files, `write`, `memo`,
-    `termsf` and `check`, start in a folder of `$S/work/`: the fake reads the files there and writes its answers there, as Claude
-    Code would; their lines add `mode` (the permission mode Echo gave), `skip`, `cwd` and `files` (what the folder held).
+    `check`, `fix` and `termsf`, start in a folder of `$S/work/` (`write` in the article's own, `$S/articles/<id>`,
+    where its pictures are): the fake reads the files there and writes its answers there, as Claude
+    Code would; their lines add `mode` (the permission mode Echo gave: `dontAsk` for file tools only), `skip`, `cwd`
+    and `files` (what the folder held). `check` answers by grounding each block (`FACT-TRAP` rests on nothing) and, the
+    first time, names a missed point on the fact-trap page; `fix` corrects and adds that point as a block.
   - **The speech server** is `fake_retell.py` at `$FAKE_RETELL` (Retell's setting "tts" is set to it): the OpenAI API
     as Retell uses it — models, speech (an MP3 of silence about as long as the text), the Realtime transcription
     socket (each loud stretch of the microphone written down as the next of its `transcripts`). `curl $FAKE_RETELL/_state`

@@ -27,4 +27,5 @@ tags: [retell, voice, failure]
 | 5 | `… -d '{"speech":"up"}'`; Check | Online again |
 | 6 | `#settings/plugins/retell` | Retell's settings aren't fields there: one row listing them, "Set in Retell", *Open* opens `#settings/retell:main` |
 | 7 | Back on `#settings/retell:main` | Under the title and its lead line Echo's "Its settings": *Speech server* (`$FAKE_RETELL`, with Echo's note), *API key* (not set), then the article options (language, fact check, notify …) — no voice model, voice, style or recognition model fields there (the cards below set those from the server's lists); then the server's state and the voice cards |
-| 8 | Change *Speech server* to `$FAKE_RETELL/` and leave the field; wait for the window to reload | The section shows the server online again with its models (it checks it on load), no Check needed |
+| 8 | Change *Speech server* to `http://127.0.0.1:9` (nothing listens there) and leave the field; wait for the window to reload | The state says the server can't be reached — the last answer was for the old address — no Check needed |
+| 9 | Change it back to `$FAKE_RETELL` | Online again with its models (the page checks the server on load) |

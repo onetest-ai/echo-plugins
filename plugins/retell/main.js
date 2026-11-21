@@ -1277,6 +1277,8 @@ PAGES:
       if (r.status === 200) { try { const d = JSON.parse(r.body); health.models = (Array.isArray(d.data) ? d.data : []).map((m) => String(m.id)).filter(Boolean).slice(0, 400) } catch (e) { health.models = [] } }
     } catch (e) { health.ok = false; health.error = msg(e).slice(0, 200) }
     health.at = Date.now(); health.busy = false
+    // The address or key changed while it ran: its answer is for the old one, so check the new one now.
+    if (health.for !== healthFor()) return checkHealth()
   }
   ctx.every(10, () => { if (base() && Date.now() - health.at > 30000) checkHealth() })
   command('health', () => { if (!base()) return { configured: false }; healthNow(); if (Date.now() - health.at > 45000) checkHealth(); return { configured: true, ok: health.ok, at: health.at, error: health.error } })
@@ -1300,7 +1302,7 @@ PAGES:
     if (!VOICE_KEYS.includes(key)) throw new Error('Not a voice setting: ' + key)
     if (/model$/.test(key) && !/^[\w.:\-/]{1,120}$/.test(value)) throw new Error('A model name is letters, digits and . _ - : / only')
     ctx.settings.set(key, value)
-    if (/model$/.test(key) && !health.models.includes(value)) {
+    if (/model$/.test(key) && !healthNow().models.includes(value)) {
       const c = voiceCustom(); if (!c.models.includes(value)) { c.models = [value, ...c.models].slice(0, 20); ctx.store.write('voice_custom.json', JSON.stringify(c)) }
     }
     return voiceConfig()

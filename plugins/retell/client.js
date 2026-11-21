@@ -10,7 +10,7 @@ export function apply(ctx) {
   const esc = (s) => ctx.ui.esc(String(s == null ? '' : s))
   const $ = (id) => document.getElementById(id)
   const S = {
-    list: null, digests: [], topics: [], view: 'listen', open: null, filter: 'all', q: '', dlg: null, draft: '', menu: null, topen: {}, dall: {},
+    list: null, digests: [], topics: [], view: 'library', open: null, filter: 'all', q: '', dlg: null, draft: '', menu: null, topen: {},
     dtab: null, vmode: 'both', health: null, error: '', starting: false, qa: null, selText: '', scroll: { left: 0, right: 0 }, sc: { listen: 0, library: 0 },
     flash: null, sleepAt: 0, sleepI: 0, lastRep: 0, hlSrc: null, scrollCur: false, timer: null, vtimer: null, ttimer: null, htimer: null,
     itemDlg: { d: '', n: 0 }, learn: null, lt: [], lpacks: [], lpoll: null, pr: { scope: '', n: 8, level: 'B2', quizzes: [], phrases: [], quiz: null, qi: 0, draft: '', note: '', mic: null, timer: null, focus: false, busy: false, rec: null, spoken: null, talks: [], talk: null, rv: null, rstate: null, tcorrect: 'gentle', tbrain: 'claude', twait: 'normal', tbusy: false }, tdlg: { id: '', name: '', parent: '' }, mdlg: { id: '', topic: '' }, addLen: 'normal', addLang: '', addPages: '', addSplit: 'all', hits: {}, hitsQ: '', searchT: null,
@@ -161,7 +161,7 @@ export function apply(ctx) {
     try { S.digests = await ctx.call('digests', {}) } catch (e) { /* no reading list yet */ }
     try { S.topics = await ctx.call('topics', {}) } catch (e) { /* none yet */ }
   }
-  const load = async () => { await refreshAll(); await refreshHealth(); ctx.render() }
+  const load = async () => { await refreshAll(); await refreshHealth(); if (!S.learnLoaded) { S.learnLoaded = true; await learnRefresh() } ctx.render() }
   const act = async (command, args) => {
     S.error = ''
     try { const r = await ctx.call(command, args || {}); await load(); return r } catch (e) { S.error = e.message || String(e); ctx.render() }
@@ -591,7 +591,6 @@ export function apply(ctx) {
 
   // ── views ──
   const topBar = () => `<header class="rt-top"><div class="rt-brand">Retell</div>
-    <button class="rt-tab" data-rt="nav" data-v="listen" aria-current="${S.view === 'listen' ? 'page' : 'false'}">Listen</button>
     <button class="rt-tab" data-rt="nav" data-v="library" aria-current="${S.view === 'library' || S.view === 'player' ? 'page' : 'false'}">Library</button>
     <button class="rt-tab" data-rt="nav" data-v="practice" aria-current="${S.view === 'practice' ? 'page' : 'false'}">Practice</button>
     <span class="rt-sp"></span><span class="rt-health" id="rt-health"><i></i><span>Voice server: checking…</span></span>
@@ -601,7 +600,8 @@ export function apply(ctx) {
   const openable = (a) => a.status === 'ready' || (a.status === 'error' && a.has_script)
   const lastPlayed = () => { const r = artsOf().filter((a) => a.status === 'ready' && a.played).sort((x, y) => String(y.played).localeCompare(String(x.played))); return r[0] || null }
 
-  const listenHtml = () => {
+  // The top of Library: what to listen to now (where you stopped, or the newest) and what is being made.
+  const nowHtml = () => {
     const arts = artsOf(), cur = lastPlayed() || arts.filter((a) => a.status === 'ready').sort((x, y) => String(y.created).localeCompare(String(x.created)))[0]
     const active = arts.filter((a) => ['fetching', 'writing', 'voicing'].includes(a.status)), waiting = arts.filter((a) => a.status === 'queued').sort((x, y) => (x.queue_pos || 0) - (y.queue_pos || 0))
     const working = [...active, ...waiting], workNow = active.find((a) => a.status !== 'voicing') || active[0] || waiting[0]
@@ -618,12 +618,7 @@ export function apply(ctx) {
       cont = `<div class="rt-card"><div style="font-size:18px;font-weight:600">Nothing to listen to yet</div><div class="set-sub" style="margin:4px 0 10px">Add a link or paste a text: Claude retells it and reads it aloud, and the original stays next to it.</div><button class="btn primary" data-rt="add">Add an article</button></div>`
     }
     const making = workNow ? `<div class="rt-card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="rt-chip acc">Making now</span><div style="flex:1;min-width:200px"><b style="font-weight:500">${esc(workNow.title)}</b><div class="set-sub">${esc(stateOf(workNow).chip)}${stateOf(workNow).note ? ' — ' + esc(stateOf(workNow).note) : ''}</div></div>${workNow.status === 'voicing' ? `<div class="rt-bar" style="width:200px"><i style="width:${Math.round(stateOf(workNow).bar * 100)}%"></i></div><button class="btn" data-rt="vstop" data-id="${esc(workNow.id)}">Stop</button>` : '<div class="rt-bar work" style="width:200px"><i style="width:100%"></i></div>'}${waiting.length - (workNow && workNow.status === 'queued' ? 1 : 0) > 0 ? `<span class="rt-chip" title="${esc(waiting.map((w) => w.title).join(' · '))}">${waiting.length - (workNow && workNow.status === 'queued' ? 1 : 0)} waiting</span>` : ''}</div>` : ''
-    const d = S.digests[0]
-    const rl = d ? `<div><div class="rt-h">Reading list · ${esc(d.title)}</div><div class="rt-card">${digestItems(d, S.dall[d.id] ? 99 : 4)}${d.items.length > 4 && !S.dall[d.id] ? `<div class="rt-prow"><button class="btn" data-rt="dmore" data-d="${esc(d.id)}">Show all ${d.items.length}</button> <span class="set-sub">The whole list, with the other lists, is in the Library.</span></div>` : ''}</div></div>` : ''
-    const L = S.list || { articles: [], total: 0 }
-    const cap = L.max_mb ? L.max_mb * 1024 * 1024 : 0
-    const store = `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap" class="set-sub"><span>Storage</span><div class="rt-bar" style="width:160px"><i style="width:${cap ? Math.min(100, Math.round((L.total || 0) / cap * 100)) : 0}%"></i></div><span>${mb(L.total || 0)}${cap ? ' of ' + L.max_mb + ' MB' : ''} · the oldest unpinned articles are removed first (Settings → Retell)</span></div>`
-    return `<div class="rt-sc" id="rt-sc"><div class="rt-wrap">${S.error ? `<p class="error" style="margin:0">${esc(S.error)}</p>` : ''}${cont}${making}${rl}${store}</div></div>`
+    return cont + making
   }
 
   // Items of a reading list (a topic made from a digest): what happened to each, one button at a time.
@@ -638,7 +633,6 @@ export function apply(ctx) {
     else act = `<span class="set-sub">${it.type === 'video' ? 'a video: open the link yourself' : 'no link'}</span>`
     return `<div class="rt-prow" style="${it.skipped ? 'opacity:.55' : ''}"><span class="rt-ic">${it.type === 'video' ? IC.vid : IC.doc}</span><span class="rt-pt"><b>${esc(it.title)}</b><span class="rt-pm">${esc([it.source, it.type, it.minutes ? it.minutes + ' min' : '', it.note].filter(Boolean).join(' · '))}</span>${it.why ? `<span class="rt-pm" style="white-space:normal">${esc(it.why)}</span>` : ''}${!can && it.url ? `<span class="rt-pm" style="user-select:all;word-break:break-all">${esc(it.url)}</span>` : ''}</span><div style="display:flex;gap:6px;align-items:center;flex:none">${act}</div></div>`
   }
-  const digestItems = (d, max) => d.items.slice(0, max).map((it) => itemRow(d, it)).join('')
 
   // The library: a tree of topics. A topic holds sub-topics, the articles filed in it, and (a reading list) the items not made yet.
   const treeModel = () => {
@@ -697,7 +691,7 @@ export function apply(ctx) {
     const tree = m.roots.map((n) => topicNode(n, 0)).join('')
     const unOpen = S.topen.__un !== false
     const unHtml = un.length ? `<div>${head(unOpen, '__un', IC.folder, 'Not in a topic', String(un.length), '')}${unOpen ? `<div class="rt-kids">${un.map(artRow).join('')}</div>` : ''}</div>` : ''
-    return tree + unHtml || '<div class="set-sub" style="padding:16px 4px">Nothing matches. Clear the search or choose another filter.</div>'
+    return tree + unHtml || (artsOf().length ? '<div class="set-sub" style="padding:16px 4px">Nothing matches. Clear the search or choose another filter.</div>' : '')
   }
 
   // ── reading lists: Claude names pages, Echo opens and checks them, Claude picks; refined in words, kept in Library ──
@@ -785,7 +779,7 @@ export function apply(ctx) {
     const cap = L.max_mb ? L.max_mb * 1024 * 1024 : 0
     const flt = [['all', 'All'], ['progress', 'In progress'], ['new', 'Not heard'], ['pin', 'Pinned']]
     return `<div class="rt-sc" id="rt-sc"><div class="rt-wrap">
-      ${S.error ? `<p class="error" style="margin:0">${esc(S.error)}</p>` : ''}${learnBar()}
+      ${S.error ? `<p class="error" style="margin:0">${esc(S.error)}</p>` : ''}${nowHtml()}${learnBar()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input id="rt-q2" class="search" placeholder="Search titles, sites and what the articles say" value="${esc(S.q)}" style="flex:1;min-width:160px"><div class="rt-seg">${flt.map(([k, l]) => `<button data-rt="flt" data-f="${k}" aria-pressed="${S.filter === k}">${l}</button>`).join('')}</div><button class="btn" data-rt="topicdlg" data-new="1" data-parent="" style="display:inline-flex;gap:6px;align-items:center">${IC.folder}New topic</button></div>
       <div class="rt-tree" id="rt-lib">${libRows()}</div>
       <div class="set-sub" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span>${L.articles.length} article${L.articles.length === 1 ? '' : 's'} · ${mb(L.total || 0)}${cap ? ' of ' + L.max_mb + ' MB' : ''}</span><button class="btn" data-rt="cleanup">Free space now</button><button class="btn" data-rt="clear" style="color:var(--danger)">Delete all</button></div></div></div>`
@@ -1447,9 +1441,9 @@ export function apply(ctx) {
   const practiceHtml = () => (S.tk ? tkHtml() : S.pr.quiz ? quizHtml() : S.pr.talk ? talkHtml() : S.pr.rv ? reviewHtml() : prHome())
 
   const appHtml = () => {
-    if (S.view === 'player' && !S.open) S.view = 'listen'
+    if (S.view === 'player' && !S.open) S.view = 'library'
     const player = S.view === 'player' && S.open
-    const body = player ? playerHtml() : S.view === 'library' ? libraryHtml() : S.view === 'practice' ? practiceHtml() : listenHtml()
+    const body = player ? playerHtml() : S.view === 'library' ? libraryHtml() : S.view === 'practice' ? practiceHtml() : libraryHtml()
     const mini = !player && S.open && P.i >= 0 ? miniHtml() : ''
     return `<div id="rt-app">${topBar()}<div id="rt-main">${body}${dialogHtml()}</div>${mini}</div>`
   }
@@ -1520,7 +1514,7 @@ export function apply(ctx) {
   const goView = async (v) => {
     if (S.tk && v !== 'practice') await tkFinish('You left Practice')
     S.view = v; S.menu = null; S.error = ''
-    if (v === 'library' || v === 'listen') await refreshAll()
+    if (v === 'library') await refreshAll()
     if (v === 'library') { await learnRefresh(); learnPoll() }
     if (v === 'practice') { await refreshAll(); await prRefresh(); prPoll() }
     ctx.render()
@@ -1660,7 +1654,6 @@ export function apply(ctx) {
       case 'vhome': return act('voice', { id: d.id })
       case 'vstop': if (d.id) return act('stop', { id: d.id }); try { await ctx.call('stop', { id: S.open.entry.id }) } catch (e) { /* nothing running */ } return
       case 'recheck2': try { await ctx.call('recheck', { id: d.id }); S.menu = null; if (S.open && S.open.entry.id === d.id) { stopPlayer(); S.open = null } } catch (e) { S.error = e.message || String(e) } return load()
-      case 'dmore': S.dall[d.d] = true; return ctx.render()
       case 'dstart': S.itemDlg = { d: d.d, n: +d.n }; S.dlg = 'item'; S.error = ''; return ctx.render()
       case 'itemgo': {
         const dg = S.digests.find((x) => x.id === S.itemDlg.d), it = dg && dg.items[S.itemDlg.n]; if (!it) { S.dlg = null; return ctx.render() }

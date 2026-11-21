@@ -5,10 +5,11 @@ a PDF, a Word or PowerPoint file, or pasted text: Echo reads it, Claude retells 
 speech server voices it. Then practise on it — a quiz, answers you say aloud, a live talk with a coach — and keep the
 phrases worth repeating.
 
-- **Listen**: the retelling plays with its words lit as they are spoken, the original beside it, pictures lit as
+- **The player** (open an article in Library): the retelling plays with its words lit as they are spoken, the original beside it, pictures lit as
   they are explained; a memo (a numbered cheat sheet), the original's terms, a fact check, and your questions answered
   — from the article, and beyond it on pages Echo opens to check.
-- **Library**: Add (links, files, text) puts articles in a queue; a long article is cut into parts in one topic.
+- **Library**: on top, where you stopped (Continue listening) and what is being made; then the articles in topics.
+  Add (links, files, text) puts articles in a queue; a long article is cut into parts in one topic.
   Reading lists: Claude names pages on a topic, Echo opens each one, Claude picks the list from those that opened.
 - **Practice**: quizzes from what you listened to, answered in writing or aloud (pace, fillers, pauses); **Start a
   talk** — a spoken conversation with a coach right in the window, then a review of your English; **My phrases**,

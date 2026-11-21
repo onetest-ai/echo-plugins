@@ -20,7 +20,7 @@ tags: [retell, voice, talk, real]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | Retell voice: address `https://api.openai.com`, the key, Check | Online; OpenAI's models listed (gpt-4o-mini-tts …) |
+| 1 | Retell: address `https://api.openai.com`, the key, Check | Online; OpenAI's models listed (gpt-4o-mini-tts …) |
 | 2 | Add a real article; listen | Voiced with the chosen voice and manner; words lit near the voice |
 | 3 | Practice → a quiz, answer one aloud | The words written down; pace, fillers and pauses shown |
 | 4 | Start a talk; talk for two minutes, cut in once while the coach speaks | The coach answers each turn, stops when cut in, the review comes after Finish |

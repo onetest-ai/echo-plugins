@@ -40,3 +40,5 @@ tags: [obsidian, knowledge, ingest, sources, web]
 | 11 | *Add a source* → *A web page*, `$FAKE_WEB/rollout.html`, *Add the page* | "Added raw_inbox/web/<today>-acme-rollout-plan (2).md with 1 picture. 1 picture couldn't be saved and keeps its web address."; Ingest lists both under Web |
 | 12 | The same with `$FAKE_WEB/spa.html` | The sheet stays open with the JavaScript error; nothing added |
 | 13 | Wait 2 minutes; `curl -s $FAKE_WEB/_log` | No request since: a page is never read again by itself |
+| 14 | Window: `#settings/obsidian:main` | Under the Vaults card, Echo's own "Its settings": *Where the twin preset puts its twin skill* (`vault`) and *Sites Knowledge reads pages from* with `$FAKE_WEB` and Echo's note that the window may reach it too |
+| 15 | `#settings/plugins/obsidian` | No fields for those two: one row "Where the twin preset puts its twin skill, Sites Knowledge reads pages from — Set in Knowledge", *Open* opens `#settings/obsidian:main` |

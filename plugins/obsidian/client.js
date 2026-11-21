@@ -183,7 +183,9 @@ export async function apply(ctx) {
   ctx.slots.add('call.minutes', { id: 'then', label: 'Knowledge', render: (call) => view.countdownLine(withK(call)) })
 
   // ── Settings: a small section listing the vaults, each opened in the activity ──
-  ctx.settings.section({ id: 'main', label: 'Knowledge', icon: NOTES_ICON(16), render: () => view.settingsVaults() })
+  ctx.settings.section({ id: 'main', label: 'Knowledge', icon: NOTES_ICON(16), render: () => view.settingsVaults(),
+    // Its two settings, Echo's own fields under the vaults (the sites are addresses: only the user enters them).
+    settings: ['skills', 'web_sites'], settingsAt: 'bottom' })
   ctx.settings.add({ render: () => ctx.ui.setCard('', [ctx.ui.setRow('Your vaults', 'Home, Pages, Graph, Ingest, Health and Settings — in the folders you own.', '<button class="btn" data-kn-open>Open Knowledge</button>')]) })
   view.paletteActions((group, label, run, o = {}) => ctx.palette.add({ group, label, run, keywords: o.keywords || '' }))
 

@@ -89,7 +89,7 @@ with it and what to leave alone. You correct the description, and from then on C
 - **Sources for Ingest** — a vault's sources folder (`raw_inbox/`): files you hand over (copied as they are, never over
   a file), a call's minutes, a mail thread from Microsoft 365, a web page. A web page is read once, when you add it —
   its main text as Markdown, its pictures saved beside it — never again by itself: a page on a site you list in the
-  plugin's settings (Settings → Plugins → Knowledge → Its settings: Sites Knowledge reads pages from) at once, any other after you type its address in Echo's own box.
+  plugin's settings (Settings → Knowledge, under the vaults: Sites Knowledge reads pages from) at once, any other after you type its address in Echo's own box.
   A page that builds itself with JavaScript isn't read yet (nothing is added, and Echo says so). New calls and
   mail of a vault's threads are queued by its rule (`ingest.calls`, `ingest.mail`: off, add, prepare) with nothing
   written into the vault; preparing a batch (`prepare_sources`, and each Ingest run first) writes them, reading a
@@ -121,7 +121,7 @@ with it and what to leave alone. You correct the description, and from then on C
   data (the vaults, their descriptions and records), but Echo takes back the folders it gave: installed again, each
   vault asks for its folder once (*Pick the folder again…*) and goes on as it was.
 
-Needs Echo 0.10.1 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
+Needs Echo 0.10.7 or later. `main.js` keeps the vaults, their descriptions, Echo's index of them and Claude's
 entries; `client.js` wires the Knowledge activity (`view.js`, `model.js`, `knowledge.css`, through `seam.js` to the
 host half's commands) into Echo's slots; `rows.js` the "Knowledge vault" row of a thread's and a client's Profile; `starter/twin/` is the twin preset. Part of the
 [Echo plugins](../../README.md) marketplace.

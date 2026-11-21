@@ -31,6 +31,9 @@ export function apply(ctx) {
     label: 'Telegram',
     icon: PLANE,
     badge: () => (st && st.bot && st.bot.paired ? '' : st ? '!' : ''),
+    // The token is taken here (checked with Telegram, then paired; Forget clears it): Echo draws no field for it, and
+    // its Plugins page points here.
+    settings: [{ key: 'bot_token', draw: false }],
     render() {
       if (!st) { if (!error && !busy) { busy = 'loading'; load().then(() => { busy = '' }) } return error ? `<p class="error">${esc(error)}</p>` : '<div class="skeleton" style="padding:20px"><i></i><i></i></div>' }
       const b = st.bot

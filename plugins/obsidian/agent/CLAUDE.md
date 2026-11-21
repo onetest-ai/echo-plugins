@@ -95,5 +95,5 @@ reading commands but `rename_plan` are there too, also in a run that only reads.
 - Where a thread's or client's calls go: its Profile → Knowledge vault.
 - A vault's skills (`.claude/skills/`: `twin`, `process-inbox`): its Settings → Skills; `/twin` for every Claude Code
   session is added there on the user's click (Install), never by you.
-- A web page as a source: Ingest → Add a source → A web page. Sites it reads without asking: Settings → Plugins →
-  Knowledge → Its settings (Sites Knowledge reads pages from).
+- A web page as a source: Ingest → Add a source → A web page. Sites it reads without asking: Settings → Knowledge
+  (Sites Knowledge reads pages from, under the vaults).

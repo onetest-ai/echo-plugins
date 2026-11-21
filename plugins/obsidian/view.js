@@ -1760,7 +1760,7 @@ export async function createKnowledge(ctx, hooks = {}) {
     } else {
       const a = knAddState(x)
       body = `<div class="kn-field"><span>Address</span><input class="search kn-in kn-url" id="kn-src-url" placeholder="https://" aria-label="The page's address" value="${esc(x.url)}" autocomplete="off" spellcheck="false"></div><div id="kn-src-note" class="set-sub kn-indent">${esc(a.note || '')}</div>
-        <div class="kn-note-line">${IC.info}<span>Echo reads a page on a site you listed in Knowledge's settings (Settings → Plugins → Knowledge → Its settings) at once. Any other page, Echo asks you for its address in its own box — leave this empty to go straight there.</span></div>
+        <div class="kn-note-line">${IC.info}<span>Echo reads a page on a site you listed in Knowledge's settings (Settings → Knowledge, under the vaults) at once. Any other page, Echo asks you for its address in its own box — leave this empty to go straight there.</span></div>
         <div class="kn-note-line">${IC.lock}<span>Read once, now — never again by itself. Only the address is sent — no cookies, nothing from your vault. Echo keeps the page's main text as Markdown and its pictures beside it; menus, footers and scripts are left out. A page that builds itself with JavaScript isn't read yet.</span></div>${create}`
     }
     const err = x.error && x.tab !== 'mail' ? `<p class="error" role="alert">${esc(x.error)}</p>` : ''

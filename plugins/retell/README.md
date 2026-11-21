@@ -14,8 +14,8 @@ phrases worth repeating.
   talk** — a spoken conversation with a coach right in the window, then a review of your English; **My phrases**,
   with cards and spaced review.
 - **Settings → From plugins → Retell**: any speech server that speaks the OpenAI API (OpenAI itself, or one in
-  your network), its model, the voice and how it speaks. The plugin's settings: the retelling language, the language
-  of explanations, the fact check, how many articles to keep.
+  your network), its address and API key, the model, the voice and how it speaks, and the plugin's other settings (the retelling
+  language, the language of explanations, the fact check, how many articles to keep) — all on that one page.
 - Echo reads the pages and files; Claude never browses here. An article is written and checked on files in a folder of
   Retell's own store, with Claude Code's file tools only (nothing outside that folder, no commands, no web), a run per
   task: the retelling (the narrator looks at the pictures) and the memo; a fact check that grounds every statement in
@@ -24,7 +24,7 @@ phrases worth repeating.
 - Other plugins and Claude in Echo can read your library, articles, questions, quizzes and phrases, queue a link or a
   text, and save a phrase (Echo's offered commands).
 
-Needs Echo 0.10.6 or later, Claude Code on an AI profile, and a speech server (an OpenAI API key, or a server in your
+Needs Echo 0.10.8 or later, Claude Code on an AI profile, and a speech server (an OpenAI API key, or a server in your
 network). Headphones help in a live talk. `main.js` is its host half (reading, retelling, the queue, voice, quizzes,
 talks), `client.js` its client half (the Retell activity and the Retell section).
 

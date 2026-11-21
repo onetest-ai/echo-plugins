@@ -1263,10 +1263,13 @@ PAGES:
   })
   // Is the speech server there? Checked now and then in the background; the window only reads the last answer.
   // GET /v1/models answers both: the server is there, and it takes the key (401/403 when not).
-  const health = { ok: null, at: 0, busy: false, error: '', models: [] }
+  const health = { ok: null, at: 0, busy: false, error: '', models: [], for: '' }
+  // What a check was made with: a new address or key (set in Echo's fields on the page) makes the last answer stale.
+  const healthFor = () => base() + '|' + hash(setting('api_key') || '')
+  const healthNow = () => { if (health.for !== healthFor()) { health.ok = null; health.error = ''; health.models = []; health.at = 0 } return health }
   const checkHealth = async () => {
     if (health.busy || !base()) return
-    health.busy = true
+    health.busy = true; health.for = healthFor()
     try {
       const r = await ctx.http.fetch(api('/models'), { method: 'GET', headers: auth() })
       health.ok = r.status === 200
@@ -1276,15 +1279,16 @@ PAGES:
     health.at = Date.now(); health.busy = false
   }
   ctx.every(10, () => { if (base() && Date.now() - health.at > 30000) checkHealth() })
-  command('health', () => { if (!base()) return { configured: false }; if (Date.now() - health.at > 45000) checkHealth(); return { configured: true, ok: health.ok, at: health.at, error: health.error } })
+  command('health', () => { if (!base()) return { configured: false }; healthNow(); if (Date.now() - health.at > 45000) checkHealth(); return { configured: true, ok: health.ok, at: health.at, error: health.error } })
 
   // ── the voice settings page (the window's Settings → Retell) ──
-  // The address and the key are set by the user in Settings → Plugins (Echo's rule; the key never reaches the window);
+  // The address and the key are set by the user in Echo's own fields on Settings → Retell (the key never reaches the window);
   // the rest the page sets here. Models the server doesn't list (one it has for personal use) can be typed in: they
   // are remembered so the list offers them next time.
   const VOICE_KEYS = ['tts_model', 'stt_model', 'voice', 'style']
   const voiceCustom = () => { const d = J('voice_custom.json', {}); return { models: Array.isArray(d.models) ? d.models.map(String).slice(0, 20) : [] } }
   const voiceConfig = () => {
+    healthNow()
     const c = { address: base(), key: !!setting('api_key'), tts_model: ttsModel(), stt_model: sttModel(), voice: voiceName(), style: styleOf(),
       ok: health.ok, error: health.error, checked: health.at, models: health.models, custom: voiceCustom().models }
     return c
@@ -1304,7 +1308,7 @@ PAGES:
   command('voice_forget', (a) => { const c = voiceCustom(); c.models = c.models.filter((m) => m !== String(a.model)); ctx.store.write('voice_custom.json', JSON.stringify(c)); return voiceConfig() })
   // A short sample in the voice as it is set now (a new file each time something changed, kept in cache/).
   command('voice_try', async () => {
-    if (!base()) throw new Error('Enter the speech server address in Settings → Plugins → Retell first')
+    if (!base()) throw new Error('Enter the speech server address in Settings → Retell first')
     const ru = (setting('lang') || 'en') === 'ru'
     const text = ru ? 'Привет! Вот так я буду читать вам статьи.' : 'Hello! This is how I will read your articles to you.'
     const file = `cache/voice-try-${hash(JSON.stringify(speechBody(text)))}.mp3`
@@ -1323,7 +1327,7 @@ PAGES:
   // The window hears the microphone itself (a Realtime transcription session); it gets a short-lived key for it here,
   // so the API key stays in the host half. A server without short-lived keys and with no key set is reached without one.
   command('stt_session', async (a) => {
-    if (!base()) throw new Error('Enter the speech server address in Settings → Plugins → Retell first')
+    if (!base()) throw new Error('Enter the speech server address in Settings → Retell first')
     const prompt = String(a.prompt || '').slice(0, 500)
     const input = { format: { type: 'audio/pcm', rate: 24000 }, transcription: { model: sttModel(), language: 'en', ...(prompt ? { prompt } : {}) },
       turn_detection: { type: 'server_vad', silence_duration_ms: 600 } }

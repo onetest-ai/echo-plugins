@@ -25,4 +25,6 @@ tags: [retell, voice, failure]
 | 3 | `curl -X POST $FAKE_RETELL/_state -d '{"speech":"down"}'`; Check | The section says the server answered 503, in words — not a blank or a spinner |
 | 4 | `… -d '{"speech":"key"}'`; Check | "The server refused the API key" |
 | 5 | `… -d '{"speech":"up"}'`; Check | Online again |
-| 6 | Press "Change the server or key" | Settings → Plugins opens with Retell picked and the Speech server and API key fields to edit; Back returns to the section |
+| 6 | `#settings/plugins/retell` | Retell's settings aren't fields there: one row listing them, "Set in Retell", *Open* opens `#settings/retell:main` |
+| 7 | Back on `#settings/retell:main` | Under the title and its lead line Echo's "Its settings": *Speech server* (`$FAKE_RETELL`, with Echo's note), *API key* (not set), then the article options (language, fact check, notify …) — no voice model, voice, style or recognition model fields there (the cards below set those from the server's lists); then the server's state and the voice cards |
+| 8 | Change *Speech server* to `$FAKE_RETELL/` and leave the field; wait for the window to reload | The section shows the server online again with its models (it checks it on load), no Check needed |

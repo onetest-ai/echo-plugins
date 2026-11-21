@@ -36,5 +36,5 @@ them where.
 The Retell activity in Echo's activity bar: **Listen** (the player: the retelling with its words lit as they are
 spoken, the original beside it, the memo, terms, facts and questions), **Library** (articles in topics, Add for links,
 files or text, Reading lists), **Practice** (quizzes, Start a talk, My phrases and their review). Settings → From
-plugins → Retell voice: the speech server, its model, the voice and how it speaks. The plugin's own settings: the
+plugins → Retell: the speech server, its model, the voice and how it speaks. The plugin's own settings: the
 retelling language, the language of explanations, the fact check, how many articles to keep.

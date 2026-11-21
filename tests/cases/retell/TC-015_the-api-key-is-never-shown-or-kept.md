@@ -20,7 +20,7 @@ tags: [retell, security, secret]
 
 | # | Action | Expected Result |
 |---|--------|----------------|
-| 1 | `echoctl plugin set retell api_key sk-test-acme-0000`; `curl -X POST $FAKE_RETELL/_state -d '{"speech":"key"}'`; Retell voice → Check, ▶ Listen | Online; a sample plays |
+| 1 | `echoctl plugin set retell api_key sk-test-acme-0000`; `curl -X POST $FAKE_RETELL/_state -d '{"speech":"key"}'`; Retell → Check, ▶ Listen | Online; a sample plays |
 | 2 | The page's HTML | No "sk-test-acme-0000" (the key shows only as set) |
 | 3 | `grep -r sk-test-acme-0000` in the store (but Echo's own settings file) and `<dir>/*.log` | Nothing |
 | 4 | `curl $FAKE_RETELL/_log` | Every `/v1/models` and `/v1/audio/speech` had the Bearer and it was the key |

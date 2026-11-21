@@ -1278,7 +1278,7 @@ PAGES:
   ctx.every(10, () => { if (base() && Date.now() - health.at > 30000) checkHealth() })
   command('health', () => { if (!base()) return { configured: false }; if (Date.now() - health.at > 45000) checkHealth(); return { configured: true, ok: health.ok, at: health.at, error: health.error } })
 
-  // ── the voice settings page (the window's Settings → Retell voice) ──
+  // ── the voice settings page (the window's Settings → Retell) ──
   // The address and the key are set by the user in Settings → Plugins (Echo's rule; the key never reaches the window);
   // the rest the page sets here. Models the server doesn't list (one it has for personal use) can be typed in: they
   // are remembered so the list offers them next time.
@@ -1630,7 +1630,7 @@ before (the same thought, a second sentence), it is meant for the assistant: STO
   }
   command('talk_start', async (a) => {
     if (talkOpen) await talkEnd(talkOpen, 'A new talk was started')   // one at a time: its window is gone
-    if (!base()) throw new Error('Set the speech server first (Settings → Retell voice)')
+    if (!base()) throw new Error('Set the speech server first (Settings → Retell)')
     const ids = [...new Set((Array.isArray(a.ids) ? a.ids : []).map(String))].filter((id) => J(`articles/${id}/source.json`, null)).slice(0, 12)
     if (!ids.length) throw new Error('Pick articles that are ready first')
     const id = 'k' + Date.now().toString(36), level = LEVELS.includes(String(a.level)) ? String(a.level) : 'B2'

@@ -1,7 +1,7 @@
 {
   "id": "retell",
   "name": "Retell",
-  "version": "0.27.0",
+  "version": "0.27.1",
   "echo": ">=0.10.6",
   "summary": "Retells an article (a link, a PDF, a Word or PowerPoint file, or pasted text) so it can be listened to, and lets you practise speaking English on it: quizzes, spoken answers and live talks with a coach.",
   "uses": {
@@ -40,7 +40,7 @@
       "label": "Voice model",
       "type": "string",
       "default": "gpt-4o-mini-tts",
-      "help": "The model that speaks, e.g. gpt-4o-mini-tts or tts-1; Settings → Retell voice lists what your server has"
+      "help": "The model that speaks, e.g. gpt-4o-mini-tts or tts-1; Settings → Retell lists what your server has"
     },
     {
       "key": "voice",

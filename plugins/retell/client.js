@@ -172,7 +172,7 @@ export function apply(ctx) {
     const h = S.health || {}
     el.className = 'rt-health' + (!h.configured ? ' none' : h.ok === false ? ' down' : '')
     el.lastChild.textContent = !h.configured ? 'Voice server: not set' : h.ok === false ? (h.error ? 'Voice server: ' + h.error : 'Voice server not answering') : h.ok ? 'Voice server online' : 'Voice server: checking…'
-    el.title = 'Settings → Retell voice'
+    el.title = 'Settings → Retell'
   }
   // While something is being made, look again every 2 s (not while the user is typing in the search box).
   const busy = () => S.list && S.list.articles.some((a) => BUSY.includes(a.status) || a.voice_status === 'making')
@@ -1730,7 +1730,7 @@ export function apply(ctx) {
     if (el) { el.classList.add('rt-on'); if (scroll) el.scrollIntoView({ block: 'center', behavior: 'smooth' }) }
   }
 
-  // ── Settings → From plugins → Retell voice ──
+  // ── Settings → From plugins → Retell ──
   // The address and the API key are Echo's own card (Settings → Plugins → Retell: only the user enters them, and the key
   // never comes to the window); here the model, the voice and how it speaks, with what the server lists.
   const STD_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse', 'marin', 'cedar']
@@ -1757,16 +1757,16 @@ export function apply(ctx) {
       <div class="set-sub">${hint}</div></div>`
   }
   const voicePage = () => {
-    if (!V.cfg) { if (!V.busy) { V.busy = 'load'; vLoad(false).then(() => { V.busy = ''; if (V.cfg && V.cfg.address && V.cfg.ok == null) vLoad(true) }) } return '<h2>Retell voice</h2><div class="skeleton"><i></i><i></i></div>' }
+    if (!V.cfg) { if (!V.busy) { V.busy = 'load'; vLoad(false).then(() => { V.busy = ''; if (V.cfg && V.cfg.address && V.cfg.ok == null) vLoad(true) }) } return '<h2>Retell</h2><div class="skeleton"><i></i><i></i></div>' }
     const c = V.cfg
     let privNote = ''
     const st = !c.address ? '<span class="rt-chip">not set</span>' : V.busy === 'check' ? '<span class="rt-chip acc">checking…</span>'
       : c.ok ? `<span class="rt-chip ok">online · ${(c.models || []).length} models</span>` : c.ok === false ? `<span class="rt-chip bad">${esc(c.error || 'not answering')}</span>` : '<span class="rt-chip">not checked</span>'
-    return `<h2>Retell voice</h2>
+    return `<h2>Retell</h2>
       <p class="set-lead">Retell reads your articles aloud and hears your spoken answers through a speech server that speaks the OpenAI API: OpenAI itself, or one in your network.</p>
       <div class="rt-vcard"><div class="rt-vline"><b style="min-width:110px">Speech server</b><span>${c.address ? esc(c.address) : 'not set'}</span>${st}<span class="rt-sp"></span><button class="btn" data-rtv="check" ${c.address ? '' : 'disabled'}>Check</button></div>
         <div class="rt-vline"><b style="min-width:110px">API key</b><span>${c.key ? 'set' : 'none'}</span></div>
-        <div class="set-sub">The address and the key are set in Settings → Plugins → Retell (Echo keeps the key apart; it never comes to this window).</div></div>
+        <div class="rt-vline"><button class="btn${c.address ? '' : ' primary'}" data-rtv="edit">${c.address ? 'Change the server or key' : 'Set the speech server'}</button><span class="set-sub">Opens Retell's page in Settings → Plugins, where you enter them (Echo keeps the key apart; it never comes to this window).</span></div></div>
       ${c.address && c.ok ? `<div class="rt-vcard">
         ${vSelect('tts_model', 'Voice model', 'The model that reads aloud. A model your server has but doesn\'t list (for example one for personal use only): choose “Other…” and type its name.')}
         <div class="rt-vrow"><label class="set-sub" for="rt-v-voice">Voice</label><div class="rt-vline"><input id="rt-v-voice" list="rt-v-voices" value="${esc(c.voice)}" spellcheck="false"><datalist id="rt-v-voices">${STD_VOICES.map((v) => `<option value="${v}">`).join('')}</datalist><button class="btn" data-rtv="save" data-k="voice">Use it</button></div>
@@ -1793,6 +1793,7 @@ export function apply(ctx) {
     const t = ev.target && ev.target.closest && ev.target.closest('[data-rtv]'); if (!t) return
     const d = t.dataset
     if (d.rtv === 'check') return vLoad(true)
+    if (d.rtv === 'edit') { V.cfg = null; return ctx.go(`settings/plugins/${ID}`) }
     if (d.rtv === 'save') { const el = $(d.k === 'voice' ? 'rt-v-voice' : d.k === 'style' ? 'rt-v-style' : `rt-v-${d.k}-txt`); return vSet(d.k, el ? el.value : '') }
     if (d.rtv === 'forget') { try { V.cfg = await ctx.call('voice_forget', { model: d.m }) } catch (e) { V.err = e.message || String(e) } return ctx.render() }
     if (d.rtv === 'try') {
@@ -1803,7 +1804,7 @@ export function apply(ctx) {
   })
   ctx.settings.section({
     id: 'main',
-    label: 'Retell voice',
+    label: 'Retell',
     icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 8v4M6.5 5v10M10 3v14M13.5 6v8M17 8.5v3"/></svg>',
     render: voicePage,
   })

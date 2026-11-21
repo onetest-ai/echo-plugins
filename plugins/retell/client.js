@@ -11,7 +11,7 @@ export function apply(ctx) {
   const $ = (id) => document.getElementById(id)
   const S = {
     list: null, digests: [], topics: [], view: 'library', open: null, filter: 'all', q: '', dlg: null, draft: '', menu: null, topen: {},
-    dtab: null, vmode: 'both', health: null, error: '', starting: false, qa: null, selText: '', scroll: { left: 0, right: 0 }, sc: { listen: 0, library: 0 },
+    dtab: null, vmode: 'both', health: null, error: '', starting: false, qa: null, selText: '', scroll: { left: 0, right: 0 }, sc: { library: 0 },
     flash: null, sleepAt: 0, sleepI: 0, lastRep: 0, hlSrc: null, scrollCur: false, timer: null, vtimer: null, ttimer: null, htimer: null,
     itemDlg: { d: '', n: 0 }, learn: null, lt: [], lpacks: [], lpoll: null, pr: { scope: '', n: 8, level: 'B2', quizzes: [], phrases: [], quiz: null, qi: 0, draft: '', note: '', mic: null, timer: null, focus: false, busy: false, rec: null, spoken: null, talks: [], talk: null, rv: null, rstate: null, tcorrect: 'gentle', tbrain: 'claude', twait: 'normal', tbusy: false }, tdlg: { id: '', name: '', parent: '' }, mdlg: { id: '', topic: '' }, addLen: 'normal', addLang: '', addPages: '', addSplit: 'all', hits: {}, hitsQ: '', searchT: null,
   }
@@ -161,7 +161,8 @@ export function apply(ctx) {
     try { S.digests = await ctx.call('digests', {}) } catch (e) { /* no reading list yet */ }
     try { S.topics = await ctx.call('topics', {}) } catch (e) { /* none yet */ }
   }
-  const load = async () => { await refreshAll(); await refreshHealth(); if (!S.learnLoaded) { S.learnLoaded = true; await learnRefresh() } ctx.render() }
+  // The first load is Library's too (it opens on Library): its reading lists, and their making followed as they change.
+  const load = async () => { await refreshAll(); await refreshHealth(); if (!S.learnLoaded) { S.learnLoaded = true; await learnRefresh(); learnPoll() } ctx.render() }
   const act = async (command, args) => {
     S.error = ''
     try { const r = await ctx.call(command, args || {}); await load(); return r } catch (e) { S.error = e.message || String(e); ctx.render() }
@@ -174,14 +175,25 @@ export function apply(ctx) {
     el.lastChild.textContent = !h.configured ? 'Voice server: not set' : h.ok === false ? (h.error ? 'Voice server: ' + h.error : 'Voice server not answering') : h.ok ? 'Voice server online' : 'Voice server: checking…'
     el.title = 'Settings → Retell'
   }
-  // While something is being made, look again every 2 s (not while the user is typing in the search box).
+  // While something is being made, look again every 2 s (not while the user is in a field: the search, Add, a reading list's).
   const busy = () => S.list && S.list.articles.some((a) => BUSY.includes(a.status) || a.voice_status === 'making')
   const poll = () => {
     if (busy() && !S.timer) S.timer = setInterval(async () => {
       const f = document.activeElement
-      if (!(f && (f.id === 'rt-q2' || f.id === 'rt-add'))) { await refreshAll(); if (S.view !== 'player') ctx.render() }
+      if (!(f && /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName))) { await refreshAll(); if (S.view !== 'player') ctx.render() }
       if (!busy()) { clearInterval(S.timer); S.timer = null }
     }, 2000)
+    // Articles queued from outside the window (the CLI, Claude, another plugin through `start`): while Library is on
+    // screen, look every 8 s and draw again only when an article came, went or changed its state.
+    if (!S.itimer) S.itimer = setInterval(async () => {
+      if (S.timer || document.hidden || S.view !== 'library' || !document.getElementById('rt-sc')) return
+      const sig = () => (S.list ? S.list.articles.map((a) => `${a.id}:${a.status}:${a.voice_status || ''}`).join('|') : '') + '#' + S.digests.length + '#' + S.topics.length
+      const was = sig(); await refreshAll()
+      if (sig() === was) return
+      const f = document.activeElement
+      if (!(f && /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName))) ctx.render()
+      poll()
+    }, 8000)
     if (!S.htimer) { S.htimer = setInterval(async () => { await refreshHealth(); paintHealth() }, 30000); setTimeout(async () => { await refreshHealth(); paintHealth() }, 4000) }
   }
 
@@ -1437,7 +1449,7 @@ export function apply(ctx) {
       </div></div></div>`
   }
   try { const w = localStorage.getItem('retell.twait'); if (TK_WAIT[w]) S.pr.twait = w } catch (e) { /* none */ }
-  if (ctx.onUnload) ctx.onUnload(() => { const T = S.tk; if (!T) return; S.tk = null; tkRelease(T); if (T.id) ctx.call('talk_finish', { id: T.id, why: 'The window was closed' }).catch(() => {}) })
+  if (ctx.onUnload) ctx.onUnload(() => { for (const k of ['timer', 'htimer', 'itimer', 'lpoll']) { if (S[k]) { clearInterval(S[k]); S[k] = null } } const T = S.tk; if (!T) return; S.tk = null; tkRelease(T); if (T.id) ctx.call('talk_finish', { id: T.id, why: 'The window was closed' }).catch(() => {}) })
   const practiceHtml = () => (S.tk ? tkHtml() : S.pr.quiz ? quizHtml() : S.pr.talk ? talkHtml() : S.pr.rv ? reviewHtml() : prHome())
 
   const appHtml = () => {

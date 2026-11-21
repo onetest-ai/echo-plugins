@@ -33,8 +33,8 @@ them where.
 
 ## Where the user manages it
 
-The Retell activity in Echo's activity bar: **Listen** (the player: the retelling with its words lit as they are
-spoken, the original beside it, the memo, terms, facts and questions), **Library** (articles in topics, Add for links,
-files or text, Reading lists), **Practice** (quizzes, Start a talk, My phrases and their review). Settings → From
+The Retell activity in Echo's activity bar: **Library** (on top where the user stopped and what is being made, then
+articles in topics, Add for links, files or text, Reading lists; an article opens in the player: the retelling with its
+words lit as they are spoken, the original beside it, the memo, terms, facts and questions), **Practice** (quizzes, Start a talk, My phrases and their review). Settings → From
 plugins → Retell holds all its settings: the speech server's address and key, its model, the voice and how it speaks,
 the retelling language, the language of explanations, the fact check, how many articles to keep.

@@ -38,7 +38,7 @@ tests/fixtures/retell/down.sh <dir>                       # after the last case
     quiet 12 s. Open the window in a browser started with `--use-fake-ui-for-media-stream
     --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=$RETELL_MIC%noloop
     --autoplay-policy=no-user-gesture-required`.
-- The plugin's view: `{{base_url}}/#retell:retell` (Listen · Library · Practice); its voice section:
+- The plugin's view: `{{base_url}}/#retell:retell` (Library · Practice); its voice section:
   `{{base_url}}/#settings/retell:main`. `$S` is its store, `$ECHOCTL_HOME/.echo/plugins/retell/` (`index.json`,
   `articles/<id>/…`, `quiz/`, `talks/`, `phrases.json`).
 - Work the plugin does in the background (the queue, the voice) runs in the served window's Echo: start it from the

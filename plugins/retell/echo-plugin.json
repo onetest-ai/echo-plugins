@@ -1,7 +1,7 @@
 {
   "id": "retell",
   "name": "Retell",
-  "version": "0.28.0",
+  "version": "0.28.1",
   "echo": ">=0.10.8",
   "summary": "Retells an article (a link, a PDF, a Word or PowerPoint file, or pasted text) so it can be listened to, and lets you practise speaking English on it: quizzes, spoken answers and live talks with a coach.",
   "uses": {

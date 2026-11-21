@@ -8,11 +8,12 @@ real checks (anchors, pages Echo opened) pass on real data. As Claude Code does 
 
 Anything else is Echo's own test fake's: `--version`, `auth status`, a phrase of <dir>/fake-answers.tsv, else refused.
 What each run was asked is appended to <dir>/fake-claude.log (its kind, its arguments' flags, its prompt's first line)
-for the cases to read.
+for the cases to read. A number in <dir>/fake-claude-wait (seconds, at most 120) makes each write run wait that long
+first, so a case can see an article while it is being made.
 
     python fake_claude.py <args Claude Code would get>
 """
-import json, os, re, sys
+import json, os, re, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.dirname(HERE)  # <dir> (this file is in <dir>/bin)
@@ -236,6 +237,9 @@ def main():
         heard = p.strip().split("\n")[-1]
         text = "Good point about that. Can you give me an example from your own work?" if heard else "Tell me more."
     elif kind in ("write", "check", "memo", "termsf", "fix"):
+        try: wait = min(120.0, float(open(os.path.join(DIR, "fake-claude-wait")).read().strip())) if kind == "write" else 0
+        except (OSError, ValueError): wait = 0
+        if wait > 0: time.sleep(wait)
         text = work(kind, p)
     else:
         a = answer(kind, p, pictures)
